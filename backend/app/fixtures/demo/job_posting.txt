@@ -1,0 +1,47 @@
+Senior Software Engineer (Backend)
+Northwind Labs - Seattle, WA (Hybrid) or Remote (US)
+
+About Northwind Labs
+Northwind Labs builds analytics infrastructure that helps mid-market retailers
+make inventory and pricing decisions in real time. Our platform ingests
+point-of-sale, e-commerce, and supply-chain events and turns them into
+forecasts our customers act on every day. We are a 120-person, profitable
+company growing the engineering team from 30 to 45 this year.
+
+The Role
+We are hiring a Senior Software Engineer for the Data Platform team. You will
+own services on the ingestion path, work closely with our data scientists, and
+raise the bar for reliability and engineering practice across the team.
+
+What you'll do
+- Design, build, and operate Python services (FastAPI) that ingest and
+  validate high-volume event streams
+- Evolve our PostgreSQL schemas and query patterns as data volume grows
+- Improve reliability of our Airflow-orchestrated batch pipelines
+- Champion testing and CI/CD practices across the team
+- Mentor mid-level engineers and lead design reviews
+
+What we're looking for
+- 5+ years of professional software engineering experience
+- Expert-level Python; production experience with FastAPI, Django, or Flask
+- Strong SQL and PostgreSQL experience
+- Experience operating services in AWS (ECS, Lambda, RDS, or similar)
+- Experience with CI/CD pipelines and infrastructure as code
+- Clear written communication; comfort working with distributed teammates
+
+Nice to have
+- Airflow or similar workflow orchestration experience
+- Experience with Redis, RabbitMQ, or Kafka
+- Open-source contributions
+- TypeScript/React familiarity for occasional internal tooling
+
+Compensation and benefits
+$165,000 - $205,000 base depending on experience, plus equity, 401(k) match,
+full medical/dental/vision, and a $1,500 annual learning budget.
+
+Northwind Labs is an equal opportunity employer. We welcome applicants of all
+backgrounds and do not discriminate on any protected basis.
+
+How to apply
+Apply at careers.northwindlabs.example with a resume. A short cover note about
+a system you have operated at scale is appreciated.

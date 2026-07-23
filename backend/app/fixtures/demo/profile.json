@@ -1,0 +1,113 @@
+{
+  "contact": {
+    "name": "Jordan Rivera",
+    "email": "jordan.rivera@example.com",
+    "phone": "+1 (555) 210-4477",
+    "location": "Portland, OR",
+    "links": [
+      {"label": "GitHub", "url": "https://github.com/jordanrivera"},
+      {"label": "LinkedIn", "url": "https://www.linkedin.com/in/jordan-rivera-dev"}
+    ]
+  },
+  "master_profile": {
+    "summary_notes": "Backend-focused software engineer with 8 years of experience building Python services, REST APIs, and data-heavy systems on PostgreSQL and AWS. Track record of performance work, service decomposition, CI/CD ownership, and mentoring.",
+    "experiences": [
+      {
+        "company": "Cascade Analytics",
+        "title": "Senior Software Engineer",
+        "start": "2021-03",
+        "end": null,
+        "location": "Portland, OR",
+        "bullets": [
+          {
+            "text": "Designed and shipped a FastAPI event-ingestion service handling 40M events/day with p99 latency under 120ms",
+            "tags": ["python", "fastapi", "apis", "performance", "scalability"]
+          },
+          {
+            "text": "Led decomposition of a monolithic Django app into 6 domain services on PostgreSQL, cutting deploy time from 45 minutes to 8 minutes",
+            "tags": ["architecture", "postgresql", "microservices", "leadership"]
+          },
+          {
+            "text": "Introduced contract tests and CI quality gates with pytest and GitHub Actions, reducing production incidents by 35%",
+            "tags": ["testing", "ci-cd", "pytest", "reliability"]
+          },
+          {
+            "text": "Mentored 3 junior engineers through weekly design reviews and pairing rotations",
+            "tags": ["mentorship", "leadership", "communication"]
+          }
+        ]
+      },
+      {
+        "company": "Brightline Software",
+        "title": "Software Engineer",
+        "start": "2018-06",
+        "end": "2021-02",
+        "location": "Seattle, WA",
+        "bullets": [
+          {
+            "text": "Built Flask REST APIs powering a customer billing portal used by 12,000 accounts",
+            "tags": ["python", "flask", "apis", "billing"]
+          },
+          {
+            "text": "Optimized slow PostgreSQL reporting queries, cutting nightly batch runtime from 4 hours to 50 minutes",
+            "tags": ["postgresql", "sql", "performance"]
+          },
+          {
+            "text": "Containerized 9 legacy services with Docker and built the Compose-based local development environment",
+            "tags": ["docker", "devops", "developer-experience"]
+          },
+          {
+            "text": "Implemented Stripe webhook processing with idempotent handlers and dead-letter retries",
+            "tags": ["payments", "stripe", "reliability", "event-driven"]
+          }
+        ]
+      }
+    ],
+    "projects": [
+      {
+        "name": "queuelite",
+        "description": "Open-source lightweight Python task queue backed by SQLite",
+        "url": "https://github.com/jordanrivera/queuelite",
+        "bullets": [
+          {
+            "text": "Built a polling worker with visibility timeouts and at-least-once delivery guarantees",
+            "tags": ["python", "concurrency", "sqlite", "queues"]
+          },
+          {
+            "text": "Published to PyPI with full type hints; 400+ GitHub stars",
+            "tags": ["open-source", "python"]
+          }
+        ]
+      }
+    ],
+    "skills": [
+      {
+        "label": "Languages & Frameworks",
+        "items": ["Python", "TypeScript", "SQL", "FastAPI", "Flask"]
+      },
+      {
+        "label": "Infrastructure & Tools",
+        "items": ["PostgreSQL", "Docker", "GitHub Actions", "Redis", "AWS (ECS, S3, RDS)"]
+      }
+    ],
+    "education": [
+      {
+        "institution": "University of Washington",
+        "credential": "B.S. Computer Science",
+        "year": "2018",
+        "detail": "Focus in distributed systems"
+      }
+    ],
+    "certifications": [
+      {
+        "name": "AWS Certified Developer - Associate",
+        "issuer": "Amazon Web Services",
+        "year": "2023"
+      }
+    ],
+    "extras": [
+      "Speaker, PyCascades 2024: \"SQLite in Production\"",
+      "Maintainer of two pytest plugins"
+    ]
+  }
+}
