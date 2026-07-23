@@ -17,6 +17,10 @@ For each job URL it runs a four-stage pipeline:
 4. **Render** — four print-tuned templates (Meridian, Slate, Terminal, Signal) →
    PDF, standalone HTML, and ATS-safe plain text.
 
+Compare all four templates side by side, with live previews, on the in-app
+**Templates** page. The UI also follows your system's light/dark preference
+automatically, with a one-click override in the nav bar or Settings.
+
 Everything runs on your machine. The only network traffic is fetching postings and
 calling the Anthropic API. All state lives in the `data/` folder — a backup is
 copying one folder.

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createApplications, getSettings, listProfiles } from "../api";
 import type { Depth, JobRequest, ProfileSummary, TemplateName } from "../types";
 
@@ -118,6 +118,9 @@ export default function AddJobsScreen() {
                 </option>
               ))}
             </select>
+            <Link to="/templates" className="muted-link">
+              See template examples →
+            </Link>
           </div>
         </div>
 

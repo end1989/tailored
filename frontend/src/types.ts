@@ -250,3 +250,10 @@ export interface JobRequest {
   depth?: Depth;
   template?: TemplateName;
 }
+
+export interface TemplateInfo {
+  name: TemplateName;
+  label: string;
+  description: string;
+  best_for: string;
+}

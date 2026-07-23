@@ -12,6 +12,7 @@ import type {
   ProfileSummary,
   ResumeDoc,
   SettingsShape,
+  TemplateInfo,
   TemplateName,
 } from "./types";
 
@@ -148,6 +149,12 @@ export function updateSettings(patch: {
   return request<SettingsShape>("/settings", jsonInit("PUT", patch));
 }
 
+// ---- templates ----
+
+export function listTemplates(): Promise<TemplateInfo[]> {
+  return request<TemplateInfo[]>("/templates");
+}
+
 // ---- URL builders (used directly in <a href> / <iframe src>) ----
 
 export function previewUrl(id: number): string {
@@ -156,4 +163,8 @@ export function previewUrl(id: number): string {
 
 export function exportUrl(id: number, kind: ExportKind): string {
   return `${API}/applications/${id}/exports/${encodeURIComponent(kind)}`;
+}
+
+export function templatePreviewUrl(name: TemplateName): string {
+  return `${API}/templates/preview/${name}`;
 }
