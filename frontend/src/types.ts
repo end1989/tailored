@@ -1,5 +1,5 @@
 // ---- enums / literals (verbatim from the backend contract) ----
-export type Depth = "quick" | "standard" | "deep";
+export type Depth = "quick" | "standard" | "deep" | "external"; // "external" = MCP mode (agent did the research)
 export type TemplateName = "meridian" | "slate" | "terminal" | "signal";
 export type AppStatus =
   | "queued"
