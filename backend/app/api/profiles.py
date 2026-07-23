@@ -127,7 +127,10 @@ async def add_document(
             raise HTTPException(status_code=422, detail="multipart field 'file' is required")
         data = await upload.read()
         filename = upload.filename or "upload.txt"
-        kind, text = intake.extract_text(filename, data)
+        try:
+            kind, text = intake.extract_text(filename, data)
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"could not extract text from {filename}: {exc}")
     else:
         try:
             body = await request.json()

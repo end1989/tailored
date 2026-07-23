@@ -5,10 +5,12 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 
 from backend.app.config import Settings
 from backend.app.db import get_engine
 from backend.app.main import create_app
+from backend.app.models import Application
 from backend.app.schemas import Contact, MasterProfile, MPExperience, TaggedBullet, UsageInfo
 from backend.app.services import intake, pipeline, render
 
@@ -378,3 +380,29 @@ def test_settings_round_trip(client):
         "/api/settings", json={"default_template": "papyrus"}).status_code == 422
     assert client.put(
         "/api/settings", json={"page_size": "Legal"}).status_code == 422
+
+
+def test_document_upload_corrupt_pdf_returns_422(client):
+    pid = make_profile(client)
+    resp = client.post(
+        f"/api/profiles/{pid}/documents",
+        files={"file": ("broken.pdf", b"%PDF-1.4 this is not a real pdf", "application/pdf")},
+    )
+    assert resp.status_code == 422
+    assert "broken.pdf" in resp.json()["detail"]
+
+
+def test_paste_and_retry_conflict_while_processing(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    # put the application into an in-flight status directly
+    with Session(client.app.state.engine) as session:
+        app_row = session.get(Application, app_id)
+        app_row.status = "tailoring"
+        session.add(app_row)
+        session.commit()
+    assert client.post(f"/api/applications/{app_id}/paste", json={"text": "x"}).status_code == 409
+    assert client.post(f"/api/applications/{app_id}/retry").status_code == 409
+    # no new pipeline calls were scheduled by the rejected requests
+    assert client.calls["paste"] == []
+    assert client.calls["process"] == [app_id]  # only the original batch-create schedule

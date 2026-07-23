@@ -30,6 +30,8 @@ from ..services.render import TEMPLATES
 
 router = APIRouter()
 
+PROCESSING_STATUSES = ("fetching", "researching", "tailoring", "rendering")
+
 DEPTHS = ("quick", "standard", "deep")
 EXPORT_KINDS = (
     "resume.pdf",
@@ -213,6 +215,11 @@ def paste_text(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     app_row, job = _get_app_and_job(session, application_id)
+    if app_row.status in PROCESSING_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty")
     background_tasks.add_task(pipeline.resume_after_paste, app_row.id, body.text)
@@ -245,6 +252,11 @@ def retry(
     every error state has a working retry action (spec section 8).
     """
     app_row, job = _get_app_and_job(session, application_id)
+    if app_row.status in PROCESSING_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
     app_row.status = "queued"
     app_row.error_message = None
     app_row.updated_at = _utcnow()
