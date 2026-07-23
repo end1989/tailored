@@ -15,7 +15,7 @@ from backend.app.schemas import (
     UsageInfo,
 )
 from backend.app.services.claude import ClaudeService
-from backend.app.services.tailor import tailor_application
+from backend.app.services.tailor import tailor_application, verify_truthfulness
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
 
@@ -127,3 +127,35 @@ def test_feedback_lands_in_user_content(claude_fake):
     uc = claude_fake.calls[-1]["user_content"]
     assert "REGENERATION FEEDBACK" in uc
     assert "Lead with the migration project" in uc
+
+
+def _load_intake(claude_fake):
+    from backend.app.services.intake import IntakeResult
+
+    intake, _usage = claude_fake.structured(
+        task="intake", system="fixture-load", user_content="fixture-load",
+        schema_model=IntakeResult,
+    )
+    return intake
+
+
+def test_fixture_tailor_result_passes_truthfulness(claude_fake):
+    intake = _load_intake(claude_fake)
+    result, _usage = tailor_application(
+        intake.master_profile, intake.contact, PARSED, None, "slate", claude_fake
+    )
+    assert verify_truthfulness(result.resume, intake.master_profile) == []
+
+
+def test_single_changed_company_yields_exactly_one_violation(claude_fake):
+    intake = _load_intake(claude_fake)
+    result, _usage = tailor_application(
+        intake.master_profile, intake.contact, PARSED, None, "slate", claude_fake
+    )
+    bad = result.resume.model_copy(deep=True)
+    experience_sections = [s for s in bad.sections if s.type == "experience"]
+    assert experience_sections and experience_sections[0].items
+    experience_sections[0].items[0].company = "Fake Corp"
+    violations = verify_truthfulness(bad, intake.master_profile)
+    assert len(violations) == 1
+    assert "Fake Corp" in violations[0]

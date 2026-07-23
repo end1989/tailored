@@ -5,6 +5,7 @@ from ..schemas import (
     MasterProfile,
     ParsedPosting,
     ResearchFindings,
+    ResumeDoc,
     TailorResult,
     UsageInfo,
 )
@@ -72,3 +73,47 @@ def tailor_application(
     )
     assert isinstance(result, TailorResult)
     return result, usage
+
+
+def verify_truthfulness(resume: ResumeDoc, profile: MasterProfile) -> list[str]:
+    """Structural guard against invented facts.
+
+    Exact-match rules (contract): every ExperienceItem (company, role, start, end)
+    must match an MPExperience (company+title exact, start/end exact); every
+    EducationItem must match a master-profile education entry on
+    (institution, credential); every CertificationItem must match a
+    master-profile certification by name. Returns human-readable violation
+    strings; an empty list means the resume passes.
+    """
+    violations: list[str] = []
+    allowed_experiences = {
+        (e.company, e.title, e.start, e.end) for e in profile.experiences
+    }
+    allowed_education = {(e.institution, e.credential) for e in profile.education}
+    allowed_certifications = {c.name for c in profile.certifications}
+
+    for section in resume.sections:
+        if section.type == "experience":
+            for item in section.items:
+                key = (item.company, item.role, item.start, item.end)
+                if key not in allowed_experiences:
+                    violations.append(
+                        f"Experience '{item.role}' at '{item.company}' "
+                        f"({item.start} to {item.end or 'present'}) does not match "
+                        "any master-profile experience"
+                    )
+        elif section.type == "education":
+            for item in section.items:
+                if (item.institution, item.credential) not in allowed_education:
+                    violations.append(
+                        f"Education '{item.credential}' at '{item.institution}' "
+                        "does not match any master-profile education entry"
+                    )
+        elif section.type == "certifications":
+            for item in section.items:
+                if item.name not in allowed_certifications:
+                    violations.append(
+                        f"Certification '{item.name}' does not match any "
+                        "master-profile certification"
+                    )
+    return violations
