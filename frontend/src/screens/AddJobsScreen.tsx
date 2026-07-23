@@ -17,6 +17,8 @@ export default function AddJobsScreen() {
   const [profileId, setProfileId] = useState<number | undefined>(undefined);
   const [defaultDepth, setDefaultDepth] = useState<Depth>("standard");
   const [defaultTemplate, setDefaultTemplate] = useState<TemplateName>("slate");
+  const [apiKeySet, setApiKeySet] = useState(true);
+  const [fakeMode, setFakeMode] = useState(false);
   const [text, setText] = useState("");
   const [overrides, setOverrides] = useState<Record<number, RowOverride>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -35,6 +37,8 @@ export default function AddJobsScreen() {
       .then((s) => {
         setDefaultDepth(s.default_depth);
         setDefaultTemplate(s.default_template);
+        setApiKeySet(s.api_key_set);
+        setFakeMode(s.fake_mode);
       })
       .catch(() => undefined);
   }, []);
@@ -133,6 +137,18 @@ export default function AddJobsScreen() {
             onChange={(e) => setText(e.target.value)}
           />
         </div>
+
+        {!apiKeySet && !fakeMode ? (
+          <div className="alert alert-error">
+            No API key set — add ANTHROPIC_API_KEY to .env and restart, or use MCP mode.
+            Submitting now will fail at generation.
+          </div>
+        ) : (
+          <p className="muted">
+            Generated with your Anthropic API key (~$0.15–$3 each, by research depth). Prefer
+            your own Claude agent? See MCP mode in Settings.
+          </p>
+        )}
       </div>
 
       {urls.length > 0 && (

@@ -86,6 +86,46 @@ export default function SettingsScreen() {
       </div>
 
       <div className="card">
+        <div className="card-title">How generation works</div>
+        <div className="field">
+          <label className="field-label">Web app (this browser)</label>
+          <p className="muted">
+            Applications you create on the Add Jobs page are generated with the Anthropic API,
+            billed to your API key.
+          </p>
+          <p>
+            {settings.api_key_set ? (
+              <span className="pill pill-ok">API key: set</span>
+            ) : (
+              <span className="pill pill-warn">API key: not set</span>
+            )}
+            {settings.fake_mode && <span className="pill" style={{ marginLeft: "0.4rem" }}>Demo mode</span>}
+          </p>
+          {!settings.api_key_set && (
+            <p className="muted">
+              Add ANTHROPIC_API_KEY to the .env file and restart to generate from the web app.
+            </p>
+          )}
+          {settings.fake_mode && (
+            <p className="muted">Sample data only — no API calls, no key needed.</p>
+          )}
+        </div>
+        <div className="field">
+          <label className="field-label">Your own AI agent (MCP)</label>
+          <p className="muted">
+            Connect Tailored to Claude Code (or any MCP-capable agent) and it does the work on
+            your own subscription — no API key used. Ask your agent to read Tailored's workflow
+            guide, then say "tailor my profile for &lt;job url&gt;".
+          </p>
+          <p className="muted">
+            These applications show a depth of "external" on the dashboard, and the same
+            truthfulness guard applies. See the setup steps in the README, or
+            docs/EXTENDING.md for the full tool contract.
+          </p>
+        </div>
+      </div>
+
+      <div className="card">
         <div className="card-title">Defaults</div>
         <div className="field" style={{ maxWidth: "20rem" }}>
           <label className="field-label">Default template</label>
