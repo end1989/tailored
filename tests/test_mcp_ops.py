@@ -389,6 +389,72 @@ def test_add_profile_evidence_merges_skill_groups(engine, profile_id):
     assert groups["Testing"] == ["pytest", "vitest"]
 
 
+def test_add_profile_evidence_strips_skill_items(engine, profile_id):
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        skill_groups=[
+            # "Python" (whitespace) dedups against the existing clean "Python";
+            # " Go " is new and must persist stripped in both the merge path
+            # (Languages & Frameworks, an existing label) and the new-group
+            # append path (Deployment, a brand new label).
+            {"label": "languages & frameworks", "items": [" Python ", " Go "]},
+            {"label": "Deployment", "items": [" Go ", "Docker "]},
+        ],
+    )
+    groups = {g["label"]: g["items"] for g in result["master_profile"]["skills"]}
+    assert groups["Languages & Frameworks"] == [
+        "Python", "TypeScript", "SQL", "FastAPI", "Flask", "Go",
+    ]
+    assert groups["Deployment"] == ["Go", "Docker"]
+
+    reloaded = mcp_ops.get_master_profile(engine, profile_id)["master_profile"]
+    reloaded_groups = {g["label"]: g["items"] for g in reloaded["skills"]}
+    assert reloaded_groups["Languages & Frameworks"][-1] == "Go"
+    assert reloaded_groups["Deployment"] == ["Go", "Docker"]
+
+
+def test_add_profile_evidence_dedups_duplicate_project_within_payload(
+    engine, profile_id
+):
+    """Two projects with the same name in ONE payload: first added, second skipped."""
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        projects=[
+            {"name": "Brand New Project", "description": "first copy"},
+            {"name": "brand new project ", "description": "second copy, duplicate"},
+        ],
+    )
+    assert result["added_projects"] == ["Brand New Project"]
+    assert result["skipped_projects"] == ["brand new project "]
+
+    names = [p["name"] for p in result["master_profile"]["projects"]]
+    assert names.count("Brand New Project") == 1
+    by_name = {p["name"]: p for p in result["master_profile"]["projects"]}
+    assert by_name["Brand New Project"]["description"] == "first copy"
+
+
+def test_add_profile_evidence_dedups_duplicate_skill_group_within_payload(
+    engine, profile_id
+):
+    """Two skill_groups with the same label in ONE payload merge into one group."""
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        skill_groups=[
+            {"label": "Cloud", "items": ["AWS"]},
+            {"label": "cloud ", "items": ["GCP", "AWS"]},
+        ],
+    )
+    assert result["skill_groups_added"] == ["Cloud"]
+    assert result["skill_groups_merged"] == ["Cloud"]
+
+    matching = [g for g in result["master_profile"]["skills"] if g["label"] == "Cloud"]
+    assert len(matching) == 1
+    assert matching[0]["items"] == ["AWS", "GCP"]
+
+
 def test_add_profile_evidence_appends_summary_note(engine, profile_id):
     original = mcp_ops.get_master_profile(engine, profile_id)["master_profile"][
         "summary_notes"

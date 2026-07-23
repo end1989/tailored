@@ -273,15 +273,17 @@ def add_profile_evidence(
             key = grp.label.strip().lower()
             existing = existing_by_label.get(key)
             if existing is None:
+                grp.items = [item.strip() for item in grp.items]
                 master.skills.append(grp)
                 existing_by_label[key] = grp
                 groups_added.append(grp.label)
             else:
                 present = {i.strip().lower() for i in existing.items}
                 for item in grp.items:
-                    if item.strip().lower() not in present:
-                        existing.items.append(item)
-                        present.add(item.strip().lower())
+                    item_clean = item.strip()
+                    if item_clean.lower() not in present:
+                        existing.items.append(item_clean)
+                        present.add(item_clean.lower())
                 groups_merged.append(existing.label)
 
         # Summary note: append (blank-line join) when non-empty after strip.

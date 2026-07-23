@@ -38,6 +38,12 @@ processing that application (`queued`, `fetching`, `researching`, or
 `rendering`) - retry once it finishes or create a separate application for
 the agent run.
 
+`add_profile_evidence` and other profile writes have no such guard: they
+use last-writer-wins on the whole profile record, so don't hand-edit a
+profile in the web UI while an agent is writing to it (and vice-versa) -
+this is a single-user local app and simultaneous edits to the same profile
+are unsupported.
+
 ## 2. The pipeline's provider seam (any model)
 
 Every AI call in the built-in pipeline goes through one method:
