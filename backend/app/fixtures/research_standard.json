@@ -1,0 +1,21 @@
+{
+  "mission": "Northwind Labs builds logistics-visibility software that gives mid-market shippers real-time tracking of freight across road, rail, and ocean.",
+  "products": [
+    "Northwind Track - real-time shipment visibility platform",
+    "Northwind Signals - delay-prediction API for supply chain teams"
+  ],
+  "news": [],
+  "tech_stack_signals": [
+    "Careers page lists Python and PostgreSQL for backend roles",
+    "About page describes an API-first platform running on AWS"
+  ],
+  "culture_language": [
+    "Ship small, ship often",
+    "Customer-obsessed",
+    "Engineers own their services end to end"
+  ],
+  "sources": [
+    "https://northwindlabs.com/about",
+    "https://northwindlabs.com/careers"
+  ]
+}

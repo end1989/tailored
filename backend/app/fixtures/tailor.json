@@ -1,0 +1,103 @@
+{
+  "resume": {
+    "contact": {
+      "name": "Jordan Rivera",
+      "email": "jordan.rivera@example.com",
+      "phone": "+1 (555) 210-4477",
+      "location": "Portland, OR",
+      "links": [
+        {"label": "GitHub", "url": "https://github.com/jordanrivera"},
+        {"label": "LinkedIn", "url": "https://www.linkedin.com/in/jordan-rivera-dev"}
+      ]
+    },
+    "headline": "Senior Backend Engineer - Python, FastAPI, PostgreSQL",
+    "summary": "Backend engineer with 8 years shipping Python services and REST APIs on PostgreSQL and AWS. Led a monolith-to-services decomposition, built a FastAPI pipeline handling 40M events/day, and owns CI/CD end to end - a direct match for Northwind Labs' Python platform and its engineers-own-their-services culture.",
+    "sections": [
+      {
+        "type": "experience",
+        "title": "Experience",
+        "items": [
+          {
+            "company": "Cascade Analytics",
+            "role": "Senior Software Engineer",
+            "start": "2021-03",
+            "end": null,
+            "location": "Portland, OR",
+            "bullets": [
+              "Designed and shipped a FastAPI event-ingestion service handling 40M events/day with p99 latency under 120ms",
+              "Led decomposition of a monolithic Django app into 6 domain services on PostgreSQL, cutting deploy time from 45 minutes to 8 minutes",
+              "Introduced contract tests and CI quality gates with pytest and GitHub Actions, reducing production incidents by 35%",
+              "Mentored 3 junior engineers through weekly design reviews and pairing rotations"
+            ]
+          },
+          {
+            "company": "Brightline Software",
+            "role": "Software Engineer",
+            "start": "2018-06",
+            "end": "2021-02",
+            "location": "Seattle, WA",
+            "bullets": [
+              "Built Flask REST APIs powering a customer billing portal used by 12,000 accounts",
+              "Optimized slow PostgreSQL reporting queries, cutting nightly batch runtime from 4 hours to 50 minutes",
+              "Implemented Stripe webhook processing with idempotent handlers and dead-letter retries"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "projects",
+        "title": "Projects",
+        "items": [
+          {
+            "name": "queuelite",
+            "description": "Open-source lightweight Python task queue backed by SQLite",
+            "url": "https://github.com/jordanrivera/queuelite",
+            "bullets": [
+              "Built a polling worker with visibility timeouts and at-least-once delivery guarantees",
+              "Published to PyPI with full type hints; 400+ GitHub stars"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "skills",
+        "title": "Skills",
+        "groups": [
+          {
+            "label": "Languages & Frameworks",
+            "items": ["Python", "TypeScript", "SQL", "FastAPI", "Flask"]
+          },
+          {
+            "label": "Infrastructure & Tools",
+            "items": ["PostgreSQL", "Docker", "GitHub Actions", "Redis", "AWS (ECS, S3, RDS)"]
+          }
+        ]
+      },
+      {
+        "type": "education",
+        "title": "Education",
+        "items": [
+          {
+            "institution": "University of Washington",
+            "credential": "B.S. Computer Science",
+            "year": "2018",
+            "detail": "Focus in distributed systems"
+          }
+        ]
+      },
+      {
+        "type": "certifications",
+        "title": "Certifications",
+        "items": [
+          {
+            "name": "AWS Certified Developer - Associate",
+            "issuer": "Amazon Web Services",
+            "year": "2023"
+          }
+        ]
+      }
+    ]
+  },
+  "cover_letter_md": "Dear Northwind Labs hiring team,\n\nYour March engineering post about replacing Celery with a Postgres-backed queue caught my attention - I built and open-sourced queuelite, a SQLite-backed task queue with visibility timeouts and at-least-once delivery, so I have lived with exactly the tradeoffs that migration involves.\n\nAt Cascade Analytics I designed a FastAPI ingestion service that handles 40M events/day at a p99 under 120ms, and led the decomposition of a Django monolith into six PostgreSQL-backed services - the same Python/FastAPI/PostgreSQL stack your blog describes. I also own our CI/CD: the contract tests and GitHub Actions gates I introduced cut production incidents by 35%.\n\n\"Ship small, ship often\" matches how I already work - the 45-to-8-minute deploy improvement above existed precisely so we could. I would welcome the chance to bring that bias for small, safe releases to the Signals platform as it scales after your Series B.\n\nThank you for your consideration,\n\nJordan Rivera",
+  "tailoring_notes": "Led with the Cascade Analytics FastAPI ingestion work because the posting and Northwind's engineering blog emphasize Python/FastAPI event pipelines at scale. Kept the PostgreSQL optimization and CI/CD bullets prominent to hit the must-haves, and surfaced the queuelite project because the company publicly migrated to a Postgres-backed queue. Dropped the Docker containerization bullet from Brightline to keep the resume to one page. All employers, titles, dates, education, and the AWS certification are verbatim from the master profile."
+}

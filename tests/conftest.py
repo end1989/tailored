@@ -56,3 +56,18 @@ def app(engine, fake_settings):
 @pytest.fixture()
 def client(app):
     return TestClient(app)
+
+
+from pathlib import Path
+
+import pytest
+
+from backend.app.services.claude import ClaudeService
+
+FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
+
+
+@pytest.fixture
+def claude_fake() -> ClaudeService:
+    """Fixture-backed ClaudeService; never touches the network."""
+    return ClaudeService(fake_mode=True, fixtures_dir=FIXTURES_DIR)

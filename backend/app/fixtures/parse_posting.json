@@ -1,0 +1,30 @@
+{
+  "title": "Senior Backend Engineer",
+  "company": "Northwind Labs",
+  "company_domain": "northwindlabs.com",
+  "must_haves": [
+    "5+ years building backend services in Python",
+    "Production experience designing and operating REST APIs",
+    "Strong PostgreSQL skills including query optimization",
+    "Experience owning CI/CD pipelines and deployment automation"
+  ],
+  "nice_to_haves": [
+    "FastAPI in production",
+    "Event-driven or queue-based architectures",
+    "AWS (ECS, RDS)",
+    "Mentoring junior engineers"
+  ],
+  "keywords": [
+    "Python",
+    "FastAPI",
+    "PostgreSQL",
+    "REST",
+    "microservices",
+    "CI/CD",
+    "AWS",
+    "observability",
+    "event-driven"
+  ],
+  "seniority": "senior",
+  "tone": "pragmatic, engineering-driven, ownership-focused"
+}

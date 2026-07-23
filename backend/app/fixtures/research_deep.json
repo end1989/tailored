@@ -1,0 +1,31 @@
+{
+  "mission": "Northwind Labs builds logistics-visibility software that gives mid-market shippers real-time tracking of freight across road, rail, and ocean.",
+  "products": [
+    "Northwind Track - real-time shipment visibility platform",
+    "Northwind Signals - delay-prediction API for supply chain teams",
+    "Northwind Atlas - vetted carrier network directory launched January 2026"
+  ],
+  "news": [
+    "Raised a $28M Series B (April 2026) led by Foundry Group to expand the Signals prediction platform",
+    "Launched Northwind Atlas in January 2026 and onboarded 4,000 carriers in the first quarter",
+    "Engineering blog (March 2026) details migrating event ingestion from Celery to a Postgres-backed queue"
+  ],
+  "tech_stack_signals": [
+    "Python 3.12 + FastAPI microservices per the engineering blog",
+    "PostgreSQL as the primary datastore, including queue workloads",
+    "AWS ECS deployments with GitHub Actions CI",
+    "OpenTelemetry tracing rollout described in a 2026 blog post"
+  ],
+  "culture_language": [
+    "Ship small, ship often",
+    "Customer-obsessed",
+    "Engineers own their services end to end",
+    "Written design docs before major changes"
+  ],
+  "sources": [
+    "https://northwindlabs.com/about",
+    "https://northwindlabs.com/blog/postgres-queue-migration",
+    "https://northwindlabs.com/careers",
+    "https://techcrunch.com/2026/04/14/northwind-labs-raises-28m-series-b/"
+  ]
+}
