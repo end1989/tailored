@@ -6,7 +6,7 @@ import pytest
 
 from backend.app.schemas import ParsedPosting, ResearchFindings, UsageInfo
 from backend.app.services.claude import ClaudeService
-from backend.app.services.research import parse_posting
+from backend.app.services.research import parse_posting, research_company
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
 
@@ -63,3 +63,60 @@ def test_parse_posting_returns_fixture_and_records_call(claude_fake):
     assert call["user_content"] == RAW_POSTING
     assert call["schema_model"] is ParsedPosting
     assert call["tools"] is None
+
+
+PARSED = ParsedPosting(
+    title="Senior Backend Engineer",
+    company="Acme Robotics",
+    company_domain="acmerobotics.example.com",
+    must_haves=["5+ years Python", "PostgreSQL"],
+    nice_to_haves=["Kubernetes"],
+    keywords=["Python", "FastAPI", "AWS"],
+    seniority="senior",
+    tone="casual startup",
+)
+
+
+def test_quick_returns_none_with_zero_calls(claude_fake):
+    assert research_company(PARSED, "quick", claude_fake) is None
+    assert claude_fake.calls == []
+
+
+def test_standard_uses_single_web_fetch_tool_with_allowed_domains(claude_fake):
+    result = research_company(PARSED, "standard", claude_fake)
+    assert result is not None
+    findings, usage = result
+    assert isinstance(findings, ResearchFindings)
+    assert isinstance(usage, UsageInfo)
+    assert len(claude_fake.calls) == 1
+    call = claude_fake.calls[0]
+    assert call["task"] == "research_standard"
+    assert call["schema_model"] is ResearchFindings
+    assert isinstance(call["tools"], list) and len(call["tools"]) == 1
+    tool = call["tools"][0]
+    assert tool["type"] == "web_fetch_20260209"
+    assert tool["name"] == "web_fetch"
+    assert tool["max_uses"] == 8
+    assert tool["allowed_domains"] == ["acmerobotics.example.com"]
+
+
+def test_standard_without_domain_omits_allowed_domains(claude_fake):
+    parsed = PARSED.model_copy(update={"company_domain": None})
+    result = research_company(parsed, "standard", claude_fake)
+    assert result is not None
+    tool = claude_fake.calls[0]["tools"][0]
+    assert "allowed_domains" not in tool
+
+
+def test_deep_uses_search_then_fetch_tools(claude_fake):
+    result = research_company(PARSED, "deep", claude_fake)
+    assert result is not None
+    findings, _usage = result
+    assert isinstance(findings, ResearchFindings)
+    call = claude_fake.calls[0]
+    assert call["task"] == "research_deep"
+    assert [t["type"] for t in call["tools"]] == [
+        "web_search_20260209",
+        "web_fetch_20260209",
+    ]
+    assert [t["max_uses"] for t in call["tools"]] == [8, 8]

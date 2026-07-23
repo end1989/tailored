@@ -26,3 +26,70 @@ def parse_posting(raw_text: str, claude: ClaudeService) -> tuple[ParsedPosting, 
     )
     assert isinstance(parsed, ParsedPosting)
     return parsed, usage
+
+
+RESEARCH_STANDARD_SYSTEM = """You are researching a company to help tailor a job application. You have the web_fetch tool, restricted to the company's own website. Fetch the homepage and one or two obvious pages (about, products, careers) within the tool's use limit.
+
+Report only what the company's own site says:
+- mission: how the company describes its purpose, in one or two sentences.
+- products: the main products or services it offers, as short phrases.
+- culture_language: distinctive words and phrases the company uses to describe itself and how it works.
+- tech_stack_signals: technologies the site explicitly mentions, if any.
+- news: leave empty unless the site itself highlights recent announcements.
+- sources: the exact URLs you fetched.
+
+If a fetch fails or the domain is unavailable, fill in what you can from the posting context and leave the rest empty. Never invent facts."""
+
+RESEARCH_DEEP_SYSTEM = """You are researching a company in depth to help tailor a high-priority job application. You have web_search and web_fetch tools with limited uses - spend them deliberately: the company's own site first, then recent news, then engineering blog / tech-stack sources.
+
+Report:
+- mission: the company's stated purpose.
+- products: the main products or services it offers.
+- news: notable items from roughly the last 12 months (funding, launches, partnerships, leadership changes), each as one short sentence.
+- tech_stack_signals: languages, frameworks, and infrastructure mentioned in engineering blogs, job postings, talks, or public repositories.
+- culture_language: distinctive vocabulary the company uses about itself, its values, and how it works.
+- sources: the URL of every page you actually used. Every claim above must be traceable to one of these sources. Never invent facts or URLs."""
+
+
+def _research_user_content(parsed: ParsedPosting) -> str:
+    return (
+        "Company: " + parsed.company + "\n"
+        "Company domain: " + (parsed.company_domain or "unknown") + "\n"
+        "Role being applied for: " + parsed.title + "\n\n"
+        "Parsed posting JSON:\n" + parsed.model_dump_json(indent=2)
+    )
+
+
+def research_company(
+    parsed: ParsedPosting, depth: str, claude: ClaudeService
+) -> tuple[ResearchFindings, UsageInfo] | None:
+    if depth == "quick":
+        return None
+    if depth == "standard":
+        tool: dict = {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8}
+        if parsed.company_domain:
+            tool["allowed_domains"] = [parsed.company_domain]
+        findings, usage = claude.structured(
+            task="research_standard",
+            system=RESEARCH_STANDARD_SYSTEM,
+            user_content=_research_user_content(parsed),
+            schema_model=ResearchFindings,
+            tools=[tool],
+        )
+        assert isinstance(findings, ResearchFindings)
+        return findings, usage
+    if depth == "deep":
+        tools: list[dict] = [
+            {"type": "web_search_20260209", "name": "web_search", "max_uses": 8},
+            {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 8},
+        ]
+        findings, usage = claude.structured(
+            task="research_deep",
+            system=RESEARCH_DEEP_SYSTEM,
+            user_content=_research_user_content(parsed),
+            schema_model=ResearchFindings,
+            tools=tools,
+        )
+        assert isinstance(findings, ResearchFindings)
+        return findings, usage
+    raise ValueError(f"Unknown research depth: {depth!r}")
