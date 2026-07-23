@@ -101,4 +101,5 @@ load-bearing — a downstream tool uses them to match projects to job postings.
 Before finishing, re-read every bullet and ask: "which file or git output
 proves this?" Delete or soften anything you cannot answer for. Flag anything
 that looks private or sensitive (client names, keys, unreleased work) so I can
-decide whether to exclude it. Then give me the final report ready to copy.
+decide whether to exclude it — reference where it lives; never reproduce
+secret values themselves. Then give me the final report ready to copy.

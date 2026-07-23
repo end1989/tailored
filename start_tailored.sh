@@ -129,7 +129,7 @@ if [ "$HAVE_KEY" = "0" ] && [ -t 0 ]; then
     while [ "$HAVE_KEY" = "0" ]; do
         echo ""
         echo "No Anthropic API key found yet."
-        echo "  [1] Add my Anthropic API key now (opens \${EDITOR:-nano})"
+        echo "  [1] Add my Anthropic API key now (opens ${EDITOR:-nano})"
         echo "  [2] Try it in demo mode (no key needed, sample data)"
         echo "  [3] Exit"
         read -r -p "Choose 1, 2, or 3: " CHOICE

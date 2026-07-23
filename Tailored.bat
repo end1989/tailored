@@ -29,7 +29,7 @@ if not defined PYTHON_EXE (
     echo.
     echo Opening the download page for you...
     start "" "https://www.python.org/downloads/"
-    pause
+    if "%SETUP_ONLY%"=="0" pause
     exit /b 1
 )
 
@@ -42,7 +42,7 @@ if not exist ".venv\Scripts\python.exe" (
     if errorlevel 1 (
         echo.
         echo Failed to create the Python virtual environment.
-        pause
+        if "%SETUP_ONLY%"=="0" pause
         exit /b 1
     )
 )
@@ -64,7 +64,7 @@ if "%NEED_DEPS%"=="1" (
     if errorlevel 1 (
         echo.
         echo Failed to install dependencies. Check the error above, then re-run Tailored.bat.
-        pause
+        if "%SETUP_ONLY%"=="0" pause
         exit /b 1
     )
     copy /y "requirements.txt" ".venv\.deps-installed" >nul
@@ -110,6 +110,7 @@ echo No Anthropic API key found yet.
 echo   [1] Add my Anthropic API key now (opens Notepad)
 echo   [2] Try it in demo mode (no key needed, sample data)
 echo   [3] Exit
+set "MENU_CHOICE="
 set /p "MENU_CHOICE=Choose 1, 2, or 3: "
 
 if "%MENU_CHOICE%"=="1" (
@@ -154,7 +155,7 @@ set "RC=%errorlevel%"
 if not "%RC%"=="0" (
     echo.
     echo Tailored stopped with an error - see the message above.
-    pause
+    if "%SETUP_ONLY%"=="0" pause
 )
 exit /b %RC%
 
