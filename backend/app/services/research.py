@@ -28,7 +28,7 @@ def parse_posting(raw_text: str, claude: ClaudeService) -> tuple[ParsedPosting, 
     return parsed, usage
 
 
-RESEARCH_STANDARD_SYSTEM = """You are researching a company to help tailor a job application. You have the web_fetch tool, restricted to the company's own website. Fetch the homepage and one or two obvious pages (about, products, careers) within the tool's use limit.
+RESEARCH_STANDARD_SYSTEM = """You are researching a company to help tailor a job application. You have the web_fetch tool, restricted to the company's own website. Start by fetching the company website URL provided in the input; you may follow links found on fetched pages. Fetch the homepage and one or two obvious pages (about, products, careers) within the tool's use limit.
 
 Report only what the company's own site says:
 - mission: how the company describes its purpose, in one or two sentences.
@@ -40,7 +40,7 @@ Report only what the company's own site says:
 
 If a fetch fails or the domain is unavailable, fill in what you can from the posting context and leave the rest empty. Never invent facts."""
 
-RESEARCH_DEEP_SYSTEM = """You are researching a company in depth to help tailor a high-priority job application. You have web_search and web_fetch tools with limited uses - spend them deliberately: the company's own site first, then recent news, then engineering blog / tech-stack sources.
+RESEARCH_DEEP_SYSTEM = """You are researching a company in depth to help tailor a high-priority job application. You have web_search and web_fetch tools with limited uses - spend them deliberately: the company's own site first, then recent news, then engineering blog / tech-stack sources. Start by fetching the company website URL provided in the input; you may follow links found on fetched pages.
 
 Report:
 - mission: the company's stated purpose.
@@ -52,10 +52,13 @@ Report:
 
 
 def _research_user_content(parsed: ParsedPosting) -> str:
+    domain_line = "Company domain: " + (parsed.company_domain or "unknown") + "\n"
+    if parsed.company_domain:
+        domain_line += "Company website: https://" + parsed.company_domain + "/\n"
     return (
         "Company: " + parsed.company + "\n"
-        "Company domain: " + (parsed.company_domain or "unknown") + "\n"
-        "Role being applied for: " + parsed.title + "\n\n"
+        + domain_line
+        + "Role being applied for: " + parsed.title + "\n\n"
         "Parsed posting JSON:\n" + parsed.model_dump_json(indent=2)
     )
 

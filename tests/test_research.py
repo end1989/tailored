@@ -98,6 +98,7 @@ def test_standard_uses_single_web_fetch_tool_with_allowed_domains(claude_fake):
     assert tool["name"] == "web_fetch"
     assert tool["max_uses"] == 8
     assert tool["allowed_domains"] == ["acmerobotics.example.com"]
+    assert "https://acmerobotics.example.com" in call["user_content"]
 
 
 def test_standard_without_domain_omits_allowed_domains(claude_fake):
