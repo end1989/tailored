@@ -215,6 +215,41 @@ def test_truthfulness_failure_sets_error(
         assert "Fake Corp" in (app.error_message or "")
 
 
+def test_mark_error_writes_status_after_failed_transaction(engine, claude_fake):
+    """_mark_error must record status='error' even when the session's
+    transaction already failed (e.g. a SQLite "database is locked"
+    OperationalError during a prior commit).
+
+    A raw "SELECT from a nonexistent table" does NOT poison a SQLAlchemy
+    Session on SQLite (verified empirically: the DBAPI error is local to
+    that statement). The state this bug is about -- Session.commit()
+    raising PendingRollbackError on the *next* operation -- only appears
+    after a failed ORM flush/commit. So this test provokes it genuinely:
+    it forces a real flush failure (duplicate primary key -> IntegrityError
+    on commit) on an unrelated row, leaving the session's transaction
+    unusable, then calls `_mark_error` on the already-loaded `app` row.
+    """
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        job_id = session.get(Application, app_id).job_id
+        app_row = session.get(Application, app_id)
+
+        # Poison the session's transaction with a genuine flush failure.
+        dup_job = Job(id=job_id, url="https://dup.example.com", depth="standard")
+        session.add(dup_job)
+        try:
+            session.commit()
+        except Exception:
+            pass  # session's transaction now requires a rollback
+
+        pipeline._mark_error(session, app_row, "boom")
+
+    with Session(engine) as check:
+        row = check.get(Application, app_id)
+        assert row.status == "error"
+        assert row.error_message == "boom"
+
+
 def test_resume_after_paste_completes_needs_paste_application(
     engine, claude_fake, pipeline_settings, pdf_faked, monkeypatch
 ):

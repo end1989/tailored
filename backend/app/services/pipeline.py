@@ -41,6 +41,12 @@ def _set_status(session: Session, app: Application, status: str,
     session.refresh(app)
 
 
+def _mark_error(session: Session, app: Application, message: str) -> None:
+    """Write status='error' even if the session's transaction has failed."""
+    session.rollback()
+    _set_status(session, app, "error", error_message=message)
+
+
 def _add_usage(app: Application, usage: UsageInfo) -> None:
     app.input_tokens += usage.input_tokens
     app.output_tokens += usage.output_tokens
@@ -167,7 +173,7 @@ def process_application(app_id: int, engine=None,
                 session.commit()
             _run_from_research(session, app, job, claude)
         except Exception as exc:  # noqa: BLE001 - every failure is visible state
-            _set_status(session, app, "error", error_message=str(exc))
+            _mark_error(session, app, str(exc))
 
 
 def resume_after_paste(app_id: int, text: str, engine=None,
@@ -189,7 +195,7 @@ def resume_after_paste(app_id: int, text: str, engine=None,
             session.commit()
             _run_from_research(session, app, job, claude)
         except Exception as exc:  # noqa: BLE001
-            _set_status(session, app, "error", error_message=str(exc))
+            _mark_error(session, app, str(exc))
 
 
 def regenerate_application(app_id: int, feedback: str, engine=None,
@@ -228,4 +234,4 @@ def regenerate_application(app_id: int, feedback: str, engine=None,
             _tailor_and_render(session, app, master, contact, parsed,
                                findings, claude, feedback=feedback)
         except Exception as exc:  # noqa: BLE001
-            _set_status(session, app, "error", error_message=str(exc))
+            _mark_error(session, app, str(exc))
