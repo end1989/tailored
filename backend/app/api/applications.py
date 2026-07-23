@@ -2,6 +2,7 @@
 HTML preview, and export downloads."""
 from __future__ import annotations
 
+from datetime import timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -58,7 +59,7 @@ def application_summary(app_row: Application, job: Job) -> dict[str, Any]:
         "company": parsed.company if parsed is not None else None,
         "title": parsed.title if parsed is not None else None,
         "cost_usd": app_row.cost_usd,
-        "created_at": app_row.created_at.isoformat(),
+        "created_at": app_row.created_at.replace(tzinfo=timezone.utc).isoformat(),
         "error_message": app_row.error_message,
     }
 
@@ -234,6 +235,11 @@ def regenerate(
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
     app_row, job = _get_app_and_job(session, application_id)
+    if app_row.status in PROCESSING_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
     if not body.feedback.strip():
         raise HTTPException(status_code=422, detail="feedback must not be empty")
     background_tasks.add_task(pipeline.regenerate_application, app_row.id, body.feedback)

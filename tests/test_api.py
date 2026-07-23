@@ -13,6 +13,7 @@ from backend.app.main import create_app
 from backend.app.models import Application
 from backend.app.schemas import Contact, MasterProfile, MPExperience, TaggedBullet, UsageInfo
 from backend.app.services import intake, pipeline, render
+from backend.app.services.claude import ClaudeError
 
 CONTACT = {
     "name": "Avery Kim",
@@ -183,6 +184,20 @@ def test_build_master_profile(client, monkeypatch):
     assert recorded["docs"] == ["Avery resume text"]
     assert body["master_profile"]["experiences"][0]["company"] == "Meridian Analytics"
     assert body["usage"] == {"input_tokens": 1000, "output_tokens": 500, "cost_usd": 0.0175}
+
+
+def test_build_master_profile_claude_error_returns_502(client, monkeypatch):
+    pid = make_profile(client)
+    client.post(f"/api/profiles/{pid}/documents",
+                json={"filename": "resume.txt", "text": "Avery resume text"})
+
+    def fake_build(docs, claude):
+        raise ClaudeError("boom")
+
+    monkeypatch.setattr(intake, "build_master_profile", fake_build)
+    resp = client.post(f"/api/profiles/{pid}/build")
+    assert resp.status_code == 502
+    assert "boom" in resp.json()["detail"]
 
 
 def make_application(client, pid: int, **job_kwargs) -> int:
@@ -403,6 +418,10 @@ def test_paste_and_retry_conflict_while_processing(client):
         session.commit()
     assert client.post(f"/api/applications/{app_id}/paste", json={"text": "x"}).status_code == 409
     assert client.post(f"/api/applications/{app_id}/retry").status_code == 409
+    assert client.post(
+        f"/api/applications/{app_id}/regenerate", json={"feedback": "x"}
+    ).status_code == 409
     # no new pipeline calls were scheduled by the rejected requests
     assert client.calls["paste"] == []
+    assert client.calls["regenerate"] == []
     assert client.calls["process"] == [app_id]  # only the original batch-create schedule

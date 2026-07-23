@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
+from starlette.concurrency import run_in_threadpool
 
 from . import demo
 from .api import api_router
@@ -26,7 +27,11 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if settings.fake_mode:
-            demo.seed_demo(engine, app.state.claude, settings.data_dir)
+            # demo.seed_demo runs Playwright's sync API (in render_pdf) to
+            # generate real demo PDFs; the sync API refuses to run inside an
+            # already-running asyncio loop, so it must be offloaded to a
+            # worker thread rather than awaited directly here.
+            await run_in_threadpool(demo.seed_demo, engine, app.state.claude, settings.data_dir)
         yield
 
     app = FastAPI(title="Tailored", lifespan=lifespan)

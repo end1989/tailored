@@ -57,6 +57,24 @@ def test_settings_explicit_none_api_key_beats_env(monkeypatch):
     assert s.anthropic_api_key is None
 
 
+def test_settings_empty_host_defaults(monkeypatch):
+    monkeypatch.setenv("TAILORED_HOST", "")
+    s = Settings()
+    assert s.host == "127.0.0.1"
+
+
+def test_settings_empty_port_defaults(monkeypatch):
+    monkeypatch.setenv("TAILORED_PORT", "")
+    s = Settings()
+    assert s.port == 8547
+
+
+def test_settings_non_numeric_port_defaults(monkeypatch):
+    monkeypatch.setenv("TAILORED_PORT", "not-a-number")
+    s = Settings()
+    assert s.port == 8547
+
+
 def test_user_settings_defaults_when_missing(tmp_path):
     values = load_user_settings(tmp_path)
     assert values == {

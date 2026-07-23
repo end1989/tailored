@@ -45,13 +45,16 @@ class Settings:
         else:
             self.fake_mode = os.environ.get("TAILORED_FAKE") == "1"
 
-        self.host = host if host is not None else os.environ.get("TAILORED_HOST", "127.0.0.1")
+        self.host = host if host is not None else (os.environ.get("TAILORED_HOST") or "127.0.0.1")
 
         if port is not None:
             self.port = port
         else:
             env_port = os.environ.get("TAILORED_PORT", "")
-            self.port = int(env_port) if env_port else 8547
+            try:
+                self.port = int(env_port) if env_port else 8547
+            except ValueError:
+                self.port = 8547
 
 
 @lru_cache(maxsize=1)

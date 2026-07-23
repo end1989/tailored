@@ -19,6 +19,7 @@ from ..models import (
 )
 from ..schemas import Contact, MasterProfile
 from ..services import intake
+from ..services.claude import ClaudeError
 
 router = APIRouter()
 
@@ -160,9 +161,14 @@ def build_profile(
     ).all()
     if not docs:
         raise HTTPException(status_code=422, detail="upload at least one document first")
-    master, contact, usage = intake.build_master_profile(
-        [d.text for d in docs], request.app.state.claude
-    )
+    try:
+        master, contact, usage = intake.build_master_profile(
+            [d.text for d in docs], request.app.state.claude
+        )
+    except ClaudeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"profile build failed: {exc}")
     set_master_profile(profile, master)
     set_contact(profile, contact)
     profile.updated_at = _utcnow()

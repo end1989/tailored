@@ -74,6 +74,10 @@ class ClaudeService:
 
     def _get_client(self):
         if self._client is None:
+            if not self.api_key:
+                raise ClaudeError(
+                    "No API key set - add ANTHROPIC_API_KEY to .env and restart the app"
+                )
             import anthropic
 
             self._client = anthropic.Anthropic(api_key=self.api_key)
