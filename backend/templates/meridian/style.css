@@ -1,0 +1,94 @@
+/* ============================================================
+   Meridian — classic understated serif.
+   Corporate, finance, healthcare, government.
+   Georgia/Times stack, small-caps section titles, hairline
+   rules, near-black on white, generous margins.
+   ============================================================ */
+
+body {
+  font-family: Georgia, "Times New Roman", Times, serif;
+  color: #161616;
+  line-height: 1.4;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.resume-header {
+  text-align: center;
+  padding-bottom: var(--space-3);
+  border-bottom: 0.5pt solid #8a8a8a;
+}
+
+.name {
+  font-size: 19pt;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.headline {
+  font-size: 10.5pt;
+  font-style: italic;
+  color: #3a3a3a;
+  margin-top: var(--space-1);
+}
+
+.contact-line {
+  font-size: 9pt;
+  color: #3a3a3a;
+  margin-top: var(--space-2);
+}
+
+.summary {
+  font-size: 10pt;
+  margin-top: var(--space-3);
+  text-align: left;
+}
+
+.section-title {
+  font-size: 10.5pt;
+  font-weight: 400;
+  font-variant: small-caps;
+  letter-spacing: 0.14em;
+  color: #161616;
+  border-bottom: 0.5pt solid #8a8a8a;
+  padding-bottom: 2px;
+}
+
+.item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.item-head .primary {
+  font-size: 10.5pt;
+  font-weight: 700;
+}
+
+.item-head .secondary {
+  font-size: 10pt;
+  font-style: italic;
+  color: #2c2c2c;
+}
+
+.item-head .meta {
+  margin-left: auto;
+  font-size: 9pt;
+  color: #555555;
+}
+
+.bullets,
+.detail,
+.skill-group {
+  font-size: 9.5pt;
+}
+
+.skill-label {
+  font-weight: 700;
+}

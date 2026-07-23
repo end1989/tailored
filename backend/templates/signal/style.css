@@ -1,0 +1,109 @@
+/* ============================================================
+   Signal — bold. Design, marketing, creative.
+   Large headline, one accent color #C2410C (name underline bar
+   + section markers), confident whitespace.
+   ============================================================ */
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  color: #1c1917;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.resume-header {
+  margin-bottom: calc(var(--space-4) * 1.3);
+}
+
+.name {
+  display: inline-block;
+  font-size: 27pt;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  border-bottom: 4px solid #C2410C;
+  padding-bottom: 3px;
+}
+
+.headline {
+  font-size: 12pt;
+  font-weight: 600;
+  color: #44403c;
+  margin-top: var(--space-2);
+}
+
+.contact-line {
+  font-size: 9pt;
+  color: #57534e;
+  margin-top: var(--space-2);
+}
+
+.summary {
+  font-size: 10pt;
+  color: #292524;
+  margin-top: var(--space-3);
+  max-width: 44em;
+}
+
+.section {
+  margin-bottom: calc(var(--space-4) * 1.15);
+}
+
+.section-title {
+  font-size: 10pt;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #1c1917;
+}
+
+.section-title::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  background: #C2410C;
+  margin-right: var(--space-2);
+}
+
+.item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.item-head .primary {
+  font-size: 11pt;
+  font-weight: 700;
+}
+
+.item-head .secondary {
+  font-size: 10pt;
+  color: #44403c;
+}
+
+.item-head .meta {
+  margin-left: auto;
+  font-size: 9pt;
+  color: #78716c;
+}
+
+.bullets,
+.detail {
+  font-size: 9.5pt;
+}
+
+.skill-group {
+  font-size: 9.5pt;
+}
+
+.skill-label {
+  font-weight: 700;
+  color: #1c1917;
+}

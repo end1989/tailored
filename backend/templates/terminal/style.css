@@ -1,0 +1,103 @@
+/* ============================================================
+   Terminal — technical. Engineering, data.
+   Sans body with ui-monospace accents (skills, dates), left
+   border accent on section titles, projects read forward.
+   ============================================================ */
+
+body {
+  font-family: "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color: #14171c;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+.name {
+  font-size: 20pt;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.headline {
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 10pt;
+  color: #2f3742;
+  margin-top: var(--space-1);
+}
+
+.contact-line {
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 8.5pt;
+  color: #49525e;
+  margin-top: var(--space-2);
+}
+
+.summary {
+  font-size: 9.5pt;
+  color: #2f3742;
+  margin-top: var(--space-2);
+  max-width: 48em;
+}
+
+.section-title {
+  font-size: 9.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #14171c;
+  border-left: 3px solid #14171c;
+  padding-left: var(--space-2);
+}
+
+.item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.item-head .primary {
+  font-size: 10.5pt;
+  font-weight: 600;
+}
+
+.item-head .secondary {
+  font-size: 9.5pt;
+  color: #2f3742;
+}
+
+.item-head .meta {
+  margin-left: auto;
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 8.5pt;
+  color: #5b6470;
+}
+
+/* Projects read forward: heavier, mono name treatment */
+.section-projects .item-head .primary {
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 11pt;
+  font-weight: 700;
+}
+
+.bullets,
+.detail {
+  font-size: 9.5pt;
+}
+
+.skill-group {
+  font-size: 9.5pt;
+}
+
+.skill-label {
+  font-weight: 700;
+}
+
+.skill-items {
+  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-size: 9pt;
+}
