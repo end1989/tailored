@@ -140,6 +140,15 @@ tailored/
 └── data/                   # gitignored: SQLite db, exports/, settings.json
 ```
 
+## Known limitations
+
+- Dashboard polling stops until refresh if one status fetch fails.
+- Regenerating while the resume editor is open can let a stale Save overwrite the new version.
+- Project bullets aren't editable in the profile editor (preserved on save).
+- Browser-printing an exported resume.html always uses Letter (PDF exports honor the page-size setting).
+- Standard-depth research is domain-restricted only when a company domain was detected in the posting.
+- Token spend from a failed generation isn't counted into the displayed cost.
+
 ## Troubleshooting
 
 - **LinkedIn or other login-walled postings** — sites that block bots land the
