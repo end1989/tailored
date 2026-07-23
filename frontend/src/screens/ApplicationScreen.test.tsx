@@ -9,6 +9,7 @@ vi.mock("../api", () => ({
   pasteJobText: vi.fn(),
   updateContent: vi.fn(),
   regenerate: vi.fn(),
+  retryApplication: vi.fn(),
   previewUrl: (id: number) => `/api/applications/${id}/preview`,
   exportUrl: (id: number, kind: string) => `/api/applications/${id}/exports/${kind}`,
 }));
@@ -74,5 +75,15 @@ describe("ApplicationScreen", () => {
     expect(screen.getByRole("button", { name: "Cover Letter" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Research" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Exports" })).toBeInTheDocument();
+  });
+
+  it("shows a Retry button when status is error", async () => {
+    vi.mocked(api.getApplication).mockResolvedValue({
+      ...base,
+      status: "error",
+      error_message: "boom",
+    });
+    renderAt();
+    expect(await screen.findByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });

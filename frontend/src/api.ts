@@ -130,6 +130,10 @@ export function regenerate(id: number, feedback: string): Promise<ApplicationDet
   );
 }
 
+export async function retryApplication(id: number): Promise<ApplicationDetail> {
+  return request(`/applications/${id}/retry`, { method: "POST" });
+}
+
 // ---- settings ----
 
 export function getSettings(): Promise<SettingsShape> {

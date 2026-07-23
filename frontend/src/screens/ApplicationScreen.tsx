@@ -6,6 +6,7 @@ import {
   pasteJobText,
   previewUrl,
   regenerate,
+  retryApplication,
   updateContent,
 } from "../api";
 import type {
@@ -227,6 +228,19 @@ export default function ApplicationScreen() {
     }
   }
 
+  async function handleRetry() {
+    setBusy(true);
+    setError(null);
+    try {
+      await retryApplication(appId);
+      setPollNonce((n) => n + 1);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handlePaste() {
     if (pasteText.trim() === "") return;
     setBusy(true);
@@ -272,7 +286,12 @@ export default function ApplicationScreen() {
         <div className="alert alert-error">
           <strong>Generation failed:</strong> {detail.error_message ?? "Unknown error"}
           <div className="muted" style={{ marginTop: "0.25rem" }}>
-            Fix the issue (API key, network) and use "Regenerate with feedback" below to retry.
+            Fix the issue (API key, network) and click Retry to try again.
+          </div>
+          <div className="row" style={{ marginTop: "0.5rem" }}>
+            <button className="btn btn-primary" onClick={handleRetry} disabled={busy}>
+              {busy ? "Retrying..." : "Retry"}
+            </button>
           </div>
         </div>
       )}
