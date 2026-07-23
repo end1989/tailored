@@ -103,3 +103,34 @@ proves this?" Delete or soften anything you cannot answer for. Flag anything
 that looks private or sensitive (client names, keys, unreleased work) so I can
 decide whether to exclude it — reference where it lives; never reproduce
 secret values themselves. Then give me the final report ready to copy.
+
+### Step 5 — Save into Tailored (if connected)
+
+**If the Tailored MCP tools are available to you** (you can see
+`get_master_profile` and `add_profile_evidence`), close the loop and write the
+evidence straight into my master profile — no copy-paste:
+
+1. Call `get_master_profile` (or `list_profiles` if it reports more than one) to
+   get the `profile_id`.
+2. Map the report into the tool's argument shapes:
+   - Each **Standout Project** and each **Other Project** becomes an MPProject:
+     `{name, description (the one-liner), url (only if the repo actually has
+     one), bullets: [{text, tags}]}` — the Evidence bullets, each carrying the
+     skill/theme tags you already assigned.
+   - Each **Cross-Cutting Skills Evidence** line becomes a SkillGroup:
+     `{label, items: [...]}`.
+3. Call `add_profile_evidence(profile_id, projects=[...], skill_groups=[...])`
+   (optionally pass a one-line `summary_note` describing the scan). The tool is
+   **additive** — it never overwrites what I already have; a project whose name
+   already exists is skipped, and a skill group with an existing label has its
+   new items merged. Then tell me exactly what it reported as added, skipped, or
+   merged.
+
+The honesty rule still governs: only write projects, bullets, and skills you
+verified from real files and git history — whatever you save becomes ground
+truth for every future resume.
+
+**If the Tailored MCP tools are NOT connected,** just output the finished
+markdown report above and stop — I'll paste it into Tailored → **Profiles**
+(name it `portfolio-report.txt`) and click **Build**, as described at the top of
+this page.

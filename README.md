@@ -126,6 +126,12 @@ which blocks that row's web-UI paste/regenerate/edit actions until you save
 or delete it, and conversely MCP saves are rejected while the built-in
 pipeline is actively processing that same application.
 
+The same connected agent can also import your workspace projects straight into
+your master profile: run the
+[portfolio scan prompt](docs/portfolio-scan-prompt.md) and the agent writes its
+verified findings back through the `add_profile_evidence` tool (additive — it
+never overwrites what you already have), no copy-paste needed.
+
 ## Demo mode (no API key, fully offline)
 
 `Tailored.bat` / `start_tailored.sh` offer this automatically when no key is found.
