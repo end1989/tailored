@@ -1,0 +1,14 @@
+# runtime state (sqlite db, exports, settings.json)
+data/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# secrets
+.env
+
+# node (frontend/dist IS committed on purpose -- do not ignore it)
+frontend/node_modules/

@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+sqlmodel
+pydantic>=2
+anthropic
+httpx
+trafilatura
+jinja2
+markdown
+playwright
+pypdf
+python-docx
+python-multipart
+python-dotenv
+pytest
+respx
