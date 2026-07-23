@@ -181,3 +181,169 @@ def test_build_master_profile(client, monkeypatch):
     assert recorded["docs"] == ["Avery resume text"]
     assert body["master_profile"]["experiences"][0]["company"] == "Meridian Analytics"
     assert body["usage"] == {"input_tokens": 1000, "output_tokens": 500, "cost_usd": 0.0175}
+
+
+def make_application(client, pid: int, **job_kwargs) -> int:
+    job = {"url": "https://jobs.example.com/posting", **job_kwargs}
+    resp = client.post("/api/applications/batch", json={"profile_id": pid, "jobs": [job]})
+    assert resp.status_code == 200, resp.text
+    return resp.json()[0]["id"]
+
+
+def test_batch_creates_applications_and_schedules(client):
+    pid = make_profile(client)
+    resp = client.post("/api/applications/batch", json={
+        "profile_id": pid,
+        "jobs": [
+            {"url": "https://jobs.example.com/a"},
+            {"url": "https://jobs.example.com/b", "depth": "deep", "template": "terminal"},
+        ],
+        "default_depth": "quick",
+    })
+    assert resp.status_code == 200, resp.text
+    items = resp.json()
+    assert len(items) == 2
+    assert all(item["status"] == "queued" for item in items)
+    assert items[0]["depth"] == "quick"        # from default_depth
+    assert items[0]["template"] == "slate"     # from user-settings default
+    assert items[1]["depth"] == "deep"
+    assert items[1]["template"] == "terminal"
+    assert items[0]["url"] == "https://jobs.example.com/a"
+    assert items[0]["company"] is None and items[0]["title"] is None
+    assert items[0]["cost_usd"] == 0.0
+    assert items[0]["error_message"] is None
+
+    ids = [item["id"] for item in items]
+    assert client.calls["process"] == ids  # one scheduled pipeline call per application
+
+    listing = client.get(f"/api/applications?profile_id={pid}").json()
+    assert [row["id"] for row in listing] == sorted(ids, reverse=True)
+    assert client.get("/api/applications?profile_id=9999").json() == []
+
+    detail = client.get(f"/api/applications/{ids[0]}").json()
+    assert detail["resume"] is None
+    assert detail["parsed"] is None
+    assert detail["research"] is None
+    assert detail["cover_letter_md"] is None
+    assert detail["raw_text_present"] is False
+    assert client.get("/api/applications/99999").status_code == 404
+    assert client.post(
+        "/api/applications/batch",
+        json={"profile_id": 9999, "jobs": [{"url": "https://x"}]}).status_code == 404
+
+
+def test_batch_rejects_bad_enums(client):
+    pid = make_profile(client)
+    bad_depth = client.post("/api/applications/batch", json={
+        "profile_id": pid, "jobs": [{"url": "https://x", "depth": "ultra"}]})
+    assert bad_depth.status_code == 422
+    bad_template = client.post("/api/applications/batch", json={
+        "profile_id": pid, "jobs": [{"url": "https://x", "template": "comic-sans"}]})
+    assert bad_template.status_code == 422
+    assert client.calls["process"] == []  # nothing scheduled on validation failure
+
+
+def test_paste_schedules_resume_after_paste(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    assert client.post(
+        f"/api/applications/{app_id}/paste", json={"text": "   "}).status_code == 422
+    resp = client.post(
+        f"/api/applications/{app_id}/paste", json={"text": "Pasted posting body"})
+    assert resp.status_code == 200
+    assert client.calls["paste"] == [(app_id, "Pasted posting body")]
+    assert client.post(
+        "/api/applications/9999/paste", json={"text": "x"}).status_code == 404
+
+
+def test_regenerate_requires_feedback(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    assert client.post(
+        f"/api/applications/{app_id}/regenerate", json={"feedback": ""}).status_code == 422
+    assert client.post(
+        f"/api/applications/{app_id}/regenerate", json={}).status_code == 422
+    ok = client.post(
+        f"/api/applications/{app_id}/regenerate",
+        json={"feedback": "More emphasis on Postgres"})
+    assert ok.status_code == 200
+    assert client.calls["regenerate"] == [(app_id, "More emphasis on Postgres")]
+
+
+def test_retry_requeues_and_reschedules(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    resp = client.post(f"/api/applications/{app_id}/retry")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "queued"
+    assert body["error_message"] is None
+    # one schedule from batch creation plus one from the retry
+    assert client.calls["process"] == [app_id, app_id]
+    assert client.post("/api/applications/99999/retry").status_code == 404
+
+
+def test_content_edit(client, monkeypatch):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+
+    bad = client.put(
+        f"/api/applications/{app_id}/content",
+        json={"resume": {"headline": "missing contact"}})
+    assert bad.status_code == 422
+
+    exports = []
+
+    def fake_export(application_id, resume, cover_md, contact, template, data_dir,
+                    page_size="Letter"):
+        out = Path(data_dir) / "exports" / str(application_id)
+        out.mkdir(parents=True, exist_ok=True)
+        exports.append((application_id, template, page_size))
+        return out
+
+    monkeypatch.setattr(render, "export_application", fake_export)
+    before = len(client.calls["process"]) + len(client.calls["regenerate"])
+    resp = client.put(
+        f"/api/applications/{app_id}/content",
+        json={"resume": VALID_RESUME, "cover_letter_md": "Dear Northwind team,"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["resume"]["headline"] == "Senior Software Engineer"
+    assert body["cover_letter_md"] == "Dear Northwind team,"
+    assert exports == [(app_id, "slate", "Letter")]
+    # editing content never triggers a Claude/pipeline call
+    assert len(client.calls["process"]) + len(client.calls["regenerate"]) == before
+
+
+def test_preview(client, monkeypatch):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    assert client.get(f"/api/applications/{app_id}/preview").status_code == 404
+
+    monkeypatch.setattr(
+        render, "export_application",
+        lambda *args, **kwargs: Path(client.app.state.settings.data_dir)
+        / "exports" / str(app_id))
+    client.put(f"/api/applications/{app_id}/content", json={"resume": VALID_RESUME})
+    resp = client.get(f"/api/applications/{app_id}/preview")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    assert "Avery Kim" in resp.text
+
+
+def test_export_downloads(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    # unknown kind -> 404
+    assert client.get(
+        f"/api/applications/{app_id}/exports/resume.docx").status_code == 404
+    # known kind but not generated yet -> 404
+    assert client.get(
+        f"/api/applications/{app_id}/exports/resume.pdf").status_code == 404
+
+    export_dir = Path(client.app.state.settings.data_dir) / "exports" / str(app_id)
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "resume.txt").write_text("AVERY KIM", encoding="utf-8")
+    ok = client.get(f"/api/applications/{app_id}/exports/resume.txt")
+    assert ok.status_code == 200
+    assert ok.text == "AVERY KIM"
