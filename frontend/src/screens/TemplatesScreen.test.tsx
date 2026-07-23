@@ -79,4 +79,28 @@ describe("TemplatesScreen", () => {
     fireEvent.click(screen.getAllByText("Set as default")[0]);
     expect(api.updateSettings).toHaveBeenCalledWith({ default_template: "meridian" });
   });
+
+  it("renders each preview as a true-page-width thumbnail with an open-full-size link", async () => {
+    const { container } = renderScreen();
+    await screen.findByText("Meridian");
+
+    const thumbs = container.querySelectorAll(".preview-thumb");
+    expect(thumbs).toHaveLength(4);
+
+    const links = screen.getAllByRole("link", { name: /open full size/i });
+    expect(links).toHaveLength(4);
+
+    TEMPLATES.forEach((t, i) => {
+      const iframe = screen.getByTitle(t.label) as HTMLIFrameElement;
+      expect(iframe.closest(".preview-thumb")).not.toBeNull();
+      expect(iframe.getAttribute("sandbox")).toBe("");
+      expect(iframe.style.width).toBe("816px");
+      expect(iframe.style.height).toBe("1056px");
+      expect(iframe.style.position).toBe("absolute");
+
+      expect(links[i]).toHaveAttribute("href", `/api/templates/preview/${t.name}`);
+      expect(links[i]).toHaveAttribute("target", "_blank");
+      expect(links[i]).toHaveAttribute("rel", "noreferrer");
+    });
+  });
 });

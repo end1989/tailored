@@ -22,3 +22,20 @@ if (typeof window.matchMedia !== "function") {
     } as MediaQueryList;
   };
 }
+
+// jsdom does not implement ResizeObserver; TemplatesScreen's thumbnail scaling
+// hook uses it (with a window-resize fallback guarded by a typeof check) to
+// measure the preview card width. Only install a mock if one isn't already
+// present so this stays harmless if a future setup provides its own.
+if (typeof window.ResizeObserver !== "function") {
+  class ResizeObserverMock {
+    observe(): void {
+      // jsdom performs no layout, so there is nothing to measure here; the
+      // hook's initial synchronous measure() call covers the render-time
+      // assertions this mock exists to support.
+    }
+    unobserve(): void {}
+    disconnect(): void {}
+  }
+  window.ResizeObserver = ResizeObserverMock as unknown as typeof ResizeObserver;
+}

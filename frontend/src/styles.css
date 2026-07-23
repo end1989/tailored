@@ -204,8 +204,14 @@ a { color: var(--accent); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.25rem; line-height: 1.7;
 }
+.preview-frame-wrap {
+  /* At narrow window widths the full-size preview shouldn't reflow the
+     resume into a cramped column — let the wrapper scroll horizontally
+     instead, so the iframe below always keeps a real-page-usable width. */
+  overflow-x: auto;
+}
 .preview-frame {
-  width: 100%; height: 75vh; border: 1px solid var(--border);
+  width: 100%; min-width: 816px; height: 75vh; border: 1px solid var(--border);
   border-radius: var(--radius);
   /* Rendered resumes are print documents — they stay paper-white in dark mode too. */
   background: #FFFFFF;
@@ -221,9 +227,18 @@ a { color: var(--accent); }
 }
 .template-card { display: flex; flex-direction: column; }
 .template-card-footer { justify-content: flex-end; margin-top: 0.75rem; margin-bottom: 0; }
-.template-preview-frame {
-  width: 100%; height: 480px; border: 1px solid var(--border);
-  border-radius: var(--radius); margin-top: 0.75rem;
+.preview-thumb {
+  /* True print-preview thumbnail: the iframe inside renders at real Letter
+     page width (816px @ 96dpi) and is scaled down via transform to fit this
+     box, so the resume reflows exactly as it would on a full page instead
+     of cramming into a narrow card. */
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 816 / 1056;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 0.75rem;
   /* Rendered resumes are print documents — they stay paper-white in dark mode too. */
   background: #FFFFFF;
 }

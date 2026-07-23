@@ -356,13 +356,15 @@ export default function ApplicationScreen() {
                       Edit
                     </button>
                   </div>
-                  <iframe
-                    key={iframeKey}
-                    src={previewUrl(appId)}
-                    title="Resume preview"
-                    className="preview-frame"
-                    sandbox=""
-                  />
+                  <div className="preview-frame-wrap">
+                    <iframe
+                      key={iframeKey}
+                      src={previewUrl(appId)}
+                      title="Resume preview"
+                      className="preview-frame"
+                      sandbox=""
+                    />
+                  </div>
                 </>
               )}
 
