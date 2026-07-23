@@ -270,6 +270,28 @@ def test_version_increments_on_second_save(engine, profile_id, tmp_path, pdf_fak
         assert [v.version for v in versions] == [1, 2]
 
 
+# --- pipeline status guard ---
+
+def test_save_tailored_resume_rejects_while_pipeline_active(
+    engine, profile_id, tmp_path, pdf_faked
+):
+    app_id = _create_app(engine, profile_id)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        app.status = "researching"
+        session.add(app)
+        session.commit()
+
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        _save_tailor(engine, tmp_path, app_id, _fixture("tailor"))
+    assert "researching" in str(exc.value)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "researching"  # unchanged
+        assert app.resume_json is None  # unchanged
+
+
 # --- render crash -> error status, not stuck "rendering" ---
 
 def test_render_crash_marks_error(engine, profile_id, tmp_path, monkeypatch):

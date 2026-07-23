@@ -82,6 +82,8 @@ WORKFLOW (call the tools in this order):
    can read login-walled postings the app cannot fetch).
 3. create_application(profile_id, url, posting_text) - register the job with the
    posting text you gathered. Returns the application_id for every later call.
+   Optionally call list_templates first and pass template= to pick a visual
+   style (default slate).
 4. save_parsed_posting(application_id, parsed) - your structured analysis of the
    posting (ParsedPosting JSON below). The dashboard shows company/title from this.
 5. Optionally research the company (its site, news, tech stack) and call
@@ -257,6 +259,23 @@ def _get_app_and_job(session: Session, application_id: int) -> tuple[Application
     return app, job
 
 
+# Statuses owned by the built-in pipeline (backend/app/services/pipeline.py).
+# "tailoring" is deliberately excluded: it is the MCP parking state between
+# create_application and save_tailored_resume, and the residual seconds-long
+# overlap with the web pipeline's own tailoring step is accepted for a
+# single-user local app.
+_PIPELINE_ACTIVE_STATUSES = ("queued", "fetching", "researching", "rendering")
+
+
+def _reject_if_pipeline_active(app: Application, application_id: int) -> None:
+    if app.status in _PIPELINE_ACTIVE_STATUSES:
+        raise McpOpsError(
+            f"application {application_id} is currently {app.status} under "
+            "the built-in pipeline - wait for it to finish or create a "
+            "separate application for this agent run"
+        )
+
+
 def save_parsed_posting(engine, application_id: int, parsed: dict) -> dict:
     """Validate and store the agent's ParsedPosting analysis on the job."""
     try:
@@ -265,6 +284,7 @@ def save_parsed_posting(engine, application_id: int, parsed: dict) -> dict:
         raise McpOpsError(f"parsed failed ParsedPosting validation: {exc}") from exc
     with Session(engine) as session:
         app, job = _get_app_and_job(session, application_id)
+        _reject_if_pipeline_active(app, application_id)
         set_parsed(job, posting)
         session.add(job)
         session.commit()
@@ -286,6 +306,7 @@ def save_research(engine, application_id: int, findings: dict) -> dict:
         ) from exc
     with Session(engine) as session:
         app, job = _get_app_and_job(session, application_id)
+        _reject_if_pipeline_active(app, application_id)
         brief = ResearchBrief(
             job_id=job.id,
             depth="external",
@@ -326,6 +347,7 @@ def save_tailored_resume(
         raise McpOpsError(f"resume failed ResumeDoc validation: {exc}") from exc
     with Session(engine) as session:
         app, _job = _get_app_and_job(session, application_id)
+        _reject_if_pipeline_active(app, application_id)
         profile = session.get(Profile, app.profile_id)
         if profile is None:
             raise McpOpsError(

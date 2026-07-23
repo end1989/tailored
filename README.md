@@ -120,7 +120,11 @@ built-in pipeline. The [truthfulness guard](#truthfulness) applies to agents
 too — it is enforced server-side on the write path, so a connected agent
 cannot save invented employers, titles, dates, degrees, or certifications;
 it gets the violation list back and must correct the resume. See
-[docs/EXTENDING.md](docs/EXTENDING.md) for the full tool contract.
+[docs/EXTENDING.md](docs/EXTENDING.md) for the full tool contract. An
+MCP-driven application parks in status `tailoring` until the agent saves,
+which blocks that row's web-UI paste/regenerate/edit actions until you save
+or delete it, and conversely MCP saves are rejected while the built-in
+pipeline is actively processing that same application.
 
 ## Demo mode (no API key, fully offline)
 

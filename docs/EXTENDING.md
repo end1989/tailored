@@ -24,6 +24,19 @@ workflow. The truthfulness guard runs server-side inside
 | `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
 | `get_application(application_id)` | Status / version / error_message / export files. |
 
+**Concurrency with the built-in pipeline.** An application is owned by
+whichever side is actively working it, in one direction only at a time.
+MCP-driven applications park in status `tailoring` between
+`create_application` and `save_tailored_resume`; while parked, the web UI's
+paste/regenerate/edit actions on that row are blocked, so an abandoned agent
+run leaves the row stuck there until someone either deletes it from the
+dashboard/DB or an agent saves to it to release it. Conversely,
+`save_parsed_posting`, `save_research`, and `save_tailored_resume` reject
+with an error naming the status whenever the built-in pipeline is actively
+processing that application (`queued`, `fetching`, `researching`, or
+`rendering`) - retry once it finishes or create a separate application for
+the agent run.
+
 ## 2. The pipeline's provider seam (any model)
 
 Every AI call in the built-in pipeline goes through one method:
