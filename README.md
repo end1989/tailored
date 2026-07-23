@@ -21,7 +21,39 @@ Everything runs on your machine. The only network traffic is fetching postings a
 calling the Anthropic API. All state lives in the `data/` folder — a backup is
 copying one folder.
 
-## Quickstart (end users)
+## Quickstart (Windows)
+
+1. Install **Python 3.11+** from [python.org](https://www.python.org/downloads/) — on
+   the first install screen, **check "Add python.exe to PATH"**.
+2. Clone or download this repo, then double-click **`Tailored.bat`** in the project
+   folder.
+
+The first launch does the setup for you — creates a virtual environment, installs
+dependencies, downloads the Chromium browser used for PDF export — which takes a
+few minutes. Every launch after that starts in a couple of seconds.
+
+If you don't have an [Anthropic API key](https://console.anthropic.com/) yet, the
+launcher offers a **demo mode** with sample data — no key or network access needed.
+
+## Quickstart (macOS / Linux)
+
+You need **Python 3.11+** (check with `python3 --version`, or install via your
+package manager / [python.org](https://www.python.org/downloads/)).
+
+```
+git clone <this-repo-url> tailored
+cd tailored
+bash start_tailored.sh
+```
+
+Same idea as Windows: the first run sets everything up (a few minutes), later runs
+are instant, and the script offers a no-key **demo mode** if you don't have an API
+key yet.
+
+## Manual setup (developers)
+
+This is what `Tailored.bat` / `start_tailored.sh` automate above. Use it if you're
+developing, on an unsupported OS, or just want full manual control.
 
 You need **Python 3.11+** and an [Anthropic API key](https://console.anthropic.com/).
 Node.js is **not** required — the built frontend is committed.
@@ -52,7 +84,8 @@ The server starts on http://127.0.0.1:8547 and your browser opens automatically.
 
 ## Demo mode (no API key, fully offline)
 
-Want to try it without a key or network? Set `TAILORED_FAKE=1`:
+`Tailored.bat` / `start_tailored.sh` offer this automatically when no key is found.
+To set it manually (e.g. for the manual setup above): set `TAILORED_FAKE=1`:
 
 ```
 # Windows PowerShell
@@ -121,7 +154,9 @@ fake mode (the same one demo mode uses).
 
 ```
 tailored/
-├── run.py                  # one-command launcher (server + browser)
+├── Tailored.bat             # double-click launcher (Windows)
+├── start_tailored.sh        # launch script (macOS/Linux: bash start_tailored.sh)
+├── run.py                   # one-command launcher (server + browser)
 ├── requirements.txt
 ├── .env.example
 ├── backend/
@@ -154,9 +189,14 @@ tailored/
 - **LinkedIn or other login-walled postings** — sites that block bots land the
   application in **"needs paste"** (not an error). Open the application, paste the
   posting text into the prompt, and the pipeline resumes identically.
-- **Playwright browser missing** (`Executable doesn't exist` or similar) — install
-  the browser once: `playwright install chromium`.
-- **Port already in use** — Tailored defaults to port 8547. Set `TAILORED_PORT` in
-  `.env` (e.g. `TAILORED_PORT=8600`) and restart.
+- **Playwright browser missing** (`Executable doesn't exist` or similar) —
+  `Tailored.bat` / `start_tailored.sh` install this automatically on first run (and
+  print a warning if it fails, without blocking the rest of the app). If you're on
+  the manual setup, or the automatic install failed, install it yourself once:
+  `playwright install chromium`.
+- **Port already in use** — Tailored defaults to port 8547. If it's Tailored itself
+  already running, `run.py` detects that and just opens your browser to it instead
+  of erroring. Otherwise set `TAILORED_PORT` in `.env` (e.g. `TAILORED_PORT=8600`)
+  and restart.
 - **Missing API key** — the app still runs; generation actions will prompt you.
   Set `ANTHROPIC_API_KEY` in `.env`, or use demo mode (`TAILORED_FAKE=1`).
