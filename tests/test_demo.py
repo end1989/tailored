@@ -65,3 +65,18 @@ def test_second_startup_does_not_duplicate(demo_env):
     with session_scope(engine) as session:
         assert len(session.exec(select(Profile)).all()) == 1
         assert len(session.exec(select(Application)).all()) == 1
+
+
+def test_spa_fallback_and_api_passthrough(demo_env):
+    settings, engine = demo_env
+    app = create_app(settings=settings, engine=engine)
+    with TestClient(app) as client:
+        page = client.get("/applications/1")   # SPA route -> index.html
+        assert page.status_code == 200
+        assert "Tailored" in page.text
+
+        root = client.get("/")                 # root also serves index.html
+        assert root.status_code == 200
+        assert "Tailored" in root.text
+
+        assert client.get("/api/nope").status_code == 404  # api never falls back
