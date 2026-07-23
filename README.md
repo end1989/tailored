@@ -21,6 +21,11 @@ Compare all four templates side by side, with live previews, on the in-app
 **Templates** page. The UI also follows your system's light/dark preference
 automatically, with a one-click override in the nav bar or Settings.
 
+Got a workspace full of your own repos? Use the
+[portfolio scan prompt](docs/portfolio-scan-prompt.md) with Claude Code (or any
+capable coding agent) to turn your actual codebases into evidence-backed project
+material for your master profile.
+
 Everything runs on your machine. The only network traffic is fetching postings and
 calling the Anthropic API. All state lives in the `data/` folder — a backup is
 copying one folder.
