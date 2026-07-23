@@ -1,4 +1,4 @@
-import { getThemePref, setThemePref } from "./theme";
+import { getThemePref, setThemePref, subscribeTheme } from "./theme";
 
 describe("theme", () => {
   beforeEach(() => {
@@ -15,21 +15,39 @@ describe("theme", () => {
 
   it("setThemePref('system') resolves to dark when the OS prefers dark", () => {
     const original = window.matchMedia;
-    window.matchMedia = vi.fn().mockImplementation((query: string) => ({
-      matches: true,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })) as unknown as typeof window.matchMedia;
+    try {
+      window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+        matches: true,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })) as unknown as typeof window.matchMedia;
 
-    setThemePref("system");
+      setThemePref("system");
+      expect(document.documentElement.dataset.theme).toBe("dark");
+      expect(localStorage.getItem("tailored-theme")).toBe("system");
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  it("subscribeTheme receives the change event, then stops after unsubscribing", () => {
+    const calls: Array<{ pref: string; resolved: string }> = [];
+    const unsubscribe = subscribeTheme((pref, resolved) => {
+      calls.push({ pref, resolved });
+    });
+
+    setThemePref("dark");
+    expect(calls).toEqual([{ pref: "dark", resolved: "dark" }]);
     expect(document.documentElement.dataset.theme).toBe("dark");
-    expect(localStorage.getItem("tailored-theme")).toBe("system");
 
-    window.matchMedia = original;
+    unsubscribe();
+    setThemePref("light");
+    expect(calls).toEqual([{ pref: "dark", resolved: "dark" }]);
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 });

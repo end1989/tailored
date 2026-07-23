@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getSettings, updateSettings } from "../api";
-import { getThemePref, setThemePref } from "../theme";
+import { getThemePref, setThemePref, subscribeTheme } from "../theme";
 import type { ThemePref } from "../theme";
 import type { Depth, PageSize, SettingsShape, TemplateName } from "../types";
 
@@ -25,6 +25,8 @@ export default function SettingsScreen() {
       .catch((e) => setError(String(e)));
   }, []);
 
+  useEffect(() => subscribeTheme((pref) => setThemePrefState(pref)), []);
+
   async function patch(p: {
     default_template?: TemplateName;
     default_depth?: Depth;
@@ -41,7 +43,6 @@ export default function SettingsScreen() {
 
   function handleThemeChange(pref: ThemePref) {
     setThemePref(pref);
-    setThemePrefState(pref);
   }
 
   if (!settings) {

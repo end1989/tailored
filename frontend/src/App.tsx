@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import DashboardScreen from "./screens/DashboardScreen";
 import AddJobsScreen from "./screens/AddJobsScreen";
@@ -6,7 +6,7 @@ import TemplatesScreen from "./screens/TemplatesScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ApplicationScreen from "./screens/ApplicationScreen";
 import SettingsScreen from "./screens/SettingsScreen";
-import { getThemePref, resolveTheme, setThemePref } from "./theme";
+import { getThemePref, resolveTheme, setThemePref, subscribeTheme } from "./theme";
 import type { ResolvedTheme } from "./theme";
 
 export default function App() {
@@ -14,10 +14,11 @@ export default function App() {
     resolveTheme(getThemePref())
   );
 
+  useEffect(() => subscribeTheme((_pref, nextResolved) => setResolved(nextResolved)), []);
+
   function toggleTheme() {
     const next: ResolvedTheme = resolved === "dark" ? "light" : "dark";
     setThemePref(next);
-    setResolved(next);
   }
 
   return (

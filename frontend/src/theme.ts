@@ -19,8 +19,17 @@ export function resolveTheme(pref: ThemePref): ResolvedTheme {
   return pref;
 }
 
+export interface ThemeChangeDetail {
+  pref: ThemePref;
+  resolved: ResolvedTheme;
+}
+
 export function applyTheme(pref: ThemePref): void {
-  document.documentElement.dataset.theme = resolveTheme(pref);
+  const resolved = resolveTheme(pref);
+  document.documentElement.dataset.theme = resolved;
+  window.dispatchEvent(
+    new CustomEvent<ThemeChangeDetail>("tailored-theme-changed", { detail: { pref, resolved } })
+  );
 }
 
 export function setThemePref(pref: ThemePref): void {
@@ -31,8 +40,15 @@ export function setThemePref(pref: ThemePref): void {
 export function initTheme(): void {
   const pref = getThemePref();
   applyTheme(pref);
-  if (pref === "system") {
-    const mql = window.matchMedia("(prefers-color-scheme: dark)");
-    mql.addEventListener("change", () => applyTheme("system"));
-  }
+  const mql = window.matchMedia("(prefers-color-scheme: dark)");
+  mql.addEventListener("change", () => applyTheme(getThemePref()));
+}
+
+export function subscribeTheme(cb: (pref: ThemePref, resolved: ResolvedTheme) => void): () => void {
+  const listener = (event: Event) => {
+    const { pref, resolved } = (event as CustomEvent<ThemeChangeDetail>).detail;
+    cb(pref, resolved);
+  };
+  window.addEventListener("tailored-theme-changed", listener);
+  return () => window.removeEventListener("tailored-theme-changed", listener);
 }

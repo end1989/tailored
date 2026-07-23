@@ -40,8 +40,13 @@ describe("App shell", () => {
     expect(screen.getByText("Tailored")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     expect(screen.getByRole("link", { name: "Add Jobs" })).toHaveAttribute("href", "/add");
+    expect(screen.getByRole("link", { name: "Templates" })).toHaveAttribute("href", "/templates");
     expect(screen.getByRole("link", { name: "Profiles" })).toHaveAttribute("href", "/profiles");
     expect(screen.getByRole("link", { name: "Settings" })).toHaveAttribute("href", "/settings");
+
+    const themeToggle = screen.getByRole("button", { name: /switch to (light|dark) theme/i });
+    expect(themeToggle).toBeInTheDocument();
+    expect(themeToggle).toHaveAttribute("aria-label");
   });
 
   it("renders the real Dashboard screen on /", async () => {
