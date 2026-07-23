@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
@@ -8,13 +8,18 @@ from sqlmodel import Field, SQLModel
 from .schemas import Contact, MasterProfile, ParsedPosting, ResearchFindings, ResumeDoc
 
 
+def _utcnow() -> datetime:
+    """Naive UTC timestamp (datetime.utcnow replacement, Python 3.12+ safe)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 class Profile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
     contact_json: str = "{}"
     master_profile_json: str = "{}"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class SourceDocument(SQLModel, table=True):
@@ -23,7 +28,7 @@ class SourceDocument(SQLModel, table=True):
     filename: str
     kind: str  # "pdf" | "docx" | "txt" | "paste"
     text: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class Job(SQLModel, table=True):
@@ -33,7 +38,7 @@ class Job(SQLModel, table=True):
     parsed_json: Optional[str] = None       # ParsedPosting
     fetch_status: str = "pending"           # "pending"|"fetched"|"needs_paste"|"pasted"
     depth: str = "standard"                 # "quick"|"standard"|"deep"
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class ResearchBrief(SQLModel, table=True):
@@ -44,7 +49,7 @@ class ResearchBrief(SQLModel, table=True):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 class Application(SQLModel, table=True):
@@ -62,8 +67,8 @@ class Application(SQLModel, table=True):
     output_tokens: int = 0
     cost_usd: float = 0.0
     export_dir: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
+    updated_at: datetime = Field(default_factory=_utcnow)
 
 
 class ApplicationVersion(SQLModel, table=True):
@@ -73,7 +78,7 @@ class ApplicationVersion(SQLModel, table=True):
     resume_json: str
     cover_letter_md: str
     tailoring_notes: str = ""
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
 
 
 # --- Typed JSON helpers (TEXT columns <-> Pydantic objects) ---
