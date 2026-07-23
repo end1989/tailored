@@ -168,3 +168,64 @@ def process_application(app_id: int, engine=None,
             _run_from_research(session, app, job, claude)
         except Exception as exc:  # noqa: BLE001 - every failure is visible state
             _set_status(session, app, "error", error_message=str(exc))
+
+
+def resume_after_paste(app_id: int, text: str, engine=None,
+                       claude: ClaudeService | None = None) -> None:
+    """User pasted the posting text: store it and continue from researching."""
+    engine = engine if engine is not None else get_engine()
+    claude = claude if claude is not None else make_claude(get_settings())
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        if app is None:
+            return
+        try:
+            job = session.get(Job, app.job_id)
+            if job is None:
+                raise ClaudeError(f"Job {app.job_id} not found")
+            job.raw_text = text
+            job.fetch_status = "pasted"
+            session.add(job)
+            session.commit()
+            _run_from_research(session, app, job, claude)
+        except Exception as exc:  # noqa: BLE001
+            _set_status(session, app, "error", error_message=str(exc))
+
+
+def regenerate_application(app_id: int, feedback: str, engine=None,
+                           claude: ClaudeService | None = None) -> None:
+    """Re-tailor with user feedback: version += 1, new snapshot, re-render."""
+    engine = engine if engine is not None else get_engine()
+    claude = claude if claude is not None else make_claude(get_settings())
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        if app is None:
+            return
+        try:
+            job = session.get(Job, app.job_id)
+            profile = session.get(Profile, app.profile_id)
+            if job is None or profile is None:
+                raise ClaudeError("Application is missing its job or profile row")
+            parsed = get_parsed(job)
+            if parsed is None:
+                raise ClaudeError(
+                    "Cannot regenerate before the posting has been parsed"
+                )
+            master = get_master_profile(profile)
+            contact = get_contact(profile)
+            findings: ResearchFindings | None = None
+            brief = session.exec(
+                select(ResearchBrief)
+                .where(ResearchBrief.job_id == job.id)
+                .order_by(ResearchBrief.id.desc())
+            ).first()
+            if brief is not None:
+                findings = get_findings(brief)
+            app.version += 1
+            session.add(app)
+            session.commit()
+            session.refresh(app)
+            _tailor_and_render(session, app, master, contact, parsed,
+                               findings, claude, feedback=feedback)
+        except Exception as exc:  # noqa: BLE001
+            _set_status(session, app, "error", error_message=str(exc))

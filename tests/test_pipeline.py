@@ -213,3 +213,52 @@ def test_truthfulness_failure_sets_error(
         app = session.get(Application, app_id)
         assert app.status == "error"
         assert "Fake Corp" in (app.error_message or "")
+
+
+def test_resume_after_paste_completes_needs_paste_application(
+    engine, claude_fake, pipeline_settings, pdf_faked, monkeypatch
+):
+    monkeypatch.setattr(
+        fetcher, "fetch_posting",
+        lambda url, timeout=20.0: FetchResult(status="needs_paste", reason="HTTP 403"),
+    )
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        assert session.get(Application, app_id).status == "needs_paste"
+
+    pipeline.resume_after_paste(app_id, POSTING_TEXT, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "ready"
+        assert app.export_dir
+        job = session.get(Job, app.job_id)
+        assert job.fetch_status == "pasted"
+        assert job.raw_text == POSTING_TEXT
+
+
+def test_regenerate_bumps_version_and_snapshots(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked
+):
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+    pipeline.regenerate_application(
+        app_id, "Lead with the migration project", engine=engine, claude=claude_fake
+    )
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "ready"
+        assert app.version == 2
+        versions = session.exec(
+            select(ApplicationVersion)
+            .where(ApplicationVersion.application_id == app_id)
+            .order_by(ApplicationVersion.version)
+        ).all()
+        assert [v.version for v in versions] == [1, 2]
+
+    tailor_calls = [c for c in claude_fake.calls if c["task"] == "tailor"]
+    assert len(tailor_calls) == 2
+    assert "Lead with the migration project" in tailor_calls[-1]["user_content"]
