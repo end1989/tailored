@@ -1,0 +1,35 @@
+{# Cover letter — shared shell; visual identity comes from the chosen template's style.css. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ contact.name }} — Cover Letter</title>
+<style>
+{{ base_css | safe }}
+{{ style_css | safe }}
+/* Cover-letter-specific layout on top of the template identity */
+.cover-header {
+  margin-bottom: var(--space-4);
+}
+.cover-body {
+  font-size: 10pt;
+  max-width: 48em;
+}
+.cover-body p {
+  margin-bottom: var(--space-3);
+}
+</style>
+</head>
+<body>
+<header class="resume-header cover-header">
+  <h1 class="name">{{ contact.name }}</h1>
+  <p class="contact-line">
+    {{ [contact.email, contact.phone, contact.location] | select | join(" · ") }}
+    {%- for link in contact.links %} · {{ link.label }}: {{ link.url }}{% endfor %}
+  </p>
+</header>
+<main class="cover-body">
+{{ body_html | safe }}
+</main>
+</body>
+</html>

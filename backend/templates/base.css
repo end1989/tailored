@@ -1,0 +1,107 @@
+/* ============================================================
+   base.css — shared structural system for ALL resume templates.
+   Templates layer visual identity (fonts, color, rules) in their
+   own style.css; this file owns reset, page setup, spacing scale,
+   section grammar, and print/pagination behavior.
+   ============================================================ */
+
+/* --- Reset --- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* --- Page setup --- */
+@page {
+  size: Letter;
+  margin: 0.5in;
+}
+
+html {
+  font-size: 10.5pt;
+}
+
+body {
+  line-height: 1.35;
+  color: #111111;
+  background: #ffffff;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+}
+
+/* --- Spacing scale --- */
+:root {
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.85rem;
+  --space-4: 1.4rem;
+}
+
+/* --- Section grammar --- */
+.resume-header {
+  margin-bottom: var(--space-4);
+}
+
+.section {
+  margin-bottom: var(--space-4);
+}
+
+.section-title {
+  margin-bottom: var(--space-2);
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.item {
+  margin-bottom: var(--space-3);
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.item:last-child {
+  margin-bottom: 0;
+}
+
+.item-head {
+  margin-bottom: var(--space-1);
+}
+
+.bullets {
+  margin-left: 1.1em;
+  list-style: disc outside;
+}
+
+.bullets li {
+  margin-bottom: var(--space-1);
+}
+
+/* --- Widow/orphan control --- */
+h1,
+h2,
+h3 {
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+p {
+  orphans: 2;
+  widows: 2;
+}
+
+/* --- Print --- */
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
