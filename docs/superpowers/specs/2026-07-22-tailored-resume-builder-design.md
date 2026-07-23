@@ -1,7 +1,7 @@
 # Tailored — AI Resume & Cover Letter Builder — Design Spec
 
 **Date:** 2026-07-22
-**Status:** Approved by Eldon (design conversation, this session)
+**Status:** Approved (brainstorming session)
 **Project location:** `.` (per workspace conventions)
 
 ## 1. What this is

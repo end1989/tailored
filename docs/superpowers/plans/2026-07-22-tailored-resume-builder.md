@@ -9517,10 +9517,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import ProfileScreen from "./ProfileScreen";
 
 vi.mock("../api", () => {
-  const contact = { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] };
+  const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
   const detail = {
     id: 1,
-    name: "Eldon",
+    name: "Jordan Rivera",
     contact,
     master_profile: {
       summary_notes: "Seasoned engineer notes",
@@ -9544,7 +9544,7 @@ vi.mock("../api", () => {
   };
   return {
     listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Eldon", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]),
     getProfile: vi.fn().mockResolvedValue(detail),
     createProfile: vi.fn(),
@@ -9558,7 +9558,7 @@ describe("ProfileScreen", () => {
   it("renders profiles, documents, and the master profile editor", async () => {
     render(<ProfileScreen />);
     expect(await screen.findByDisplayValue("Seasoned engineer notes")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Eldon" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Jordan Rivera" })).toBeInTheDocument();
     expect(screen.getByText("resume.pdf")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Acme")).toBeInTheDocument();
   });
@@ -10251,10 +10251,10 @@ import { MemoryRouter } from "react-router-dom";
 import DashboardScreen from "./DashboardScreen";
 
 vi.mock("../api", () => {
-  const contact = { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] };
+  const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
   return {
     listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Eldon", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]),
     listApplications: vi.fn().mockResolvedValue([
       {
@@ -10472,10 +10472,10 @@ import { MemoryRouter } from "react-router-dom";
 import AddJobsScreen from "./AddJobsScreen";
 
 vi.mock("../api", () => {
-  const contact = { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] };
+  const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
   return {
     listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Eldon", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]),
     getSettings: vi.fn().mockResolvedValue({
       api_key_set: true,
@@ -10495,7 +10495,7 @@ describe("AddJobsScreen", () => {
         <AddJobsScreen />
       </MemoryRouter>
     );
-    await screen.findByRole("option", { name: "Eldon" });
+    await screen.findByRole("option", { name: "Jordan Rivera" });
     fireEvent.change(screen.getByPlaceholderText("https://..."), {
       target: { value: "https://a.example/j1\nhttps://b.example/j2\n\nhttps://c.example/j3\n" },
     });
@@ -10793,7 +10793,7 @@ describe("ApplicationScreen", () => {
       ...base,
       status: "ready",
       resume: {
-        contact: { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] },
+        contact: { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] },
         headline: "Backend Engineer",
         summary: "A summary.",
         sections: [],

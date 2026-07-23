@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import AddJobsScreen from "./AddJobsScreen";
 import * as api from "../api";
 
-const contact = { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] };
+const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
 
 vi.mock("../api", () => ({
   listProfiles: vi.fn(),
@@ -22,7 +22,7 @@ function renderScreen() {
 describe("AddJobsScreen", () => {
   beforeEach(() => {
     vi.mocked(api.listProfiles).mockResolvedValue([
-      { id: 1, name: "Eldon", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]);
     vi.mocked(api.createApplications).mockResolvedValue([]);
   });
@@ -36,7 +36,7 @@ describe("AddJobsScreen", () => {
       page_size: "Letter",
     });
     renderScreen();
-    await screen.findByRole("option", { name: "Eldon" });
+    await screen.findByRole("option", { name: "Jordan Rivera" });
     fireEvent.change(screen.getByPlaceholderText("https://..."), {
       target: { value: "https://a.example/j1\nhttps://b.example/j2\n\nhttps://c.example/j3\n" },
     });

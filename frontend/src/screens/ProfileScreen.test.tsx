@@ -2,10 +2,10 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import ProfileScreen from "./ProfileScreen";
 
 vi.mock("../api", () => {
-  const contact = { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] };
+  const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
   const detail = {
     id: 1,
-    name: "Eldon",
+    name: "Jordan Rivera",
     contact,
     master_profile: {
       summary_notes: "Seasoned engineer notes",
@@ -29,7 +29,7 @@ vi.mock("../api", () => {
   };
   return {
     listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Eldon", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]),
     getProfile: vi.fn().mockResolvedValue(detail),
     createProfile: vi.fn(),
@@ -43,7 +43,7 @@ describe("ProfileScreen", () => {
   it("renders profiles, documents, and the master profile editor", async () => {
     render(<ProfileScreen />);
     expect(await screen.findByDisplayValue("Seasoned engineer notes")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Eldon" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Jordan Rivera" })).toBeInTheDocument();
     expect(screen.getByText("resume.pdf")).toBeInTheDocument();
     expect(screen.getByDisplayValue("Acme")).toBeInTheDocument();
   });

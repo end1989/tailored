@@ -3,10 +3,10 @@ import { MemoryRouter } from "react-router-dom";
 import DashboardScreen from "./DashboardScreen";
 
 vi.mock("../api", () => {
-  const contact = { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] };
+  const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
   return {
     listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Eldon", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]),
     listApplications: vi.fn().mockResolvedValue([
       {

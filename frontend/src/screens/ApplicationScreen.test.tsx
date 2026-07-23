@@ -62,7 +62,7 @@ describe("ApplicationScreen", () => {
       ...base,
       status: "ready",
       resume: {
-        contact: { name: "Eldon", email: "e@example.com", phone: null, location: null, links: [] },
+        contact: { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] },
         headline: "Backend Engineer",
         summary: "A summary.",
         sections: [],
