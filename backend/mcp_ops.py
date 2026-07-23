@@ -27,9 +27,10 @@ from .app.models import (
     get_contact,
     get_master_profile as _master_profile_of,
     get_parsed,
+    set_master_profile,
     set_parsed,
 )
-from .app.schemas import ParsedPosting, ResearchFindings, ResumeDoc
+from .app.schemas import MPProject, ParsedPosting, ResearchFindings, ResumeDoc, SkillGroup
 from .app.services import render
 from .app.services.claude import strict_schema
 from .app.services.pipeline import _mark_error, _set_status
@@ -92,6 +93,10 @@ WORKFLOW (call the tools in this order):
    save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes).
    On success Tailored renders and exports PDF, HTML, and ATS text.
 7. get_application(application_id) - confirm status "ready" and list the exports.
+
+Separately, to import a workspace portfolio scan straight into the master
+profile itself (not a single application), call add_profile_evidence - it
+additively merges agent-verified projects and skill groups into the profile.
 
 TRUTHFULNESS CONTRACT (absolute, non-negotiable, enforced server-side):
 - You may SELECT which experiences, projects, and bullets to include.
@@ -199,6 +204,108 @@ def get_master_profile(engine, profile_id: int | None = None) -> dict:
             "name": profile.name,
             "contact": get_contact(profile).model_dump(),
             "master_profile": _master_profile_of(profile).model_dump(),
+        }
+
+
+def add_profile_evidence(
+    engine,
+    profile_id: int,
+    projects: list[dict] | None = None,
+    skill_groups: list[dict] | None = None,
+    summary_note: str | None = None,
+) -> dict:
+    """Additively merge agent-verified portfolio evidence into a master profile.
+
+    Never removes or overwrites existing content: projects are appended only
+    when their name is new (case-insensitive), same-label skill groups have
+    their items merged (deduped), and summary_note is appended to the existing
+    summary_notes. Every incoming project/skill_group is validated before any
+    write, so a bad payload changes nothing.
+    """
+    incoming_projects = projects or []
+    incoming_groups = skill_groups or []
+
+    with Session(engine) as session:
+        profile = session.get(Profile, profile_id)
+        if profile is None:
+            raise McpOpsError(
+                f"Profile {profile_id} not found. "
+                "Call list_profiles to see what exists."
+            )
+        master = _master_profile_of(profile)
+
+        # Validate EVERYTHING before mutating anything (all-or-nothing write).
+        validated_projects: list[MPProject] = []
+        for idx, proj in enumerate(incoming_projects):
+            try:
+                validated_projects.append(MPProject.model_validate(proj))
+            except ValidationError as exc:
+                raise McpOpsError(
+                    f"projects[{idx}] failed MPProject validation: {exc}"
+                ) from exc
+        validated_groups: list[SkillGroup] = []
+        for idx, grp in enumerate(incoming_groups):
+            try:
+                validated_groups.append(SkillGroup.model_validate(grp))
+            except ValidationError as exc:
+                raise McpOpsError(
+                    f"skill_groups[{idx}] failed SkillGroup validation: {exc}"
+                ) from exc
+
+        # Projects: append only when the (stripped, case-insensitive) name is new.
+        existing_names = {p.name.strip().lower() for p in master.projects}
+        added_projects: list[str] = []
+        skipped_projects: list[str] = []
+        for proj in validated_projects:
+            key = proj.name.strip().lower()
+            if key in existing_names:
+                skipped_projects.append(proj.name)
+            else:
+                master.projects.append(proj)
+                existing_names.add(key)
+                added_projects.append(proj.name)
+
+        # Skill groups: merge into a same-label group, else append the group.
+        existing_by_label = {g.label.strip().lower(): g for g in master.skills}
+        groups_added: list[str] = []
+        groups_merged: list[str] = []
+        for grp in validated_groups:
+            key = grp.label.strip().lower()
+            existing = existing_by_label.get(key)
+            if existing is None:
+                master.skills.append(grp)
+                existing_by_label[key] = grp
+                groups_added.append(grp.label)
+            else:
+                present = {i.strip().lower() for i in existing.items}
+                for item in grp.items:
+                    if item.strip().lower() not in present:
+                        existing.items.append(item)
+                        present.add(item.strip().lower())
+                groups_merged.append(existing.label)
+
+        # Summary note: append (blank-line join) when non-empty after strip.
+        summary_appended = False
+        if summary_note is not None and summary_note.strip():
+            note = summary_note.strip()
+            if master.summary_notes and master.summary_notes.strip():
+                master.summary_notes = master.summary_notes + "\n\n" + note
+            else:
+                master.summary_notes = note
+            summary_appended = True
+
+        set_master_profile(profile, master)
+        session.add(profile)
+        session.commit()
+
+        return {
+            "profile_id": profile_id,
+            "added_projects": added_projects,
+            "skipped_projects": skipped_projects,
+            "skill_groups_added": groups_added,
+            "skill_groups_merged": groups_merged,
+            "summary_appended": summary_appended,
+            "master_profile": master.model_dump(),
         }
 
 

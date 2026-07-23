@@ -88,6 +88,49 @@ async def get_master_profile(profile_id: int | None = None) -> dict:
 
 
 @mcp.tool()
+async def add_profile_evidence(
+    profile_id: int,
+    projects: list[dict] | None = None,
+    skill_groups: list[dict] | None = None,
+    summary_note: str | None = None,
+) -> dict:
+    """Import portfolio-scan findings into a profile's master profile - the use
+    case behind docs/portfolio-scan-prompt.md, so the same session that scanned
+    the workspace can write the results back with no copy-paste.
+
+    ADDITIVE and idempotent-friendly: it never removes or overwrites existing
+    content, so it is safe to call repeatedly. New projects are appended (a name
+    already present is skipped, not overwritten); a skill group whose label
+    already exists has its new items merged in; summary_note is appended to the
+    existing summary_notes.
+
+    Only add evidence you VERIFIED from real code and git history in the
+    workspace. Whatever you add here becomes ground truth for every future
+    resume, so never add a project, skill, or claim you cannot point to in
+    actual files or commits.
+
+    Args:
+        profile_id: which profile to write to (from get_master_profile /
+            list_profiles).
+        projects: list of MPProject dicts - each {name, description?, url?,
+            bullets?} where every bullet is {text, tags?}.
+        skill_groups: list of SkillGroup dicts - each {label, items} (items is
+            a list of skill strings).
+        summary_note: optional free-text note appended to the profile summary.
+
+    Returns which projects were added vs skipped, which skill groups were added
+    vs merged, whether the summary was appended, and the updated master profile."""
+    return await _run(
+        mcp_ops.add_profile_evidence,
+        _engine,
+        profile_id,
+        projects,
+        skill_groups,
+        summary_note,
+    )
+
+
+@mcp.tool()
 async def list_templates() -> list[dict]:
     """List the four resume templates (name, label, description, best_for).
     Call before create_application to choose deliberately: 'slate' is the safe

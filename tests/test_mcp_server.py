@@ -32,6 +32,7 @@ EXPECTED_TOOLS = {
     "get_workflow_guide",
     "list_profiles",
     "get_master_profile",
+    "add_profile_evidence",
     "list_templates",
     "create_application",
     "save_parsed_posting",

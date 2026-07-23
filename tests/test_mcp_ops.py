@@ -308,3 +308,153 @@ def test_render_crash_marks_error(engine, profile_id, tmp_path, monkeypatch):
         app = session.get(Application, app_id)
         assert app.status == "error"
         assert "chromium exploded" in app.error_message
+
+
+# --- add_profile_evidence (portfolio import) ---
+
+def test_add_profile_evidence_appends_projects(engine, profile_id):
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        projects=[
+            {
+                "name": "Tailored",
+                "description": "Local resume-and-cover-letter builder",
+                "url": "https://github.com/x/tailored",
+                "bullets": [
+                    {"text": "Built an stdio MCP server", "tags": ["python", "mcp"]}
+                ],
+            },
+            {
+                "name": "gitnexus",
+                "description": "Code-graph query engine over git repos",
+                "bullets": [{"text": "Cypher queries over a code graph", "tags": ["graph"]}],
+            },
+        ],
+    )
+    assert result["added_projects"] == ["Tailored", "gitnexus"]
+    assert result["skipped_projects"] == []
+
+    mp = result["master_profile"]
+    names = [p["name"] for p in mp["projects"]]
+    assert names == ["queuelite", "Tailored", "gitnexus"]  # original preserved, appended
+    # Additive: unrelated master-profile content is untouched.
+    assert len(mp["experiences"]) == 2
+    assert len(mp["education"]) == 1
+
+    # Persisted to the DB, not just returned.
+    reloaded = mcp_ops.get_master_profile(engine, profile_id)["master_profile"]
+    assert [p["name"] for p in reloaded["projects"]] == ["queuelite", "Tailored", "gitnexus"]
+
+
+def test_add_profile_evidence_skips_duplicate_project(engine, profile_id):
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        projects=[
+            {"name": "Queuelite ", "description": "SHOULD NOT OVERWRITE"},  # dup (case/space)
+            {"name": "newproj", "description": "brand new"},
+        ],
+    )
+    assert result["added_projects"] == ["newproj"]
+    assert result["skipped_projects"] == ["Queuelite "]
+
+    by_name = {p["name"]: p for p in result["master_profile"]["projects"]}
+    assert "newproj" in by_name
+    # Existing project untouched - its original description survives.
+    assert (
+        by_name["queuelite"]["description"]
+        == "Open-source lightweight Python task queue backed by SQLite"
+    )
+
+
+def test_add_profile_evidence_merges_skill_groups(engine, profile_id):
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        skill_groups=[
+            # Case-insensitive label match -> merge; "Python" is a dup, "Go" is new,
+            # "python" is a within-payload dup that must also be deduped.
+            {"label": "languages & frameworks", "items": ["Python", "Go", "python"]},
+            {"label": "Testing", "items": ["pytest", "vitest"]},  # new label -> append
+        ],
+    )
+    assert result["skill_groups_added"] == ["Testing"]
+    assert result["skill_groups_merged"] == ["Languages & Frameworks"]  # existing label kept
+
+    groups = {g["label"]: g["items"] for g in result["master_profile"]["skills"]}
+    assert groups["Languages & Frameworks"] == [
+        "Python", "TypeScript", "SQL", "FastAPI", "Flask", "Go",
+    ]
+    assert groups["Testing"] == ["pytest", "vitest"]
+
+
+def test_add_profile_evidence_appends_summary_note(engine, profile_id):
+    original = mcp_ops.get_master_profile(engine, profile_id)["master_profile"][
+        "summary_notes"
+    ]
+    assert original  # the fixture profile has a non-empty summary
+
+    result = mcp_ops.add_profile_evidence(
+        engine, profile_id, summary_note="  Portfolio scan: 12 repos, 3 standout.  "
+    )
+    assert result["summary_appended"] is True
+    new_notes = result["master_profile"]["summary_notes"]
+    assert original in new_notes  # original text still present
+    assert new_notes == original + "\n\n" + "Portfolio scan: 12 repos, 3 standout."
+
+    # Whitespace-only note is a no-op.
+    noop = mcp_ops.add_profile_evidence(engine, profile_id, summary_note="   ")
+    assert noop["summary_appended"] is False
+    assert noop["master_profile"]["summary_notes"] == new_notes
+
+
+def test_add_profile_evidence_invalid_project_writes_nothing(engine, profile_id):
+    before = mcp_ops.get_master_profile(engine, profile_id)["master_profile"]
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.add_profile_evidence(
+            engine,
+            profile_id,
+            projects=[
+                {"name": "valid one", "description": "ok"},
+                {"description": "missing the required name"},  # invalid -> index 1
+            ],
+            skill_groups=[{"label": "Would Be Added", "items": ["x"]}],
+            summary_note="would be appended",
+        )
+    assert "projects[1]" in str(exc.value)
+
+    # Nothing written: not the valid project, not the skill group, not the note.
+    after = mcp_ops.get_master_profile(engine, profile_id)["master_profile"]
+    assert after == before
+
+
+def test_add_profile_evidence_missing_profile(engine, profile_id):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.add_profile_evidence(engine, 999, projects=[{"name": "x"}])
+    assert "999" in str(exc.value)
+
+
+def test_add_profile_evidence_returns_expected_keys(engine, profile_id):
+    result = mcp_ops.add_profile_evidence(
+        engine,
+        profile_id,
+        projects=[{"name": "keytest", "description": "x"}],
+        skill_groups=[{"label": "New Skills", "items": ["thing"]}],
+        summary_note="a note",
+    )
+    assert set(result) == {
+        "profile_id",
+        "added_projects",
+        "skipped_projects",
+        "skill_groups_added",
+        "skill_groups_merged",
+        "summary_appended",
+        "master_profile",
+    }
+    assert result["profile_id"] == profile_id
+    assert result["added_projects"] == ["keytest"]
+    assert result["skipped_projects"] == []
+    assert result["skill_groups_added"] == ["New Skills"]
+    assert result["skill_groups_merged"] == []
+    assert result["summary_appended"] is True
