@@ -347,3 +347,34 @@ def test_export_downloads(client):
     ok = client.get(f"/api/applications/{app_id}/exports/resume.txt")
     assert ok.status_code == 200
     assert ok.text == "AVERY KIM"
+
+
+def test_settings_round_trip(client):
+    resp = client.get("/api/settings")
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "api_key_set": False,      # ANTHROPIC_API_KEY deleted in the fixture
+        "fake_mode": True,         # TAILORED_FAKE=1 in the fixture
+        "default_template": "slate",
+        "default_depth": "standard",
+        "page_size": "Letter",
+    }
+
+    updated = client.put(
+        "/api/settings", json={"default_template": "terminal", "page_size": "A4"})
+    assert updated.status_code == 200
+    body = updated.json()
+    assert body["default_template"] == "terminal"
+    assert body["default_depth"] == "standard"
+    assert body["page_size"] == "A4"
+
+    again = client.get("/api/settings").json()  # persisted in data/settings.json
+    assert again["default_template"] == "terminal"
+    assert again["page_size"] == "A4"
+
+    assert client.put(
+        "/api/settings", json={"default_depth": "extreme"}).status_code == 422
+    assert client.put(
+        "/api/settings", json={"default_template": "papyrus"}).status_code == 422
+    assert client.put(
+        "/api/settings", json={"page_size": "Legal"}).status_code == 422

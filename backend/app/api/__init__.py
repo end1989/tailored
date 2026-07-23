@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
-from . import applications, profiles
+from . import applications, profiles, settings
 
 api_router = APIRouter(prefix="/api")
 
@@ -15,3 +15,4 @@ def health() -> dict[str, str]:
 
 api_router.include_router(profiles.router)
 api_router.include_router(applications.router)
+api_router.include_router(settings.router)
