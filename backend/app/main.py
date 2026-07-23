@@ -1,24 +1,36 @@
+"""FastAPI application factory."""
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
+from .api import api_router
 from .config import Settings, get_settings
 from .db import get_engine, init_db
+from .services.claude import make_claude
 
 
 def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
-    """App factory. `settings`/`engine` are injectable for tests; defaults
-    come from the environment (get_settings) and data_dir/tailored.db."""
-    settings = settings if settings is not None else get_settings()
+    settings = settings or get_settings()
+    if engine is None:
+        engine = get_engine(settings.data_dir / "tailored.db")
+    init_db(engine)
+
     app = FastAPI(title="Tailored")
     app.state.settings = settings
-    app.state.engine = (
-        engine if engine is not None else get_engine(settings.data_dir / "tailored.db")
+    app.state.engine = engine
+    app.state.claude = make_claude(settings)
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://127.0.0.1:5173",
+            "http://localhost:5173",
+            f"http://{settings.host}:{settings.port}",
+        ],
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
-    init_db(app.state.engine)
 
-    @app.get("/api/health")
-    def health() -> dict:
-        return {"status": "ok"}
-
+    app.include_router(api_router)
     return app
