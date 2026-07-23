@@ -48,6 +48,44 @@ def strict_schema(model_cls: type[BaseModel]) -> dict:
     return schema
 
 
+# Schema models (keyed by class name) for which the API has rejected
+# output_config's compiled grammar as too large. Once a name lands here,
+# _structured_real skips structured mode entirely for that model and goes
+# straight to prompt-embedded-schema mode.
+_OVERSIZED_SCHEMAS: set[str] = set()
+
+_PROMPT_SCHEMA_INSTRUCTIONS = (
+    "\n\nOUTPUT FORMAT (MANDATORY): Respond with ONLY a single JSON object that "
+    "validates against this JSON Schema. No markdown fences, no commentary, no "
+    "text before or after the JSON.\n{schema}"
+)
+
+
+class _OversizedGrammarError(Exception):
+    """Internal signal: the API rejected output_config's compiled grammar as too large."""
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Strip a leading ```/```json fence and trailing ``` from model output, if present."""
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    lines = stripped.split("\n")
+    lines = lines[1:]  # drop the opening fence line (``` or ```json)
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines).strip()
+
+
+def _extract_text(message) -> str:
+    """Pull the last text block's text out of a message's content list."""
+    text = ""
+    for block in message.content:
+        if getattr(block, "type", None) == "text":
+            text = block.text
+    return text
+
+
 class ClaudeError(Exception):
     """Raised on refusals, unparseable output, missing fixtures, or exhausted continuations."""
 
@@ -137,39 +175,38 @@ class ClaudeService:
             ) from exc
         return model, UsageInfo(input_tokens=0, output_tokens=0, cost_usd=0.0)
 
-    def _structured_real(
+    def _run_request_loop(
         self,
         *,
+        client,
         task: str,
-        system: str,
-        user_content: str,
-        schema_model: type[BaseModel],
-        tools: list[dict] | None,
-        max_tokens: int,
-    ) -> tuple[BaseModel, UsageInfo]:
+        base_kwargs: dict,
+        messages: list[dict],
+        intercept_oversized: bool,
+    ) -> tuple[Any, int, int, list[dict]]:
+        """Stream a request, following pause_turn continuations.
+
+        `base_kwargs` holds every kwarg for client.messages.stream() except
+        "messages", which is threaded through (and grown on pause_turn)
+        here. Returns (message, input_tokens, output_tokens, messages) -
+        messages reflects any pause_turn continuation turns appended along
+        the way, so callers can reuse it (e.g. to build a retry request).
+
+        Raises ClaudeError on rate limit / connection / API-status
+        failures. Raises _OversizedGrammarError instead of ClaudeError when
+        intercept_oversized is set and the API rejects output_config's
+        compiled grammar as too large - the caller is expected to catch
+        this, register the schema as oversized, and retry without
+        output_config.
+        """
         import anthropic
 
-        client = self._get_client()
-        messages: list[dict] = [{"role": "user", "content": user_content}]
         total_input = 0
         total_output = 0
         message = None
         for _ in range(1 + MAX_PAUSE_TURN_CONTINUATIONS):
-            kwargs: dict = {
-                "model": MODEL_ID,
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": messages,
-                "thinking": {"type": "adaptive"},
-                "output_config": {
-                    "format": {
-                        "type": "json_schema",
-                        "schema": strict_schema(schema_model),
-                    }
-                },
-            }
-            if tools:
-                kwargs["tools"] = tools
+            kwargs = dict(base_kwargs)
+            kwargs["messages"] = messages
             try:
                 with client.messages.stream(**kwargs) as stream:
                     message = stream.get_final_message()
@@ -182,6 +219,13 @@ class ClaudeService:
                 raise ClaudeError(
                     f"[{task}] could not reach the Anthropic API - check "
                     f"your network ({exc})"
+                ) from exc
+            except anthropic.BadRequestError as exc:
+                if intercept_oversized and "compiled grammar is too large" in str(exc):
+                    raise _OversizedGrammarError() from exc
+                raise ClaudeError(
+                    f"[{task}] Anthropic API error "
+                    f"(HTTP {exc.status_code}) - {exc.message}"
                 ) from exc
             except anthropic.APIStatusError as exc:
                 raise ClaudeError(
@@ -198,6 +242,20 @@ class ClaudeService:
             break
         if message is None:
             raise ClaudeError(f"[{task}] no response from API")
+        return message, total_input, total_output, messages
+
+    def _try_parse(
+        self, *, task: str, message, schema_model: type[BaseModel]
+    ) -> tuple[BaseModel | None, str, str | None]:
+        """Check stop reason and attempt to parse+validate a message's text.
+
+        Returns (model, text, error) - error is None on success, in which
+        case model is the validated instance. On a parse/validation
+        failure, model is None and error describes what went wrong (so the
+        caller can decide whether to retry). Raises ClaudeError directly
+        for pause_turn exhaustion, refusal, or a missing text block - those
+        aren't retryable states.
+        """
         if message.stop_reason == "pause_turn":
             raise ClaudeError(
                 f"[{task}] still pause_turn after "
@@ -205,29 +263,130 @@ class ClaudeService:
             )
         if message.stop_reason == "refusal":
             raise ClaudeError(f"[{task}] model refused (stop_reason=refusal)")
-        text = ""
-        for block in message.content:
-            if getattr(block, "type", None) == "text":
-                text = block.text
+        text = _extract_text(message)
         if not text:
             raise ClaudeError(
                 f"[{task}] response contained no text block "
                 f"(stop_reason={message.stop_reason})"
             )
+        cleaned = _strip_markdown_fences(text)
         try:
-            payload = json.loads(text)
+            payload = json.loads(cleaned)
         except json.JSONDecodeError as exc:
-            raise ClaudeError(
-                f"[{task}] response was not valid JSON: {exc}; "
-                f"raw text: {text[:2000]}"
-            ) from exc
+            return None, text, f"response was not valid JSON: {exc}"
         try:
             model = schema_model.model_validate(payload)
         except ValidationError as exc:
-            raise ClaudeError(
-                f"[{task}] response failed {schema_model.__name__} "
-                f"validation: {exc}; raw text: {text[:2000]}"
-            ) from exc
+            return None, text, (
+                f"response failed {schema_model.__name__} validation: {exc}"
+            )
+        return model, text, None
+
+    def _structured_real(
+        self,
+        *,
+        task: str,
+        system: str,
+        user_content: str,
+        schema_model: type[BaseModel],
+        tools: list[dict] | None,
+        max_tokens: int,
+    ) -> tuple[BaseModel, UsageInfo]:
+        client = self._get_client()
+        schema_name = schema_model.__name__
+        messages: list[dict] = [{"role": "user", "content": user_content}]
+        total_input = 0
+        total_output = 0
+        structured_mode = schema_name not in _OVERSIZED_SCHEMAS
+        message = None
+        base_kwargs: dict = {}
+
+        if structured_mode:
+            base_kwargs = {
+                "model": MODEL_ID,
+                "max_tokens": max_tokens,
+                "system": system,
+                "thinking": {"type": "adaptive"},
+                "output_config": {
+                    "format": {
+                        "type": "json_schema",
+                        "schema": strict_schema(schema_model),
+                    }
+                },
+            }
+            if tools:
+                base_kwargs["tools"] = tools
+            try:
+                message, inp, out, messages = self._run_request_loop(
+                    client=client,
+                    task=task,
+                    base_kwargs=base_kwargs,
+                    messages=messages,
+                    intercept_oversized=True,
+                )
+                total_input += inp
+                total_output += out
+            except _OversizedGrammarError:
+                _OVERSIZED_SCHEMAS.add(schema_name)
+                structured_mode = False
+                message = None
+
+        if not structured_mode:
+            prompt_system = system + _PROMPT_SCHEMA_INSTRUCTIONS.format(
+                schema=json.dumps(strict_schema(schema_model))
+            )
+            base_kwargs = {
+                "model": MODEL_ID,
+                "max_tokens": max_tokens,
+                "system": prompt_system,
+                "thinking": {"type": "adaptive"},
+            }
+            if tools:
+                base_kwargs["tools"] = tools
+            message, inp, out, messages = self._run_request_loop(
+                client=client,
+                task=task,
+                base_kwargs=base_kwargs,
+                messages=messages,
+                intercept_oversized=False,
+            )
+            total_input += inp
+            total_output += out
+
+        model, text, error = self._try_parse(
+            task=task, message=message, schema_model=schema_model
+        )
+
+        if error is not None:
+            if structured_mode:
+                raise ClaudeError(f"[{task}] {error}; raw text: {text[:2000]}")
+            # Prompt-schema mode only: retry once with a corrective follow-up.
+            retry_messages = messages + [
+                {"role": "assistant", "content": message.content},
+                {
+                    "role": "user",
+                    "content": (
+                        f"Your reply was not valid against the schema: "
+                        f"{error[:500]}. Reply again with ONLY the corrected "
+                        f"JSON object."
+                    ),
+                },
+            ]
+            retry_message, r_inp, r_out, _ = self._run_request_loop(
+                client=client,
+                task=task,
+                base_kwargs=base_kwargs,
+                messages=retry_messages,
+                intercept_oversized=False,
+            )
+            total_input += r_inp
+            total_output += r_out
+            model, text, error = self._try_parse(
+                task=task, message=retry_message, schema_model=schema_model
+            )
+            if error is not None:
+                raise ClaudeError(f"[{task}] {error}; raw text: {text[:2000]}")
+
         usage = UsageInfo(
             input_tokens=total_input,
             output_tokens=total_output,

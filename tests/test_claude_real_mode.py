@@ -10,15 +10,43 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import anthropic
+import httpx
 import pytest
 
 from backend.app.schemas import ParsedPosting, UsageInfo
+from backend.app.services import claude as claude_module
 from backend.app.services.claude import (
     MODEL_ID,
     ClaudeError,
     ClaudeService,
     compute_cost,
+    strict_schema,
 )
+
+
+@pytest.fixture(autouse=True)
+def _clean_oversized_schemas():
+    """_OVERSIZED_SCHEMAS is process-global state - keep tests order-independent."""
+    claude_module._OVERSIZED_SCHEMAS.clear()
+    try:
+        yield
+    finally:
+        claude_module._OVERSIZED_SCHEMAS.clear()
+
+
+GRAMMAR_TOO_LARGE_MESSAGE = (
+    "The compiled grammar is too large, which would cause performance issues. "
+    "Simplify your tool schemas or reduce the number of strict tools."
+)
+
+
+def make_bad_request_error(message: str) -> anthropic.BadRequestError:
+    """Build a real anthropic.BadRequestError the way the SDK would raise one."""
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    body = {"error": {"type": "invalid_request_error", "message": message}}
+    response = httpx.Response(400, request=request, json=body)
+    return anthropic.BadRequestError(message, response=response, body=body)
 
 
 def make_text_block(text: str) -> SimpleNamespace:
@@ -52,7 +80,12 @@ class StubStream:
 
 
 class StubMessages:
-    """Stub for client.messages: records kwargs, pops canned messages off a queue."""
+    """Stub for client.messages: records kwargs, pops canned messages off a queue.
+
+    Queue items that are exceptions are raised instead of wrapped in a
+    StubStream, so tests can simulate API errors (e.g. a 400 BadRequestError)
+    the same way the real SDK would raise them from client.messages.stream().
+    """
 
     def __init__(self, messages):
         self._queue = list(messages)
@@ -60,8 +93,10 @@ class StubMessages:
 
     def stream(self, **kwargs):
         self.calls.append(kwargs)
-        message = self._queue.pop(0)
-        return StubStream(message)
+        item = self._queue.pop(0)
+        if isinstance(item, BaseException):
+            raise item
+        return StubStream(item)
 
 
 def make_service(messages) -> tuple[ClaudeService, StubMessages]:
@@ -270,3 +305,175 @@ def test_no_text_block_raises_claude_error():
             user_content="u",
             schema_model=ParsedPosting,
         )
+
+
+# --- Grammar-too-large fallback -------------------------------------------
+
+
+def test_oversized_grammar_falls_back_to_prompt_schema_mode():
+    error = make_bad_request_error(GRAMMAR_TOO_LARGE_MESSAGE)
+    valid_message = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block(json.dumps(VALID_POSTING))],
+        input_tokens=20,
+        output_tokens=30,
+    )
+    service, stub_messages = make_service([error, valid_message])
+
+    parsed, usage = service.structured(
+        task="parse_posting",
+        system="You parse postings.",
+        user_content="raw posting text here",
+        schema_model=ParsedPosting,
+    )
+
+    assert parsed == ParsedPosting(**VALID_POSTING)
+    assert usage == UsageInfo(
+        input_tokens=20, output_tokens=30, cost_usd=compute_cost(20, 30)
+    )
+
+    assert len(stub_messages.calls) == 2
+    first_kwargs, second_kwargs = stub_messages.calls
+    assert "output_config" in first_kwargs
+
+    assert "output_config" not in second_kwargs
+    schema_dump = json.dumps(strict_schema(ParsedPosting))
+    assert schema_dump in second_kwargs["system"]
+    assert "You parse postings." in second_kwargs["system"]
+    assert second_kwargs["messages"] == [
+        {"role": "user", "content": "raw posting text here"}
+    ]
+
+    assert "ParsedPosting" in claude_module._OVERSIZED_SCHEMAS
+
+
+def test_preseeded_oversized_schema_skips_structured_mode():
+    claude_module._OVERSIZED_SCHEMAS.add("ParsedPosting")
+    message = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block(json.dumps(VALID_POSTING))],
+        input_tokens=10,
+        output_tokens=10,
+    )
+    service, stub_messages = make_service([message])
+
+    parsed, usage = service.structured(
+        task="parse_posting",
+        system="sys",
+        user_content="u",
+        schema_model=ParsedPosting,
+    )
+
+    assert parsed == ParsedPosting(**VALID_POSTING)
+    # Only one stream call - the schema was already known to be oversized,
+    # so structured mode was skipped entirely (no first failing attempt).
+    assert len(stub_messages.calls) == 1
+    assert "output_config" not in stub_messages.calls[0]
+
+
+def test_fenced_reply_parses_in_prompt_schema_mode():
+    claude_module._OVERSIZED_SCHEMAS.add("ParsedPosting")
+    fenced_text = "```json\n" + json.dumps(VALID_POSTING) + "\n```"
+    message = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block(fenced_text)],
+        input_tokens=5,
+        output_tokens=5,
+    )
+    service, stub_messages = make_service([message])
+
+    parsed, usage = service.structured(
+        task="parse_posting",
+        system="sys",
+        user_content="u",
+        schema_model=ParsedPosting,
+    )
+
+    assert parsed == ParsedPosting(**VALID_POSTING)
+    assert len(stub_messages.calls) == 1
+
+
+def test_invalid_then_corrected_retries_once_in_prompt_schema_mode():
+    claude_module._OVERSIZED_SCHEMAS.add("ParsedPosting")
+    bad_message = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block("not json")],
+        input_tokens=10,
+        output_tokens=5,
+    )
+    good_message = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block(json.dumps(VALID_POSTING))],
+        input_tokens=15,
+        output_tokens=8,
+    )
+    service, stub_messages = make_service([bad_message, good_message])
+
+    parsed, usage = service.structured(
+        task="parse_posting",
+        system="sys",
+        user_content="u",
+        schema_model=ParsedPosting,
+    )
+
+    assert parsed == ParsedPosting(**VALID_POSTING)
+    assert usage == UsageInfo(
+        input_tokens=25, output_tokens=13, cost_usd=compute_cost(25, 13)
+    )
+
+    assert len(stub_messages.calls) == 2
+    second_messages = stub_messages.calls[1]["messages"]
+    assert second_messages[0] == {"role": "user", "content": "u"}
+    assert second_messages[1] == {
+        "role": "assistant",
+        "content": bad_message.content,
+    }
+    assert second_messages[2]["role"] == "user"
+    assert "not valid against the schema" in second_messages[2]["content"]
+    assert "corrected JSON object" in second_messages[2]["content"]
+
+
+def test_prompt_schema_mode_retry_also_invalid_raises_claude_error():
+    claude_module._OVERSIZED_SCHEMAS.add("ParsedPosting")
+    bad1 = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block("still not json")],
+        input_tokens=1,
+        output_tokens=1,
+    )
+    bad2 = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block("also not json")],
+        input_tokens=2,
+        output_tokens=2,
+    )
+    service, stub_messages = make_service([bad1, bad2])
+
+    with pytest.raises(ClaudeError) as exc_info:
+        service.structured(
+            task="parse_posting",
+            system="sys",
+            user_content="u",
+            schema_model=ParsedPosting,
+        )
+
+    assert "also not json" in str(exc_info.value)
+    assert len(stub_messages.calls) == 2
+
+
+def test_non_oversized_bad_request_still_raises_claude_error():
+    """A 400 with a different message must not trigger the fallback."""
+    error = make_bad_request_error("Some other validation problem entirely.")
+    service, stub_messages = make_service([error])
+
+    with pytest.raises(ClaudeError) as exc_info:
+        service.structured(
+            task="parse_posting",
+            system="sys",
+            user_content="u",
+            schema_model=ParsedPosting,
+        )
+
+    assert "parse_posting" in str(exc_info.value)
+    assert len(stub_messages.calls) == 1
+    assert "ParsedPosting" not in claude_module._OVERSIZED_SCHEMAS
