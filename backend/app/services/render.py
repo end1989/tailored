@@ -6,6 +6,7 @@ directory per template (template.html + style.css). CSS is inlined into a
 """
 from __future__ import annotations
 
+import html
 from pathlib import Path
 
 import markdown as markdown_lib
@@ -41,7 +42,7 @@ def render_resume_html(resume: ResumeDoc, template: str) -> str:
 def render_cover_letter_html(cover_md: str, contact: Contact, template: str) -> str:
     """Markdown cover letter -> standalone HTML in the chosen template's style."""
     base_css, style_css = _load_css(template)
-    body_html = markdown_lib.markdown(cover_md)
+    body_html = markdown_lib.markdown(html.escape(cover_md))
     tpl = _env.get_template("cover_letter.html")
     return tpl.render(
         body_html=body_html, contact=contact, base_css=base_css, style_css=style_css

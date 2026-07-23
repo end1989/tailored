@@ -122,6 +122,16 @@ def test_render_cover_letter_html_converts_markdown():
     assert "Jane Doe" in html
 
 
+def test_render_cover_letter_html_escapes_raw_html():
+    contact = Contact(name="Test Person", email="t@example.com")
+    html_out = render_cover_letter_html(
+        "Dear team,\n\n<script>alert(1)</script>\n\n**Sincerely**", contact, "slate"
+    )
+    assert "<script>alert(1)</script>" not in html_out
+    assert "&lt;script&gt;" in html_out
+    assert "<strong>Sincerely</strong>" in html_out
+
+
 def test_export_application_writes_five_files(tmp_path, monkeypatch):
     calls = []
 
