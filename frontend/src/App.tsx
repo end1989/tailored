@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import DashboardScreen from "./screens/DashboardScreen";
 import AddJobsScreen from "./screens/AddJobsScreen";
@@ -5,8 +6,20 @@ import TemplatesScreen from "./screens/TemplatesScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ApplicationScreen from "./screens/ApplicationScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import { getThemePref, resolveTheme, setThemePref } from "./theme";
+import type { ResolvedTheme } from "./theme";
 
 export default function App() {
+  const [resolved, setResolved] = useState<ResolvedTheme>(() =>
+    resolveTheme(getThemePref())
+  );
+
+  function toggleTheme() {
+    const next: ResolvedTheme = resolved === "dark" ? "light" : "dark";
+    setThemePref(next);
+    setResolved(next);
+  }
+
   return (
     <>
       <nav className="nav">
@@ -29,6 +42,14 @@ export default function App() {
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Settings
           </NavLink>
+          <button
+            type="button"
+            className="btn btn-ghost nav-theme-toggle"
+            onClick={toggleTheme}
+            aria-label={resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {resolved === "dark" ? "☀ Light" : "☾ Dark"}
+          </button>
         </div>
       </nav>
       <main className="shell">

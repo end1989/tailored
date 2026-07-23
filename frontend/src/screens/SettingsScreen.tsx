@@ -1,13 +1,22 @@
 import { useEffect, useState } from "react";
 import { getSettings, updateSettings } from "../api";
+import { getThemePref, setThemePref } from "../theme";
+import type { ThemePref } from "../theme";
 import type { Depth, PageSize, SettingsShape, TemplateName } from "../types";
 
 const DEPTHS: Depth[] = ["quick", "standard", "deep"];
 const TEMPLATES: TemplateName[] = ["meridian", "slate", "terminal", "signal"];
 const PAGE_SIZES: PageSize[] = ["Letter", "A4"];
+const THEME_PREFS: ThemePref[] = ["system", "light", "dark"];
+const THEME_LABELS: Record<ThemePref, string> = {
+  system: "System",
+  light: "Light",
+  dark: "Dark",
+};
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<SettingsShape | null>(null);
+  const [themePref, setThemePrefState] = useState<ThemePref>(() => getThemePref());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,6 +37,11 @@ export default function SettingsScreen() {
     } catch (err) {
       setError(String(err));
     }
+  }
+
+  function handleThemeChange(pref: ThemePref) {
+    setThemePref(pref);
+    setThemePrefState(pref);
   }
 
   if (!settings) {
@@ -114,6 +128,27 @@ export default function SettingsScreen() {
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">Appearance</div>
+        <div className="field" style={{ maxWidth: "20rem" }}>
+          <label className="field-label">Theme</label>
+          <select
+            className="select"
+            value={themePref}
+            onChange={(e) => handleThemeChange(e.target.value as ThemePref)}
+          >
+            {THEME_PREFS.map((p) => (
+              <option key={p} value={p}>
+                {THEME_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="muted">
+          Stored on this device only — "System" follows your OS light/dark setting.
+        </p>
       </div>
     </div>
   );
