@@ -91,6 +91,37 @@ python run.py
 
 The server starts on http://127.0.0.1:8547 and your browser opens automatically.
 
+### Use your own AI agent instead of the API (MCP mode)
+
+Tailored ships an MCP server (`backend/mcp_server.py`) that lets any
+MCP-capable agent — Claude Code, Codex CLI, and friends — act as the
+intelligence instead of the built-in Anthropic API pipeline. Your coding
+agent's subscription does the thinking, so **no API key is needed**, and
+because the agent fetches postings with its own browser/tools, it can read
+login-walled postings the app's fetcher cannot.
+
+Register it with Claude Code in one line (replace both paths with your
+clone's absolute paths — any MCP-capable agent can register the same
+command):
+
+```
+claude mcp add tailored -- "<abs path>\.venv\Scripts\python.exe" "<abs path>\backend\mcp_server.py"
+```
+
+Then ask your agent to read Tailored's workflow guide (the
+`get_workflow_guide` tool), and from there it's just:
+
+> tailor my profile for &lt;job url&gt;
+
+The agent reads your master profile, fetches and analyzes the posting,
+optionally researches the company, and writes the tailored resume and cover
+letter back into Tailored, which renders the same PDF/HTML/ATS exports as the
+built-in pipeline. The [truthfulness guard](#truthfulness) applies to agents
+too — it is enforced server-side on the write path, so a connected agent
+cannot save invented employers, titles, dates, degrees, or certifications;
+it gets the violation list back and must correct the resume. See
+[docs/EXTENDING.md](docs/EXTENDING.md) for the full tool contract.
+
 ## Demo mode (no API key, fully offline)
 
 `Tailored.bat` / `start_tailored.sh` offer this automatically when no key is found.

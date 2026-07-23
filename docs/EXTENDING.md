@@ -1,0 +1,43 @@
+# Extending Tailored
+
+Tailored has two deliberate extension seams: the MCP tool contract (plug in
+any agent as the intelligence) and the internal pipeline's provider seam
+(run the built-in pipeline on any model/provider).
+
+## 1. The MCP tool contract (any agent)
+
+`backend/mcp_server.py` exposes Tailored over stdio MCP; the business logic
+lives in `backend/mcp_ops.py` as plain functions. Any MCP-capable agent that
+registers the server (see the README's MCP mode section) can drive the full
+workflow. The truthfulness guard runs server-side inside
+`save_tailored_resume`, so no connected agent can save fabricated history.
+
+| Tool | What it does |
+|------|--------------|
+| `get_workflow_guide()` | Call first: returns the workflow order, the truthfulness contract, and the exact JSON schemas with a worked example. |
+| `list_profiles()` | List stored profiles (id, name, has_master_profile). |
+| `get_master_profile(profile_id?)` | Contact + master profile — the only facts an agent may use. Omitting `profile_id` resolves the sole profile; ambiguity returns an error listing the profiles. |
+| `list_templates()` | The four templates with label/description/best_for metadata. |
+| `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |
+| `save_parsed_posting(application_id, parsed)` | Store the agent's `ParsedPosting` analysis (dashboard shows company/title from it). |
+| `save_research(application_id, findings)` | Optionally store agent-performed research as a `ResearchFindings` brief (tokens/cost 0). |
+| `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
+| `get_application(application_id)` | Status / version / error_message / export files. |
+
+## 2. The pipeline's provider seam (any model)
+
+Every AI call in the built-in pipeline goes through one method:
+
+```
+ClaudeService.structured(
+    task, system, user_content, schema_model, tools, max_tokens
+) -> (BaseModel, UsageInfo)
+```
+
+(`backend/app/services/claude.py`). To run the pipeline on a different model
+or provider, implement an object with that method — it must return an
+instance of `schema_model` plus a `UsageInfo` — and swap it in `make_claude`
+(same file). The fixture-backed fake mode (`ClaudeService` with
+`fake_mode=True`) is the reference implementation of the contract: it shows
+exactly what the pipeline passes in and expects back, and the whole test
+suite runs against it.
