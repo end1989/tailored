@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Project root: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\` — new git repo created in Task 1.
+- Project root: `.` — new git repo created in Task 1.
 - Model: `claude-opus-4-8` everywhere; `thinking={"type": "adaptive"}`; never `temperature`/`top_p`/`top_k`; never assistant prefill; structured outputs via `output_config={"format": {"type": "json_schema", ...}}`.
 - Cost constants (Opus 4.8): input $5.00/MTok, output $25.00/MTok — defined once in `backend/app/services/claude.py`.
 - Templates: exactly four — `meridian`, `slate`, `terminal`, `signal`; `slate` is the default. All consume identical `ResumeDoc` JSON.
@@ -35,7 +35,7 @@ If your section needs something not defined here, define it fully inside your ow
 
 ## Global constraints
 
-- Project root: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\` (all paths below relative to it)
+- Project root: `.` (all paths below relative to it)
 - Python 3.11+; FastAPI; SQLModel; Pydantic v2; Anthropic Python SDK (`anthropic`)
 - Model ID: `claude-opus-4-8` — always. Thinking: `{"type": "adaptive"}`. Never pass temperature/top_p/top_k. Never use assistant prefill.
 - Structured outputs via `output_config={"format": {"type": "json_schema", "schema": ...}}` on `client.messages.create` (schemas from `Model.model_json_schema()`; every object level needs `additionalProperties: false` — provide a helper `strict_schema()` that walks the schema dict and adds it).
@@ -611,28 +611,28 @@ tests get `@pytest.mark.pdf` and the plan notes `pytest -m "not pdf"` for fast r
 
 All commands below run in PowerShell with the Python venv active. Because executors reset
 the working directory between shell calls, every command block after the initial scaffold
-explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — do not strip it.
+explicitly prefixes `cd .;` — do not strip it.
 
 ### Task 1: Project scaffold & repo
 
 **Files**
 
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\.gitignore`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\requirements.txt`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\pyproject.toml`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\.env.example`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\README.md`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\run.py`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\__init__.py`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\config.py`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\db.py`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\main.py`
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\docs\superpowers\specs\2026-07-22-tailored-resume-builder-design.md` (copied)
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\docs\superpowers\plans\2026-07-22-tailored-resume-builder.md` (copied)
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\conftest.py`
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_config.py`
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_db.py`
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_health.py`
+- Create: `.gitignore`
+- Create: `requirements.txt`
+- Create: `pyproject.toml`
+- Create: `.env.example`
+- Create: `README.md`
+- Create: `run.py`
+- Create: `backend\app\__init__.py`
+- Create: `backend\app\config.py`
+- Create: `backend\app\db.py`
+- Create: `backend\app\main.py`
+- Create: `docs\superpowers\specs\2026-07-22-tailored-resume-builder-design.md` (copied)
+- Create: `docs\superpowers\plans\2026-07-22-tailored-resume-builder.md` (copied)
+- Test: `tests\conftest.py`
+- Test: `tests\test_config.py`
+- Test: `tests\test_db.py`
+- Test: `tests\test_health.py`
 
 **Interfaces**
 
@@ -651,8 +651,8 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
   Run:
 
   ```powershell
-  New-Item -ItemType Directory -Force -Path F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored | Out-Null
-  Set-Location F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+  New-Item -ItemType Directory -Force -Path . | Out-Null
+  Set-Location .
   git init -b main
   New-Item -ItemType Directory -Force -Path backend\app, tests, docs\superpowers\specs, docs\superpowers\plans | Out-Null
   New-Item -ItemType File -Force -Path backend\app\__init__.py | Out-Null
@@ -750,20 +750,20 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
   Copy the approved spec and the assembled plan into the repo:
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; Copy-Item "F:\workspace\WORKSPACE_CLAUDES\personal\Eldon_Dahlin_Resume\docs\superpowers\specs\2026-07-22-tailored-resume-builder-design.md" "docs\superpowers\specs\2026-07-22-tailored-resume-builder-design.md"
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; Copy-Item "F:\workspace\WORKSPACE_CLAUDES\personal\Eldon_Dahlin_Resume\docs\superpowers\plans\2026-07-22-tailored-resume-builder.md" "docs\superpowers\plans\2026-07-22-tailored-resume-builder.md"
+  # docs\superpowers\specs\2026-07-22-tailored-resume-builder-design.md
+  # docs\superpowers\plans\2026-07-22-tailored-resume-builder.md
   ```
 
   Install dependencies (venv is already active). `playwright install chromium` can be deferred until Task 10 (the first `@pytest.mark.pdf` test) if you want to skip the browser download now:
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pip install -r requirements.txt
+  cd .; pip install -r requirements.txt
   ```
 
   Commit:
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add -A; git commit -m "chore: scaffold tailored repo (gitignore, deps, pytest config, docs)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add -A; git commit -m "chore: scaffold tailored repo (gitignore, deps, pytest config, docs)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 2: Write failing tests for config**
@@ -873,7 +873,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 3: Run config tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_config.py -v
+  cd .; pytest tests/test_config.py -v
   ```
 
   Expected failure (collection error):
@@ -977,7 +977,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 5: Run config tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_config.py -v
+  cd .; pytest tests/test_config.py -v
   ```
 
   Expected: `7 passed`.
@@ -985,7 +985,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 6: Commit config**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add -A; git commit -m "feat: env-driven Settings and persisted user settings (config.py)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add -A; git commit -m "feat: env-driven Settings and persisted user settings (config.py)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 7: Write failing tests for the database layer**
@@ -1066,7 +1066,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 8: Run db tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_db.py -v
+  cd .; pytest tests/test_db.py -v
   ```
 
   Expected failure (collection error):
@@ -1141,7 +1141,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 10: Run db tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_db.py -v
+  cd .; pytest tests/test_db.py -v
   ```
 
   Expected: `4 passed`.
@@ -1149,7 +1149,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 11: Commit db layer**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add -A; git commit -m "feat: sqlite engine, init_db, session_scope, get_session dependency (db.py)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add -A; git commit -m "feat: sqlite engine, init_db, session_scope, get_session dependency (db.py)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 12: Write failing health test + full conftest fixture set**
@@ -1234,7 +1234,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 13: Run the whole suite — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -v
+  cd .; pytest -v
   ```
 
   Expected failure (conftest cannot import the app factory, so collection errors out):
@@ -1280,7 +1280,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 15: Run the whole suite — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -v
+  cd .; pytest -v
   ```
 
   Expected: `12 passed` (7 config + 4 db + 1 health).
@@ -1320,21 +1320,21 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
   `main()` only runs under `__main__`):
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; python -c "import run"
+  cd .; python -c "import run"
   ```
 
 - [ ] **Step 17: Commit app factory, fixtures, and launcher**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add -A; git commit -m "feat: app factory with /api/health, shared pytest fixtures, run.py launcher" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add -A; git commit -m "feat: app factory with /api/health, shared pytest fixtures, run.py launcher" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ### Task 2: Schemas
 
 **Files**
 
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\schemas.py`
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_schemas.py`
+- Create: `backend\app\schemas.py`
+- Test: `tests\test_schemas.py`
 
 **Interfaces**
 
@@ -1542,7 +1542,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 2: Run schema tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_schemas.py -v
+  cd .; pytest tests/test_schemas.py -v
   ```
 
   Expected failure (collection error):
@@ -1762,13 +1762,13 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 4: Run schema tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_schemas.py -v
+  cd .; pytest tests/test_schemas.py -v
   ```
 
   Expected: `5 passed`. Then confirm nothing regressed:
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -v
+  cd .; pytest -v
   ```
 
   Expected: `17 passed`.
@@ -1776,15 +1776,15 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 5: Commit schemas**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add -A; git commit -m "feat: complete pydantic schema module (resume doc, master profile, usage, fetch result)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add -A; git commit -m "feat: complete pydantic schema module (resume doc, master profile, usage, fetch result)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ### Task 3: DB models
 
 **Files**
 
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\models.py`
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_models.py`
+- Create: `backend\app\models.py`
+- Test: `tests\test_models.py`
 
 **Interfaces**
 
@@ -1987,7 +1987,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 2: Run model tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_models.py -v
+  cd .; pytest tests/test_models.py -v
   ```
 
   Expected failure (collection error):
@@ -2128,14 +2128,14 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 4: Run model tests — expect PASS, then the full suite**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_models.py -v
+  cd .; pytest tests/test_models.py -v
   ```
 
   Expected: `7 passed`. (The `engine` fixture's `init_db` now imports `backend.app.models`
   via the guarded import written in Task 1, so all six tables exist on the tmp SQLite file.)
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -v
+  cd .; pytest -v
   ```
 
   Expected: `24 passed` (12 foundation + 5 schemas + 7 models).
@@ -2143,14 +2143,14 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 5: Commit models**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add -A; git commit -m "feat: sqlmodel entities and typed json helpers (models.py)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add -A; git commit -m "feat: sqlmodel entities and typed json helpers (models.py)" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
 
 # Section: Claude Service & Intake (Tasks 4–5)
 
-> Working directory for every command: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored`. Every command below starts with an explicit `cd` because agent shells reset cwd. Python venv is active; `pytest`, `python`, `git` are on PATH.
+> Working directory for every command: `.`. Every command below starts with an explicit `cd` because agent shells reset cwd. Python venv is active; `pytest`, `python`, `git` are on PATH.
 >
 > Depends on Tasks 1–3 having landed: git repo + `pyproject.toml` with `[tool.pytest.ini_options]` containing `testpaths` and the `pdf` marker (Task 1); `backend.app.*` imports resolve via the sys.path shim at the top of `tests/conftest.py` (Task 1) — do not add a `pythonpath` key to `pyproject.toml`. Also landed: `backend/app/__init__.py`, `backend/app/schemas.py` (Task 2, verbatim from the contract), and `tests/conftest.py` with the `db_session` fixture (Task 1). `anthropic`, `pypdf`, and `python-docx` are in `requirements.txt` from Task 1; if any is missing, `pip install anthropic pypdf python-docx` and add them to `requirements.txt` before starting.
 >
@@ -2267,7 +2267,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 2: Run test, expect FAIL (module does not exist)**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_claude.py -v
+  cd .; pytest tests/test_claude.py -v
   ```
 
   Expected failure (collection error):
@@ -2334,7 +2334,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 4: Run test, expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_claude.py -v
+  cd .; pytest tests/test_claude.py -v
   ```
 
   Expected: `5 passed`.
@@ -2342,7 +2342,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 5: Commit cycle 1**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add backend/app/services/__init__.py backend/app/services/claude.py tests/test_claude.py; git commit -m "feat: claude service cost constants, compute_cost, strict_schema" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add backend/app/services/__init__.py backend/app/services/claude.py tests/test_claude.py; git commit -m "feat: claude service cost constants, compute_cost, strict_schema" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 6: Write failing tests for ClaudeService fake mode, call recording, and make_claude**
@@ -2514,7 +2514,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 7: Run test, expect FAIL (make_claude / fake mode not implemented)**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_claude.py -v
+  cd .; pytest tests/test_claude.py -v
   ```
 
   Expected failure (collection error — the import line asks for names that do not exist yet):
@@ -2781,7 +2781,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
   8b. Create the fixtures directory:
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; New-Item -ItemType Directory -Force backend/app/fixtures | Out-Null
+  cd .; New-Item -ItemType Directory -Force backend/app/fixtures | Out-Null
   ```
 
   All five JSON files below are ASCII-only; save them as UTF-8 **without BOM** (the file-write tool default; do NOT use `Set-Content -Encoding utf8` on Windows PowerShell 5, which adds a BOM that breaks `json.loads`).
@@ -3130,7 +3130,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 9: Run test, expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_claude.py -v
+  cd .; pytest tests/test_claude.py -v
   ```
 
   Expected: `10 passed`.
@@ -3138,13 +3138,13 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 10: Run the fast suite, then commit cycle 2**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf"
+  cd .; pytest -m "not pdf"
   ```
 
   Expected: all collected tests pass (Tasks 1–3 suites plus the 10 above), `0 failed`.
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add backend/app/services/claude.py backend/app/fixtures tests/test_claude.py tests/conftest.py; git commit -m "feat: ClaudeService fake/real modes, fixtures, make_claude factory" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add backend/app/services/claude.py backend/app/fixtures tests/test_claude.py tests/conftest.py; git commit -m "feat: ClaudeService fake/real modes, fixtures, make_claude factory" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
@@ -3232,7 +3232,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 2: Run test, expect FAIL (module does not exist)**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_intake.py -v
+  cd .; pytest tests/test_intake.py -v
   ```
 
   Expected failure (collection error):
@@ -3277,7 +3277,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 4: Run test, expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_intake.py -v
+  cd .; pytest tests/test_intake.py -v
   ```
 
   Expected: `4 passed`.
@@ -3285,7 +3285,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 5: Commit cycle 1**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add backend/app/services/intake.py tests/test_intake.py; git commit -m "feat: intake extract_text for pdf/docx/txt uploads" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add backend/app/services/intake.py tests/test_intake.py; git commit -m "feat: intake extract_text for pdf/docx/txt uploads" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 6: Write failing tests for IntakeResult and build_master_profile**
@@ -3394,7 +3394,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 7: Run test, expect FAIL (names not implemented)**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_intake.py -v
+  cd .; pytest tests/test_intake.py -v
   ```
 
   Expected failure (collection error):
@@ -3485,7 +3485,7 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 9: Run test, expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_intake.py -v
+  cd .; pytest tests/test_intake.py -v
   ```
 
   Expected: `7 passed`.
@@ -3493,20 +3493,20 @@ explicitly prefixes `cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored;` — d
 - [ ] **Step 10: Run the fast suite, then commit cycle 2**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf"
+  cd .; pytest -m "not pdf"
   ```
 
   Expected: all collected tests pass (including the 10 from `tests/test_claude.py`), `0 failed`.
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add backend/app/services/intake.py tests/test_intake.py; git commit -m "feat: build_master_profile intake call with IntakeResult schema" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add backend/app/services/intake.py tests/test_intake.py; git commit -m "feat: build_master_profile intake call with IntakeResult schema" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
 
 # Section 3 — Stage Services & Pipeline (Tasks 6–9)
 
-All commands run from the project root `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored` (each command includes the `cd`; the Python venv is assumed active). Tasks 6–9 assume Tasks 1–5 are complete: schemas (`backend/app/schemas.py`), models (`backend/app/models.py`), config/db (`backend/app/config.py`, `backend/app/db.py`), `ClaudeService` + fixture files under `backend/app/fixtures/` (Task 4), and the intake service with `IntakeResult` (Task 5). `tests/conftest.py` (Task 1) provides the `engine` and `fake_settings` fixtures used below and puts the project root on `sys.path` so `backend.app.*` imports work.
+All commands run from the project root `.` (each command includes the `cd`; the Python venv is assumed active). Tasks 6–9 assume Tasks 1–5 are complete: schemas (`backend/app/schemas.py`), models (`backend/app/models.py`), config/db (`backend/app/config.py`, `backend/app/db.py`), `ClaudeService` + fixture files under `backend/app/fixtures/` (Task 4), and the intake service with `IntakeResult` (Task 5). `tests/conftest.py` (Task 1) provides the `engine` and `fake_settings` fixtures used below and puts the project root on `sys.path` so `backend.app.*` imports work.
 
 **Local `claude_fake` fixture convention for this section:** each test file below defines its own `claude_fake` fixture built on a `RecordingClaude` subclass of `ClaudeService` that delegates each `structured()` call to the real fake-mode loader and then records the call's full kwargs. Task 4's base `ClaudeService.structured()` already appends one record to `self.calls` per invocation, so the subclass must NOT append a second entry (and must NOT re-initialize `self.calls` in `__init__`): it calls `super().structured(...)` first and then overwrites `self.calls[-1]` with the kwargs dict, keeping exactly one entry per logical call. A module-level fixture shadows any same-named conftest fixture, so these tests do not depend on the exact shape of the `claude_fake` fixture Task 4 appends to conftest — only on the contract-defined `ClaudeService` constructor and `structured()` signature. The class is repeated verbatim in each test file on purpose (no cross-file test imports).
 
@@ -3536,7 +3536,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 1: Verify HTTP/extraction dependencies are installed**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; python -c "import httpx, trafilatura, respx; print('deps ok')"
+  cd .; python -c "import httpx, trafilatura, respx; print('deps ok')"
   ```
 
   Expect `deps ok`. If this fails, run `pip install -r requirements.txt` (Task 1 added `httpx`, `trafilatura`, and `respx` to `requirements.txt`) and re-run.
@@ -3641,7 +3641,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 3: Run the tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_fetcher.py -v
+  cd .; pytest tests/test_fetcher.py -v
   ```
 
   Expected failure: collection error `ModuleNotFoundError: No module named 'backend.app.services.fetcher'` (or `ImportError: cannot import name 'fetch_posting'` if an empty placeholder file exists).
@@ -3706,7 +3706,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 5: Run the tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_fetcher.py -v
+  cd .; pytest tests/test_fetcher.py -v
   ```
 
   Expect all 5 tests to pass.
@@ -3714,7 +3714,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 6: Commit**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_fetcher.py backend/app/services/fetcher.py; git commit -m "feat: posting fetcher with trafilatura extraction and needs_paste fallback" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_fetcher.py backend/app/services/fetcher.py; git commit -m "feat: posting fetcher with trafilatura extraction and needs_paste fallback" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
@@ -3814,7 +3814,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 2: Run the test — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_research.py -v
+  cd .; pytest tests/test_research.py -v
   ```
 
   Expected failure: collection error `ModuleNotFoundError: No module named 'backend.app.services.research'` (or `ImportError: cannot import name 'parse_posting'` if a placeholder exists).
@@ -3859,7 +3859,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 4: Run the test — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_research.py -v
+  cd .; pytest tests/test_research.py -v
   ```
 
   Expect 1 passing test.
@@ -3867,7 +3867,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 5: Commit the parse cycle**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_research.py backend/app/services/research.py; git commit -m "feat: posting parser (parse_posting) with structured output" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_research.py backend/app/services/research.py; git commit -m "feat: posting parser (parse_posting) with structured output" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 6: Write the failing tests for `research_company`**
@@ -3947,7 +3947,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 7: Run the tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_research.py -v
+  cd .; pytest tests/test_research.py -v
   ```
 
   Expected failure: collection error `ImportError: cannot import name 'research_company' from 'backend.app.services.research'`.
@@ -4027,7 +4027,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 9: Run the tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_research.py -v
+  cd .; pytest tests/test_research.py -v
   ```
 
   Expect 5 passing tests.
@@ -4035,7 +4035,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 10: Commit the research cycle**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_research.py backend/app/services/research.py; git commit -m "feat: company research service with quick/standard/deep depth dial" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_research.py backend/app/services/research.py; git commit -m "feat: company research service with quick/standard/deep depth dial" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
@@ -4201,7 +4201,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 2: Run the tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_tailor.py -v
+  cd .; pytest tests/test_tailor.py -v
   ```
 
   Expected failure: collection error `ModuleNotFoundError: No module named 'backend.app.services.tailor'` (or `ImportError: cannot import name 'tailor_application'` if a placeholder exists).
@@ -4290,7 +4290,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 4: Run the tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_tailor.py -v
+  cd .; pytest tests/test_tailor.py -v
   ```
 
   Expect 5 passing tests.
@@ -4298,7 +4298,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 5: Commit the tailor cycle**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_tailor.py backend/app/services/tailor.py; git commit -m "feat: tailor service with verbatim truthfulness rubric prompt" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_tailor.py backend/app/services/tailor.py; git commit -m "feat: tailor service with verbatim truthfulness rubric prompt" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 6: Write the failing tests for `verify_truthfulness` (fixture invariant)**
@@ -4355,7 +4355,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 7: Run the tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_tailor.py -v
+  cd .; pytest tests/test_tailor.py -v
   ```
 
   Expected failure: collection error `ImportError: cannot import name 'verify_truthfulness' from 'backend.app.services.tailor'`.
@@ -4439,7 +4439,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 9: Run the tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_tailor.py -v
+  cd .; pytest tests/test_tailor.py -v
   ```
 
   Expect 7 passing tests. If `test_fixture_tailor_result_passes_truthfulness` fails, fix the fixture files (`backend/app/fixtures/tailor.json` must only use companies/titles/dates/education/certifications present in `backend/app/fixtures/intake.json`) — do not weaken the verifier.
@@ -4447,7 +4447,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 10: Commit the truthfulness cycle**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_tailor.py backend/app/services/tailor.py; git commit -m "feat: structural truthfulness verifier enforcing fixture invariant" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_tailor.py backend/app/services/tailor.py; git commit -m "feat: structural truthfulness verifier enforcing fixture invariant" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
@@ -4703,7 +4703,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 2: Run the tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_pipeline.py -v
+  cd .; pytest tests/test_pipeline.py -v
   ```
 
   Expected failure: collection error `ImportError: cannot import name 'pipeline' from 'backend.app.services'` / `ModuleNotFoundError: No module named 'backend.app.services.pipeline'`. (If the error instead mentions `render`, Tasks 10–11 are not done yet — see the ordering prerequisite above.)
@@ -4889,7 +4889,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 4: Run the tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_pipeline.py -v
+  cd .; pytest tests/test_pipeline.py -v
   ```
 
   Expect 4 passing tests.
@@ -4897,7 +4897,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 5: Commit the stage-machine cycle**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_pipeline.py backend/app/services/pipeline.py; git commit -m "feat: application pipeline stage machine with per-stage status commits" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_pipeline.py backend/app/services/pipeline.py; git commit -m "feat: application pipeline stage machine with per-stage status commits" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 - [ ] **Step 6: Write the failing tests for `resume_after_paste` and `regenerate_application`**
@@ -4957,7 +4957,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 7: Run the tests — expect FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_pipeline.py -v
+  cd .; pytest tests/test_pipeline.py -v
   ```
 
   Expected failure: the two new tests fail with `AttributeError: module 'backend.app.services.pipeline' has no attribute 'resume_after_paste'` (and `... 'regenerate_application'`); the first four still pass.
@@ -5031,7 +5031,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 9: Run the tests — expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_pipeline.py -v
+  cd .; pytest tests/test_pipeline.py -v
   ```
 
   Expect 6 passing tests.
@@ -5039,7 +5039,7 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 10: Run the fast suite to confirm nothing in Tasks 1–8 regressed**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf" -v
+  cd .; pytest -m "not pdf" -v
   ```
 
   Expect all collected tests to pass.
@@ -5047,14 +5047,14 @@ None of this section's tests require Playwright/Chromium — `render_pdf` is mon
 - [ ] **Step 11: Commit the paste/regenerate cycle**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_pipeline.py backend/app/services/pipeline.py; git commit -m "feat: paste-resume and regenerate pipeline entry points" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_pipeline.py backend/app/services/pipeline.py; git commit -m "feat: paste-resume and regenerate pipeline entry points" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
 ---
 
 ## Section 4: Render Service & Templates (Tasks 10–11)
 
-All commands run from the project root `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\` with the Python venv active (PowerShell). This section assumes (from earlier tasks): `jinja2`, `markdown`, `playwright`, `pytest` are installed via Task 1's `requirements.txt`; the `pdf` pytest marker is registered in `pyproject.toml` (Task 1); `tests/conftest.py` (Task 1) puts the project root on `sys.path` so `backend.app.*` imports resolve; `backend/app/schemas.py` exists verbatim from the contract (Task 2); `backend/app/fixtures/tailor.json` exists and validates into `TailorResult` (Task 4).
+All commands run from the project root `.` with the Python venv active (PowerShell). This section assumes (from earlier tasks): `jinja2`, `markdown`, `playwright`, `pytest` are installed via Task 1's `requirements.txt`; the `pdf` pytest marker is registered in `pyproject.toml` (Task 1); `tests/conftest.py` (Task 1) puts the project root on `sys.path` so `backend.app.*` imports resolve; `backend/app/schemas.py` exists verbatim from the contract (Task 2); `backend/app/fixtures/tailor.json` exists and validates into `TailorResult` (Task 4).
 
 Note on autoescape: the contract says `autoescape=True`; this section uses `select_autoescape()`, which enables autoescaping for all `.html` templates (every template here) — functionally identical for this codebase. Trusted CSS/HTML values (`base_css`, `style_css`, `body_html`) are marked `| safe` inside the templates; all resume/contact data stays escaped.
 
@@ -5297,7 +5297,7 @@ Languages: Python, TypeScript
 - [ ] **Step 2: Run tests — expect FAIL (module does not exist)**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_render.py -m "not pdf" -v
+cd .; pytest tests/test_render.py -m "not pdf" -v
 ```
 
 Expected failure: collection error —
@@ -5499,7 +5499,7 @@ def export_application(
 - [ ] **Step 4: Run tests — expect the ATS test to PASS, the HTML tests to FAIL (templates missing)**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_render.py -m "not pdf" -v
+cd .; pytest tests/test_render.py -m "not pdf" -v
 ```
 
 Expected: `1 passed, 4 failed, 1 deselected`. The ATS test passes; the four HTML/export tests fail with:
@@ -5866,7 +5866,7 @@ Write `backend/templates/cover_letter.html` with exactly this content:
 - [ ] **Step 6: Run the fast tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_render.py -m "not pdf" -v
+cd .; pytest tests/test_render.py -m "not pdf" -v
 ```
 
 Expected: `5 passed, 1 deselected`.
@@ -5876,13 +5876,13 @@ Expected: `5 passed, 1 deselected`.
 If Chromium was never installed on this machine, install it once first:
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; playwright install chromium
+cd .; playwright install chromium
 ```
 
 Then:
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_render.py -m pdf -v
+cd .; pytest tests/test_render.py -m pdf -v
 ```
 
 Expected: `1 passed, 5 deselected` (a real one-page PDF is produced; the file starts with `%PDF`).
@@ -5890,7 +5890,7 @@ Expected: `1 passed, 5 deselected` (a real one-page PDF is produced; the file st
 - [ ] **Step 8: Commit**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add backend/app/services/render.py backend/templates/base.css backend/templates/slate/template.html backend/templates/slate/style.css backend/templates/cover_letter.html tests/test_render.py; git commit -m "feat: render service with slate template, cover letter, ATS text, PDF export" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+cd .; git add backend/app/services/render.py backend/templates/base.css backend/templates/slate/template.html backend/templates/slate/style.css backend/templates/cover_letter.html tests/test_render.py; git commit -m "feat: render service with slate template, cover letter, ATS text, PDF export" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -6053,7 +6053,7 @@ def test_template_renders_all_six_section_types(template):
 - [ ] **Step 2: Run tests — expect FAIL for meridian/terminal/signal**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_templates.py -v
+cd .; pytest tests/test_templates.py -v
 ```
 
 Expected: `2 passed, 9 failed` — the two `slate` params pass; every meridian/terminal/signal test fails with:
@@ -6271,7 +6271,7 @@ body {
 - [ ] **Step 4: Run the Meridian tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_templates.py -k meridian -v
+cd .; pytest tests/test_templates.py -k meridian -v
 ```
 
 Expected: `3 passed, 8 deselected`.
@@ -6492,7 +6492,7 @@ body {
 - [ ] **Step 6: Run the Terminal tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_templates.py -k terminal -v
+cd .; pytest tests/test_templates.py -k terminal -v
 ```
 
 Expected: `3 passed, 8 deselected`.
@@ -6719,7 +6719,7 @@ body {
 - [ ] **Step 8: Run the Signal tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_templates.py -k signal -v
+cd .; pytest tests/test_templates.py -k signal -v
 ```
 
 Expected: `3 passed, 8 deselected`.
@@ -6727,13 +6727,13 @@ Expected: `3 passed, 8 deselected`.
 - [ ] **Step 9: Run the full template suite and the whole fast suite — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_templates.py -v
+cd .; pytest tests/test_templates.py -v
 ```
 
 Expected: `11 passed`.
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf"
+cd .; pytest -m "not pdf"
 ```
 
 Expected: all collected tests pass (pdf-marked tests deselected).
@@ -6741,14 +6741,14 @@ Expected: all collected tests pass (pdf-marked tests deselected).
 - [ ] **Step 10: Commit**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add backend/templates/meridian backend/templates/terminal backend/templates/signal tests/test_templates.py; git commit -m "feat: add meridian, terminal, and signal resume templates" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+cd .; git add backend/templates/meridian backend/templates/terminal backend/templates/signal tests/test_templates.py; git commit -m "feat: add meridian, terminal, and signal resume templates" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
 
 # Section 05 — API layer, demo mode, and launcher (Tasks 12–13)
 
-All commands run from the project root `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored` with the Python venv active. Every `pytest` invocation below is PowerShell-syntax.
+All commands run from the project root `.` with the Python venv active. Every `pytest` invocation below is PowerShell-syntax.
 
 **Cross-section assumptions used in this section** (from the contract; flagged so the implementer can adapt if an earlier task differed slightly):
 
@@ -6985,7 +6985,7 @@ def test_build_master_profile(client, monkeypatch):
 - [ ] **Step 2: Run the tests — expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_api.py -v
+cd .; pytest tests/test_api.py -v
 ```
 
 Expected failure: a collection-time import error such as `ModuleNotFoundError: No module named 'backend.app.api'` or `ImportError: cannot import name 'api_router' from 'backend.app.api'` — or, if Task 1 left a scaffold `create_app`, `TypeError: create_app() got an unexpected keyword argument 'settings'` / assertion failures like `assert 404 == 200` because the profile routes do not exist. Any of these confirms the tests fail before implementation.
@@ -6995,7 +6995,7 @@ Expected failure: a collection-time import error such as `ModuleNotFoundError: N
 First make sure `python-multipart` is installed and recorded (idempotent):
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+cd .
 if (-not (Select-String -Path requirements.txt -Pattern "python-multipart" -Quiet)) { Add-Content requirements.txt "python-multipart" }
 pip install python-multipart
 ```
@@ -7241,7 +7241,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 - [ ] **Step 4: Run the tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_api.py -v
+cd .; pytest tests/test_api.py -v
 ```
 
 Expected: `test_health`, `test_profile_crud`, `test_document_upload_multipart_and_json`, `test_build_master_profile` all pass (4 passed).
@@ -7249,7 +7249,7 @@ Expected: `test_health`, `test_profile_crud`, `test_document_upload_multipart_an
 - [ ] **Step 5: Commit cycle A**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+cd .
 git add backend/app/api backend/app/main.py tests/test_api.py requirements.txt
 git commit -m "feat: profile API routes with document upload and intake build" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -7430,7 +7430,7 @@ def test_export_downloads(client):
 - [ ] **Step 7: Run the tests — expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_api.py -v
+cd .; pytest tests/test_api.py -v
 ```
 
 Expected: the four cycle-A tests still pass; every new test fails with `assert 404 == 200` (plus the response text `{"detail":"Not Found"}`) because no `/api/applications/...` routes exist yet.
@@ -7799,7 +7799,7 @@ api_router.include_router(applications.router)
 - [ ] **Step 9: Run the tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_api.py -v
+cd .; pytest tests/test_api.py -v
 ```
 
 Expected: all 12 tests pass (4 from cycle A + 8 new).
@@ -7807,7 +7807,7 @@ Expected: all 12 tests pass (4 from cycle A + 8 new).
 - [ ] **Step 10: Commit cycle B**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+cd .
 git add backend/app/api tests/test_api.py
 git commit -m "feat: application API routes with batch create, content edit, preview, exports" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -7853,7 +7853,7 @@ def test_settings_round_trip(client):
 - [ ] **Step 12: Run the tests — expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_api.py::test_settings_round_trip -v
+cd .; pytest tests/test_api.py::test_settings_round_trip -v
 ```
 
 Expected failure: `assert 404 == 200` — `/api/settings` does not exist yet.
@@ -7956,8 +7956,8 @@ api_router.include_router(settings.router)
 - [ ] **Step 14: Run the full API test file and the fast suite — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_api.py -v
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf"
+cd .; pytest tests/test_api.py -v
+cd .; pytest -m "not pdf"
 ```
 
 Expected: all 13 tests in `tests/test_api.py` pass, and the whole fast suite stays green.
@@ -7965,7 +7965,7 @@ Expected: all 13 tests in `tests/test_api.py` pass, and the whole fast suite sta
 - [ ] **Step 15: Commit cycle C**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+cd .
 git add backend/app/api tests/test_api.py
 git commit -m "feat: settings API routes and full api_router wiring" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -8079,7 +8079,7 @@ def test_second_startup_does_not_duplicate(demo_env):
 - [ ] **Step 2: Run the tests — expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_demo.py -v
+cd .; pytest tests/test_demo.py -v
 ```
 
 Expected failure: `assert 0 == 1` style failures (`assert len(profiles) == 1` fails with `len == 0`) because `create_app` has no startup seeding yet. (`app.demo` does not exist yet, but the test file does not import it directly, so failures are assertion failures, not import errors.)
@@ -8409,7 +8409,7 @@ def create_app(settings: Settings | None = None, engine=None) -> FastAPI:
 - [ ] **Step 4: Run the tests — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_demo.py tests/test_api.py -v
+cd .; pytest tests/test_demo.py tests/test_api.py -v
 ```
 
 Expected: both demo tests pass AND all 13 `test_api.py` tests still pass (`test_api.py` uses a plain `TestClient` without a context manager, so the new startup seeding never runs there).
@@ -8417,7 +8417,7 @@ Expected: both demo tests pass AND all 13 `test_api.py` tests still pass (`test_
 - [ ] **Step 5: Commit cycle 1**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+cd .
 git add backend/app/demo.py backend/app/fixtures/demo backend/app/main.py tests/test_demo.py
 git commit -m "feat: offline demo seeding on startup in fake mode" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -8447,7 +8447,7 @@ def test_spa_fallback_and_api_passthrough(demo_env):
 - [ ] **Step 7: Run the test — expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_demo.py::test_spa_fallback_and_api_passthrough -v
+cd .; pytest tests/test_demo.py::test_spa_fallback_and_api_passthrough -v
 ```
 
 Expected failure: `assert 404 == 200` — no catch-all route exists yet, so `/applications/1` returns FastAPI's default 404.
@@ -8463,7 +8463,7 @@ Create `frontend/dist/index.html` with exactly this content (Task 17's real Vite
 Verify the placeholder is not gitignored (the committed build is a hard requirement):
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git check-ignore -v frontend/dist/index.html
+cd .; git check-ignore -v frontend/dist/index.html
 ```
 
 Expected: no output, exit code 1. If a rule prints, edit `.gitignore` so `frontend/dist/` is NOT excluded (e.g. remove the rule or add a `!frontend/dist/` exception) before continuing.
@@ -8587,8 +8587,8 @@ if __name__ == "__main__":
 - [ ] **Step 9: Run the demo tests and the full fast suite — expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_demo.py -v
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf"
+cd .; pytest tests/test_demo.py -v
+cd .; pytest -m "not pdf"
 ```
 
 Expected: all 3 tests in `tests/test_demo.py` pass; the entire fast suite is green. As a manual smoke check (optional, requires nothing but Python): `$env:TAILORED_FAKE = "1"; python run.py` should print the banner, open the browser to the placeholder page, and `GET /api/applications` should show one `ready` demo application; stop with Ctrl+C and `Remove-Item Env:TAILORED_FAKE`.
@@ -8596,7 +8596,7 @@ Expected: all 3 tests in `tests/test_demo.py` pass; the entire fast suite is gre
 - [ ] **Step 10: Commit cycle 2**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+cd .
 git add backend/app/main.py frontend/dist/index.html run.py tests/test_demo.py
 git commit -m "feat: SPA static serving, placeholder frontend build, and launcher" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
@@ -8605,7 +8605,7 @@ git commit -m "feat: SPA static serving, placeholder frontend build, and launche
 
 # Section 06 — Frontend (Tasks 14–17)
 
-All paths relative to the project root `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\` unless absolute. All `npm` commands run from `frontend/`; every command below `cd`s there explicitly because the executor's cwd resets between calls. Node.js is a dev-only dependency; the built `frontend/dist/` is committed in Task 17 (NOT earlier).
+All paths relative to the project root `.` unless absolute. All `npm` commands run from `frontend/`; every command below `cd`s there explicitly because the executor's cwd resets between calls. Node.js is a dev-only dependency; the built `frontend/dist/` is committed in Task 17 (NOT earlier).
 
 App.tsx ships with inline placeholder screen components in Task 14 so the app compiles before the screens exist. Tasks 15–16 create screen files (tests import them directly, so App.tsx does not need them yet). Task 17 replaces the placeholders with real imports of all five screens.
 
@@ -8741,8 +8741,8 @@ import "@testing-library/jest-dom/vitest";
 - [ ] **Step 2: Install dependencies and ensure node_modules is gitignored**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm install
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; if (-not (Select-String -Path .gitignore -Pattern "node_modules" -Quiet)) { Add-Content .gitignore "node_modules/" }
+cd frontend; npm install
+cd .; if (-not (Select-String -Path .gitignore -Pattern "node_modules" -Quiet)) { Add-Content .gitignore "node_modules/" }
 ```
 
 `npm install` must exit 0 and produce `frontend/package-lock.json` and `frontend/node_modules/`. Verify `frontend/dist` is NOT matched by `.gitignore` (`git check-ignore frontend/dist` from the project root must print nothing and exit with code 1) — the built dist gets committed in Task 17.
@@ -8784,7 +8784,7 @@ describe("App shell", () => {
 - [ ] **Step 4: Run the test, expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected failure: `Error: Failed to resolve import "./App" from "src/App.test.tsx". Does the file exist?`
@@ -9479,7 +9479,7 @@ export default function App() {
 - [ ] **Step 6: Run the test, expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected: `Test Files  1 passed (1)` — both tests green.
@@ -9487,7 +9487,7 @@ Expected: `Test Files  1 passed (1)` — both tests green.
 - [ ] **Step 7: Verify the production build compiles**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm run build
+cd frontend; npm run build
 ```
 
 Expected: `tsc` exits clean (no type errors — this typechecks `types.ts` and `api.ts` too), then Vite prints `✓ built in ...` and `frontend/dist/index.html` exists. Do NOT commit `dist/` yet (Task 17 commits it).
@@ -9495,7 +9495,7 @@ Expected: `tsc` exits clean (no type errors — this typechecks `types.ts` and `
 - [ ] **Step 8: Commit (source only, no dist)**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add .gitignore frontend/package.json frontend/package-lock.json frontend/vite.config.ts frontend/tsconfig.json frontend/index.html frontend/src; git commit -m "feat: frontend scaffold with design system, types, and typed API client" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+cd .; git add .gitignore frontend/package.json frontend/package-lock.json frontend/vite.config.ts frontend/tsconfig.json frontend/index.html frontend/src; git commit -m "feat: frontend scaffold with design system, types, and typed API client" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -9576,7 +9576,7 @@ describe("ProfileScreen", () => {
 - [ ] **Step 2: Run the test, expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected failure: `Error: Failed to resolve import "./ProfileScreen" from "src/screens/ProfileScreen.test.tsx". Does the file exist?` (the Task 14 App tests still pass).
@@ -10218,7 +10218,7 @@ export default function ProfileScreen() {
 - [ ] **Step 4: Run the test, expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected: `Test Files  2 passed (2)` (App tests + ProfileScreen tests).
@@ -10226,7 +10226,7 @@ Expected: `Test Files  2 passed (2)` (App tests + ProfileScreen tests).
 - [ ] **Step 5: Commit**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add frontend/src/screens; git commit -m "feat: profile screen with documents, build, and master profile editor" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+cd .; git add frontend/src/screens; git commit -m "feat: profile screen with documents, build, and master profile editor" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -10309,7 +10309,7 @@ describe("DashboardScreen", () => {
 - [ ] **Step 2: Run the test, expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected failure: `Error: Failed to resolve import "./DashboardScreen" from "src/screens/DashboardScreen.test.tsx". Does the file exist?`
@@ -10459,7 +10459,7 @@ export default function DashboardScreen() {
 - [ ] **Step 4: Run the test, expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected: `Test Files  3 passed (3)`.
@@ -10508,7 +10508,7 @@ describe("AddJobsScreen", () => {
 - [ ] **Step 6: Run the test, expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected failure: `Error: Failed to resolve import "./AddJobsScreen" from "src/screens/AddJobsScreen.test.tsx". Does the file exist?`
@@ -10703,7 +10703,7 @@ export default function AddJobsScreen() {
 - [ ] **Step 8: Run the test, expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected: `Test Files  4 passed (4)`.
@@ -10711,7 +10711,7 @@ Expected: `Test Files  4 passed (4)`.
 - [ ] **Step 9: Commit**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add frontend/src/screens; git commit -m "feat: dashboard with status polling and add-jobs batch screen" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+cd .; git add frontend/src/screens; git commit -m "feat: dashboard with status polling and add-jobs batch screen" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -10813,7 +10813,7 @@ describe("ApplicationScreen", () => {
 - [ ] **Step 2: Run the test, expect FAIL**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected failure: `Error: Failed to resolve import "./ApplicationScreen" from "src/screens/ApplicationScreen.test.tsx". Does the file exist?`
@@ -11441,7 +11441,7 @@ export default function ApplicationScreen() {
 - [ ] **Step 4: Run the test, expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected: `Test Files  5 passed (5)`.
@@ -11679,7 +11679,7 @@ describe("App shell", () => {
 - [ ] **Step 6: Run the full frontend suite, expect PASS**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test
+cd frontend; npm test
 ```
 
 Expected: `Test Files  5 passed (5)` — App, ProfileScreen, DashboardScreen, AddJobsScreen, ApplicationScreen all green.
@@ -11687,8 +11687,8 @@ Expected: `Test Files  5 passed (5)` — App, ProfileScreen, DashboardScreen, Ad
 - [ ] **Step 7: Build production bundle and verify dist**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm run build
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; Test-Path frontend/dist/index.html; Get-ChildItem frontend/dist/assets
+cd frontend; npm run build
+cd .; Test-Path frontend/dist/index.html; Get-ChildItem frontend/dist/assets
 ```
 
 Expected: build succeeds (`✓ built in ...`); `Test-Path` prints `True`; the assets listing shows at least one `index-*.js` and one `index-*.css`.
@@ -11696,13 +11696,13 @@ Expected: build succeeds (`✓ built in ...`); `Test-Path` prints `True`; the as
 - [ ] **Step 8: Confirm dist is not gitignored, then commit source + build**
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git check-ignore frontend/dist
+cd .; git check-ignore frontend/dist
 ```
 
 Expected: prints nothing and exits with a non-zero code (PowerShell shows `$LASTEXITCODE` = 1) — meaning `frontend/dist` is NOT ignored. If it prints a path, remove the offending pattern from `.gitignore` before continuing (the committed build is how end users run without Node).
 
 ```powershell
-cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add frontend/src frontend/dist; git commit -m "feat: application view, settings screen, and committed frontend build" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+cd .; git add frontend/src frontend/dist; git commit -m "feat: application view, settings screen, and committed frontend build" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -11727,10 +11727,10 @@ running this section's tests — do not weaken the tests.
 
 **Files**
 
-- Create: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_e2e.py`
-- Create (overwrite the Task 1 stub if one exists): `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\README.md`
-- Modify (ONLY if Task 9 omitted the optional `claude` kwarg — see phase note above): `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\backend\app\services\pipeline.py`
-- Test: `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_e2e.py`
+- Create: `tests\test_e2e.py`
+- Create (overwrite the Task 1 stub if one exists): `README.md`
+- Modify (ONLY if Task 9 omitted the optional `claude` kwarg — see phase note above): `backend\app\services\pipeline.py`
+- Test: `tests\test_e2e.py`
 
 **Interfaces**
 
@@ -11772,7 +11772,7 @@ running this section's tests — do not weaken the tests.
     respx context (respx patches httpx transports; TestClient's ASGI transport is
     unaffected either way, but keeping them separate removes all doubt).
 
-  Create `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\tests\test_e2e.py`:
+  Create `tests\test_e2e.py`:
 
   ```python
   """End-to-end smoke test: the full stack in fake mode, driven through the real app.
@@ -12063,7 +12063,7 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 2: Run the fast e2e tests, expect exactly the README test to FAIL**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_e2e.py -m "not pdf" -v
+  cd .; pytest tests/test_e2e.py -m "not pdf" -v
   ```
 
   Expected output:
@@ -12099,7 +12099,7 @@ running this section's tests — do not weaken the tests.
 
 - [ ] **Step 3: Write the final README.md (COMPLETE content, overwrite any stub)**
 
-  Create `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\README.md` with exactly this
+  Create `README.md` with exactly this
   content:
 
   ````markdown
@@ -12261,7 +12261,7 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 4: Run the fast e2e tests again, expect PASS**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_e2e.py -m "not pdf" -v
+  cd .; pytest tests/test_e2e.py -m "not pdf" -v
   ```
 
   Expected output:
@@ -12281,7 +12281,7 @@ running this section's tests — do not weaken the tests.
   re-export) and may take a minute or two.
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest tests/test_e2e.py -m pdf -v
+  cd .; pytest tests/test_e2e.py -m pdf -v
   ```
 
   Expected output:
@@ -12297,7 +12297,7 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 6: Commit the e2e tests and README**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git add tests/test_e2e.py README.md; git commit -m "feat: end-to-end smoke test and final README" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
+  cd .; git add tests/test_e2e.py README.md; git commit -m "feat: end-to-end smoke test and final README" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
   ```
 
   (If Step 2 forced a pipeline `claude`-kwarg fix, `backend/app/services/pipeline.py`
@@ -12306,7 +12306,7 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 7: Ship check — full fast suite green**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; pytest -m "not pdf"
+  cd .; pytest -m "not pdf"
   ```
 
   Expected: every collected test passes, PDF-marked tests deselected — final line of the
@@ -12317,7 +12317,7 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 8: Ship check — frontend tests green**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\frontend; npm test; cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored
+  cd frontend; npm test; cd .
   ```
 
   Expected: the frontend test run (configured in Task 14 as a non-watch, CI-style run)
@@ -12326,7 +12326,7 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 9: Ship check — working tree clean**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git status --short
+  cd .; git status --short
   ```
 
   Expected: **empty output** (nothing staged, nothing modified, nothing untracked —
@@ -12338,13 +12338,13 @@ running this section's tests — do not weaken the tests.
 - [ ] **Step 10: Release commit and tag v0.1.0**
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git commit --allow-empty -m "chore: release v0.1.0" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"; git tag v0.1.0
+  cd .; git commit --allow-empty -m "chore: release v0.1.0" -m "Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"; git tag v0.1.0
   ```
 
   Verify:
 
   ```powershell
-  cd F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored; git tag --list; git log --oneline -3
+  cd .; git tag --list; git log --oneline -3
   ```
 
   Expected: `v0.1.0` appears in the tag list, and the newest commit is

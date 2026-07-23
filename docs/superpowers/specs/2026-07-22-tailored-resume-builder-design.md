@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-22
 **Status:** Approved by Eldon (design conversation, this session)
-**Project location:** `F:\workspace\WORKSPACE_CLAUDES\web-apps\tailored\` (per workspace conventions)
+**Project location:** `.` (per workspace conventions)
 
 ## 1. What this is
 
