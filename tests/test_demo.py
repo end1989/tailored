@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import select
 
-from backend.app import config
+from backend.app import config, demo
 from backend.app.config import Settings
 from backend.app.db import get_engine, session_scope
 from backend.app.main import create_app
@@ -15,8 +15,15 @@ from backend.app.models import Application, Profile
 from backend.app.services import render
 
 
-@pytest.fixture
-def demo_env(tmp_path, monkeypatch):
+def _build_demo_settings(tmp_path, monkeypatch, render_pdf):
+    """Shared env/settings/engine setup for demo-seeding tests.
+
+    `render_pdf` is patched onto backend.app.services.render BEFORE the caller
+    builds the app/engine and runs seeding: demo._run_pipeline_with_fake_claude
+    captures `render.render_pdf` at seed time (guarded_render_pdf wraps
+    whatever is bound there), so the patch must land before create_app's
+    lifespan (or seed_demo directly) executes.
+    """
     monkeypatch.setenv("TAILORED_FAKE", "1")
     monkeypatch.setenv("TAILORED_DATA_DIR", str(tmp_path / "data"))
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
@@ -24,17 +31,22 @@ def demo_env(tmp_path, monkeypatch):
     # it re-reads the env vars set above.
     if hasattr(config.get_settings, "cache_clear"):
         config.get_settings.cache_clear()
+    monkeypatch.setattr(render, "render_pdf", render_pdf)
+    settings = Settings()
+    engine = get_engine(tmp_path / "demo.db")
+    return settings, engine
+
+
+@pytest.fixture
+def demo_env(tmp_path, monkeypatch):
     # Skip Chromium for speed; the demo path must survive render_pdf failure anyway.
-    monkeypatch.setattr(
-        render,
-        "render_pdf",
+    return _build_demo_settings(
+        tmp_path,
+        monkeypatch,
         lambda html, out_path, page_size="Letter": Path(out_path).write_bytes(
             b"%PDF-1.4\n%test"
         ),
     )
-    settings = Settings()
-    engine = get_engine(tmp_path / "demo.db")
-    return settings, engine
 
 
 def test_startup_seeds_demo_and_reaches_ready(demo_env):
@@ -80,3 +92,38 @@ def test_spa_fallback_and_api_passthrough(demo_env):
         assert "Tailored" in root.text
 
         assert client.get("/api/nope").status_code == 404  # api never falls back
+
+
+def test_demo_survives_render_pdf_failure(tmp_path, monkeypatch):
+    """guarded_render_pdf (backend/app/demo.py) is the only thing standing
+    between the demo and a hard failure when Chromium/Playwright isn't
+    installed. Simulate that -- render_pdf ALWAYS RAISES -- and confirm the
+    demo still reaches "ready" using placeholder PDFs for the two PDF exports,
+    while the non-PDF exports remain real (non-placeholder) content."""
+
+    def broken_render_pdf(html, out_path, page_size="Letter"):
+        raise RuntimeError("chromium not installed")
+
+    # Patch BEFORE create_app runs its startup seeding (see _build_demo_settings).
+    settings, engine = _build_demo_settings(tmp_path, monkeypatch, broken_render_pdf)
+
+    app = create_app(settings=settings, engine=engine)
+    with TestClient(app) as client:  # context manager -> lifespan/startup runs
+        apps = client.get("/api/applications").json()
+        assert len(apps) == 1
+        assert apps[0]["status"] == "ready"
+
+        export_dir = Path(settings.data_dir) / "exports" / str(apps[0]["id"])
+
+        resume_pdf = (export_dir / "resume.pdf").read_bytes()
+        cover_pdf = (export_dir / "cover_letter.pdf").read_bytes()
+        assert resume_pdf.startswith(b"%PDF-1.4")
+        assert cover_pdf.startswith(b"%PDF-1.4")
+        assert resume_pdf == demo.PDF_PLACEHOLDER
+        assert cover_pdf == demo.PDF_PLACEHOLDER
+
+        resume_html = (export_dir / "resume.html").read_text(encoding="utf-8")
+        resume_txt = (export_dir / "resume.txt").read_text(encoding="utf-8")
+        assert "<html" in resume_html.lower()
+        assert not resume_html.startswith("%PDF")
+        assert resume_txt.strip() != ""

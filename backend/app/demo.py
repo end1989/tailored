@@ -37,8 +37,7 @@ def seed_demo(engine, claude, data_dir) -> None:
         set_contact(profile, contact)
         set_master_profile(profile, master)
         session.add(profile)
-        session.commit()
-        session.refresh(profile)
+        session.flush()  # assigns profile.id without committing
 
         posting_text = (DEMO_DIR / "job_posting.txt").read_text(encoding="utf-8")
         job = Job(
@@ -48,16 +47,18 @@ def seed_demo(engine, claude, data_dir) -> None:
             depth="standard",
         )
         session.add(job)
-        session.commit()
-        session.refresh(job)
+        session.flush()  # assigns job.id without committing
 
         app_row = Application(
             profile_id=profile.id, job_id=job.id, template="slate", status="queued"
         )
         session.add(app_row)
-        session.commit()
-        session.refresh(app_row)
+        session.flush()  # assigns app_row.id without committing
         application_id = app_row.id
+        # session_scope commits once here, on normal exit of the `with` block,
+        # so Profile+Job+Application land atomically. An interruption before
+        # this point leaves no rows at all, so the "any Profile exists" gate
+        # above can never see a half-seeded demo.
 
     _run_pipeline_with_fake_claude(application_id, engine, claude)
 
