@@ -22,7 +22,7 @@ vi.mock("../api", () => {
 describe("AddJobsScreen", () => {
   it("parses three URL lines into three preview rows", async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <AddJobsScreen />
       </MemoryRouter>
     );

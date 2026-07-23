@@ -1,21 +1,9 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-
-// Placeholder screens — replaced by real imports in Task 17.
-export function DashboardPlaceholder() {
-  return <h1>Dashboard</h1>;
-}
-export function AddJobsPlaceholder() {
-  return <h1>Add Jobs</h1>;
-}
-export function ProfilesPlaceholder() {
-  return <h1>Profiles</h1>;
-}
-export function ApplicationPlaceholder() {
-  return <h1>Application</h1>;
-}
-export function SettingsPlaceholder() {
-  return <h1>Settings</h1>;
-}
+import DashboardScreen from "./screens/DashboardScreen";
+import AddJobsScreen from "./screens/AddJobsScreen";
+import ProfileScreen from "./screens/ProfileScreen";
+import ApplicationScreen from "./screens/ApplicationScreen";
+import SettingsScreen from "./screens/SettingsScreen";
 
 export default function App() {
   return (
@@ -41,11 +29,11 @@ export default function App() {
       </nav>
       <main className="shell">
         <Routes>
-          <Route path="/" element={<DashboardPlaceholder />} />
-          <Route path="/add" element={<AddJobsPlaceholder />} />
-          <Route path="/profiles" element={<ProfilesPlaceholder />} />
-          <Route path="/applications/:id" element={<ApplicationPlaceholder />} />
-          <Route path="/settings" element={<SettingsPlaceholder />} />
+          <Route path="/" element={<DashboardScreen />} />
+          <Route path="/add" element={<AddJobsScreen />} />
+          <Route path="/profiles" element={<ProfileScreen />} />
+          <Route path="/applications/:id" element={<ApplicationScreen />} />
+          <Route path="/settings" element={<SettingsScreen />} />
         </Routes>
       </main>
     </>

@@ -44,7 +44,7 @@ vi.mock("../api", () => {
 describe("DashboardScreen", () => {
   it("renders one row per application with per-status badges", async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <DashboardScreen />
       </MemoryRouter>
     );
