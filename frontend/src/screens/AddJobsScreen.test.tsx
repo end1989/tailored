@@ -72,5 +72,9 @@ describe("AddJobsScreen", () => {
       await screen.findByText(/Generated with your Anthropic API key/i)
     ).toBeInTheDocument();
     expect(screen.queryByText(/No API key set/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /See MCP mode/ })).toHaveAttribute(
+      "href",
+      "/getting-started"
+    );
   });
 });

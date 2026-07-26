@@ -125,7 +125,10 @@ export default function DashboardScreen() {
             {apps.length === 0 && (
               <tr>
                 <td colSpan={9} className="muted">
-                  No applications yet — queue job URLs from the Add Jobs screen.
+                  No applications yet. New here? Start with{" "}
+                  <Link to="/getting-started">Getting Started</Link>, or{" "}
+                  <Link to="/profiles">create your Master Profile</Link> and then{" "}
+                  <Link to="/add">add job URLs</Link>.
                 </td>
               </tr>
             )}
