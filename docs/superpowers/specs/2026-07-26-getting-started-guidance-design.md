@@ -79,7 +79,7 @@ also the primary call-to-action from the empty Dashboard. Four blocks:
 ## Architecture
 
 ### Backend — `GET /api/setup` (new, read-only)
-New router `backend/app/api/setup.py`, registered in `main.py` alongside the existing routers.
+New router `backend/app/api/setup.py`, registered in `backend/app/api/__init__.py` alongside the existing routers.
 Returns:
 
 ```jsonc
@@ -131,12 +131,18 @@ the hub never writes settings or keys.
 ## Error handling & edge cases
 - **Clipboard:** the app runs on `127.0.0.1` (secure context), so `navigator.clipboard` is
   available; `CopyButton` still degrades gracefully — if `writeText` is absent or rejects, it
-  selects the text and shows "Copy failed — select and copy manually." It never throws.
+  shows "Copy failed — select manually" and the user copies the adjacent `<pre>` text by hand.
+  It never throws. (Programmatic text selection was considered and dropped: this path is
+  defensive only, and it would require passing a DOM ref into `CopyButton`.)
 - **`/api/setup` fails:** the hub still renders all static guidance; the MCP card degrades to a
   generic manual template with a note rather than blanking the page.
 - **`mcp_server_exists: false`:** inline warning in the MCP card naming the expected path.
 - **No profile / demo on / key unset:** readiness reflects each state honestly with the matching
   CTA; the walkthrough stays visible regardless.
+- **Readiness while loading or on error:** the panel must never assert a negative it hasn't
+  verified. Until both reads resolve it shows a neutral "Checking…" placeholder rather than
+  "empty"/"not set", and if either read rejects it shows an explicit `alert-error` note. A
+  configured user must never see a false "not set" on first paint or after a failed fetch.
 - **Windows paths (spaces/backslashes):** command is quoted and shown in a preformatted block with
   overflow handling; copy copies the raw string verbatim.
 - **No new coupling** to the generation pipeline or the existing MCP in-progress locking behavior —
@@ -152,16 +158,25 @@ never hitting the real Anthropic API.
 - `mcp_server_path` ends with `backend/mcp_server.py`.
 - `mcp_command` starts with `claude mcp add tailored --` and contains both quoted paths.
 - `platform` matches the running OS.
-- With a fake `ANTHROPIC_API_KEY` set in the environment, the key value never appears anywhere in
-  the response.
+- The key value never appears anywhere in the response — asserted for **both** key vectors: the
+  `Settings(anthropic_api_key=...)` constructor kwarg *and* a real `ANTHROPIC_API_KEY` environment
+  variable (the production source; the constructor kwarg bypasses the env read, so covering only
+  it would leave the env path unguarded).
 - `env_line` equals the placeholder template.
 
 **Frontend:**
 - `GettingStartedScreen.test.tsx` — readiness permutations (profile empty vs present; key set vs
-  not; demo on/off), MCP command rendered from `getSetup()`, deep-links present.
-- `McpSetup.test.tsx` and `CopyButton.test.tsx` — copy success path and clipboard-failure fallback.
-- Updates to `App.test.tsx` (new nav item + route), `DashboardScreen.test.tsx` (empty-state links),
-  `SettingsScreen.test.tsx` (embedded `McpSetup`).
+  not; demo-mode-only), the four walkthrough deep-links, the Anthropic-console link, the in-flight
+  "Checking…" state, and the fetch-failure error state. `McpSetup` is mocked here, so the MCP
+  command itself is covered in `McpSetup.test.tsx`, not this file.
+- `McpSetup.test.tsx` — command rendered from `getSetup()`, manual-template fallback when the fetch
+  rejects, and the missing-server warning both present (when `mcp_server_exists` is false) and
+  absent (when true).
+- `CopyButton.test.tsx` — copy success, clipboard-failure fallback, no stale "Copied!" when a copy
+  fails soon after a success, a repeat click extending the confirmation window, and timer cleanup
+  on unmount.
+- Updates to `App.test.tsx` (new nav item, asserted within the nav region), `DashboardScreen.test.tsx`
+  (empty-state links to the hub, profile, and add-jobs), `SettingsScreen.test.tsx` (embedded `McpSetup`).
 
 ## Build / finishing steps
 - `frontend/dist/` is committed so end users need no Node. After implementation, run
@@ -172,6 +187,6 @@ never hitting the real Anthropic API.
 - **New:** `backend/app/api/setup.py`, `tests/test_setup.py`,
   `frontend/src/screens/GettingStartedScreen.tsx`, `frontend/src/components/McpSetup.tsx`,
   `frontend/src/components/CopyButton.tsx`, plus their `*.test.tsx` files.
-- **Edited:** `backend/app/main.py` (register router), `frontend/src/App.tsx`, `api.ts`, `types.ts`,
+- **Edited:** `backend/app/api/__init__.py` (register router), `frontend/src/App.tsx`, `api.ts`, `types.ts`,
   `screens/DashboardScreen.tsx`, `screens/AddJobsScreen.tsx`, `screens/SettingsScreen.tsx`, and
   `styles.css` as needed; rebuilt `frontend/dist/`.

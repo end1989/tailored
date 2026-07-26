@@ -670,7 +670,7 @@ Modify `frontend/src/App.tsx`. Add the import near the other screen imports:
 import GettingStartedScreen from "./screens/GettingStartedScreen";
 ```
 
-Add the nav link immediately after the `Dashboard` `NavLink` (before `Add Jobs`):
+Add the nav link immediately before the `Dashboard` `NavLink` (right after the brand), so onboarding leads the nav — matching the design spec:
 
 ```tsx
 <NavLink to="/getting-started" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
