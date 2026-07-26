@@ -9,14 +9,28 @@ const ENV_LINE = "ANTHROPIC_API_KEY=sk-ant-...";
 
 export default function GettingStartedScreen() {
   const [settings, setSettings] = useState<SettingsShape | null>(null);
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
+  const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getSettings().then(setSettings).catch(() => setSettings(null));
-    listProfiles().then(setProfiles).catch(() => setProfiles([]));
+    let alive = true;
+    Promise.all([getSettings(), listProfiles()])
+      .then(([s, p]) => {
+        if (!alive) return;
+        setSettings(s);
+        setProfiles(p);
+      })
+      .catch((e) => {
+        if (alive) setError(String(e));
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
-  const hasProfile = profiles.some((p) => p.has_master_profile);
+  // Until both requests land we know nothing — never report "empty"/"not set" from that.
+  const loaded = settings !== null && profiles !== null;
+  const hasProfile = (profiles ?? []).some((p) => p.has_master_profile);
   const canGenerateWebApp = Boolean(settings?.api_key_set || settings?.fake_mode);
   const ready = hasProfile && canGenerateWebApp;
 
@@ -30,29 +44,37 @@ export default function GettingStartedScreen() {
 
       <div className="card">
         <div className="card-title">Your setup at a glance</div>
-        <p>
-          Master Profile:{" "}
-          {hasProfile ? (
-            <span className="pill pill-ok">created</span>
-          ) : (
-            <span className="pill pill-warn">empty</span>
-          )}{" "}
-          {!hasProfile && <Link to="/profiles">Create your profile →</Link>}
-        </p>
-        <p>
-          Anthropic API key:{" "}
-          {settings?.api_key_set ? (
-            <span className="pill pill-ok">set</span>
-          ) : (
-            <span className="pill pill-warn">not set</span>
-          )}
-          {settings?.fake_mode && (
-            <span className="pill" style={{ marginLeft: "0.4rem" }}>
-              Demo mode on
-            </span>
-          )}
-        </p>
-        {ready && <p className="pill pill-ok">You're ready to tailor your first job</p>}
+        {error ? (
+          <div className="alert alert-error">Couldn't check your setup — {error}</div>
+        ) : !loaded ? (
+          <p className="muted">Checking…</p>
+        ) : (
+          <>
+            <p>
+              Master Profile:{" "}
+              {hasProfile ? (
+                <span className="pill pill-ok">created</span>
+              ) : (
+                <span className="pill pill-warn">empty</span>
+              )}{" "}
+              {!hasProfile && <Link to="/profiles">Create your profile →</Link>}
+            </p>
+            <p>
+              Anthropic API key:{" "}
+              {settings?.api_key_set ? (
+                <span className="pill pill-ok">set</span>
+              ) : (
+                <span className="pill pill-warn">not set</span>
+              )}
+              {settings?.fake_mode && (
+                <span className="pill" style={{ marginLeft: "0.4rem" }}>
+                  Demo mode on
+                </span>
+              )}
+            </p>
+            {ready && <p className="pill pill-ok">You're ready to tailor your first job</p>}
+          </>
+        )}
       </div>
 
       <div className="card">
@@ -62,6 +84,13 @@ export default function GettingStartedScreen() {
           <label className="field-label">Use your Anthropic API key</label>
           <p className="muted">
             Paste job URLs and walk away. ~$0.15–$3 per job by research depth.
+          </p>
+          <p className="muted">
+            No key yet? Create one in the{" "}
+            <a href="https://console.anthropic.com/" target="_blank" rel="noreferrer">
+              Anthropic Console →
+            </a>{" "}
+            (sign in, then API keys → Create key).
           </p>
           <pre className="code-block mono">{ENV_LINE}</pre>
           <CopyButton text={ENV_LINE} label="Copy .env line" />

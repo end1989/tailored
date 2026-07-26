@@ -29,11 +29,11 @@ export default function App() {
           <NavLink to="/" className="nav-brand">
             Tailored
           </NavLink>
-          <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
-            Dashboard
-          </NavLink>
           <NavLink to="/getting-started" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Getting Started
+          </NavLink>
+          <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            Dashboard
           </NavLink>
           <NavLink to="/add" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Add Jobs
