@@ -58,7 +58,7 @@ describe("DashboardScreen", () => {
   });
 
   it("shows Getting Started and profile links in the empty state", async () => {
-    vi.mocked(api.listApplications).mockResolvedValueOnce([]);
+    vi.mocked(api.listApplications).mockResolvedValue([]);
     render(
       <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <DashboardScreen />
@@ -67,5 +67,11 @@ describe("DashboardScreen", () => {
     expect(
       await screen.findByRole("link", { name: /Getting Started/ })
     ).toHaveAttribute("href", "/getting-started");
+    expect(screen.getByRole("link", { name: /create your Master Profile/ })).toHaveAttribute(
+      "href",
+      "/profiles"
+    );
+    expect(screen.getByRole("link", { name: /add job URLs/ })).toHaveAttribute("href", "/add");
+    expect(screen.queryByText("Acme")).not.toBeInTheDocument();
   });
 });

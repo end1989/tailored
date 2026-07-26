@@ -20,6 +20,7 @@ describe("McpSetup", () => {
     vi.mocked(api.getSetup).mockResolvedValue(SETUP);
     render(<McpSetup />);
     expect(await screen.findByText(SETUP.mcp_command)).toBeInTheDocument();
+    expect(screen.queryByText(/couldn't find it/i)).not.toBeInTheDocument();
   });
 
   it("falls back to a manual template when setup detection fails", async () => {
