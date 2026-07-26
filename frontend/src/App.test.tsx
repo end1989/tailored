@@ -39,6 +39,10 @@ describe("App shell", () => {
     );
     expect(screen.getByText("Tailored")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
+    expect(screen.getByRole("link", { name: "Getting Started" })).toHaveAttribute(
+      "href",
+      "/getting-started"
+    );
     expect(screen.getByRole("link", { name: "Add Jobs" })).toHaveAttribute("href", "/add");
     expect(screen.getByRole("link", { name: "Templates" })).toHaveAttribute("href", "/templates");
     expect(screen.getByRole("link", { name: "Profiles" })).toHaveAttribute("href", "/profiles");
