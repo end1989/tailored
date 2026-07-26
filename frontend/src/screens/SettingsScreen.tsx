@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { getSettings, updateSettings } from "../api";
+import McpSetup from "../components/McpSetup";
 import { getThemePref, setThemePref, subscribeTheme } from "../theme";
 import type { ThemePref } from "../theme";
 import type { Depth, PageSize, SettingsShape, TemplateName } from "../types";
@@ -113,14 +115,14 @@ export default function SettingsScreen() {
         <div className="field">
           <label className="field-label">Your own AI agent (MCP)</label>
           <p className="muted">
-            Connect Tailored to Claude Code (or any MCP-capable agent) and it does the work on
-            your own subscription — no API key used. Ask your agent to read Tailored's workflow
-            guide, then say "tailor my profile for &lt;job url&gt;".
+            Connect Tailored to Claude Code (or any MCP-capable agent) and it does the work on your own
+            subscription — no API key used. These applications show a depth of "external" on the
+            dashboard, and the same truthfulness guard applies.
           </p>
+          <McpSetup />
           <p className="muted">
-            These applications show a depth of "external" on the dashboard, and the same
-            truthfulness guard applies. See the setup steps in the README, or
-            docs/EXTENDING.md for the full tool contract.
+            New here? The <Link to="/getting-started">Getting Started</Link> page walks through all three
+            ways to power Tailored.
           </p>
         </div>
       </div>
