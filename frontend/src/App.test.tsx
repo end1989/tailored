@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 
@@ -39,7 +39,8 @@ describe("App shell", () => {
     );
     expect(screen.getByText("Tailored")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
-    expect(screen.getByRole("link", { name: "Getting Started" })).toHaveAttribute(
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).getByRole("link", { name: "Getting Started" })).toHaveAttribute(
       "href",
       "/getting-started"
     );
