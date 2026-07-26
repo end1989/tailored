@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
 import DashboardScreen from "./screens/DashboardScreen";
+import GettingStartedScreen from "./screens/GettingStartedScreen";
 import AddJobsScreen from "./screens/AddJobsScreen";
 import TemplatesScreen from "./screens/TemplatesScreen";
 import ProfileScreen from "./screens/ProfileScreen";
@@ -31,6 +32,9 @@ export default function App() {
           <NavLink to="/" end className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Dashboard
           </NavLink>
+          <NavLink to="/getting-started" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+            Getting Started
+          </NavLink>
           <NavLink to="/add" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Add Jobs
           </NavLink>
@@ -56,6 +60,7 @@ export default function App() {
       <main className="shell">
         <Routes>
           <Route path="/" element={<DashboardScreen />} />
+          <Route path="/getting-started" element={<GettingStartedScreen />} />
           <Route path="/add" element={<AddJobsScreen />} />
           <Route path="/templates" element={<TemplatesScreen />} />
           <Route path="/profiles" element={<ProfileScreen />} />
