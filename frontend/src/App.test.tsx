@@ -30,10 +30,7 @@ vi.mock("./api", () => ({
 describe("App shell", () => {
   it("renders the brand and all nav links", () => {
     render(
-      <MemoryRouter
-        initialEntries={["/"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <MemoryRouter initialEntries={["/"]}>
         <App />
       </MemoryRouter>
     );
@@ -56,10 +53,7 @@ describe("App shell", () => {
 
   it("renders the real Dashboard screen on /", async () => {
     render(
-      <MemoryRouter
-        initialEntries={["/"]}
-        future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-      >
+      <MemoryRouter initialEntries={["/"]}>
         <App />
       </MemoryRouter>
     );

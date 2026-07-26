@@ -36,10 +36,7 @@ const base: Omit<ApplicationDetail, "status"> = {
 
 function renderAt() {
   return render(
-    <MemoryRouter
-      initialEntries={["/applications/1"]}
-      future={{ v7_startTransition: true, v7_relativeSplatPath: true }}
-    >
+    <MemoryRouter initialEntries={["/applications/1"]}>
       <Routes>
         <Route path="/applications/:id" element={<ApplicationScreen />} />
       </Routes>

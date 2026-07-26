@@ -12,7 +12,7 @@ vi.mock("../components/McpSetup", () => ({ default: () => <div>MCP setup block</
 
 function renderScreen() {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <SettingsScreen />
     </MemoryRouter>
   );

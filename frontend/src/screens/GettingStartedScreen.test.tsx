@@ -14,7 +14,7 @@ const contact = { name: "", email: "", phone: null, location: null, links: [] };
 
 function renderScreen() {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <GettingStartedScreen />
     </MemoryRouter>
   );
