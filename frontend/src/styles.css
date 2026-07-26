@@ -249,6 +249,17 @@ a { color: var(--accent); }
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.code-block {
+  display: block;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+  padding: 0.6rem 0.8rem;
+  margin: 0.3rem 0;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.14);
+}
+
 @media (max-width: 760px) {
   .template-grid { grid-template-columns: 1fr; }
 }

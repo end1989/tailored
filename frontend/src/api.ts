@@ -12,6 +12,7 @@ import type {
   ProfileSummary,
   ResumeDoc,
   SettingsShape,
+  SetupShape,
   TemplateInfo,
   TemplateName,
 } from "./types";
@@ -147,6 +148,12 @@ export function updateSettings(patch: {
   page_size?: PageSize;
 }): Promise<SettingsShape> {
   return request<SettingsShape>("/settings", jsonInit("PUT", patch));
+}
+
+// ---- setup ----
+
+export function getSetup(): Promise<SetupShape> {
+  return request<SetupShape>("/setup");
 }
 
 // ---- templates ----

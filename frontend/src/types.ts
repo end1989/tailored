@@ -257,3 +257,13 @@ export interface TemplateInfo {
   description: string;
   best_for: string;
 }
+
+export interface SetupShape {
+  platform: "windows" | "posix";
+  python_path: string;
+  mcp_server_path: string;
+  mcp_server_exists: boolean;
+  mcp_command: string;
+  env_line: string;
+  workflow_guide_tool: string;
+}
