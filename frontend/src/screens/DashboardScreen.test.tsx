@@ -45,7 +45,7 @@ vi.mock("../api", () => {
 describe("DashboardScreen", () => {
   it("renders one row per application with per-status badges", async () => {
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <DashboardScreen />
       </MemoryRouter>
     );
@@ -60,7 +60,7 @@ describe("DashboardScreen", () => {
   it("shows Getting Started and profile links in the empty state", async () => {
     vi.mocked(api.listApplications).mockResolvedValue([]);
     render(
-      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <MemoryRouter>
         <DashboardScreen />
       </MemoryRouter>
     );

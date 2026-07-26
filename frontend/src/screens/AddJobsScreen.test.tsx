@@ -13,7 +13,7 @@ vi.mock("../api", () => ({
 
 function renderScreen() {
   return render(
-    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <MemoryRouter>
       <AddJobsScreen />
     </MemoryRouter>
   );
