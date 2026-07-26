@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import DashboardScreen from "./DashboardScreen";
+import * as api from "../api";
 
 vi.mock("../api", () => {
   const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
@@ -54,5 +55,17 @@ describe("DashboardScreen", () => {
     expect(screen.getByText("tailoring")).toHaveClass("badge", "badge-tailoring");
     expect(screen.getByText("$0.4321")).toBeInTheDocument();
     expect(screen.getAllByText("Open")).toHaveLength(2);
+  });
+
+  it("shows Getting Started and profile links in the empty state", async () => {
+    vi.mocked(api.listApplications).mockResolvedValueOnce([]);
+    render(
+      <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <DashboardScreen />
+      </MemoryRouter>
+    );
+    expect(
+      await screen.findByRole("link", { name: /Getting Started/ })
+    ).toHaveAttribute("href", "/getting-started");
   });
 });

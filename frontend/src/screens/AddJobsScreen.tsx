@@ -140,13 +140,14 @@ export default function AddJobsScreen() {
 
         {!apiKeySet && !fakeMode ? (
           <div className="alert alert-error">
-            No API key set — add ANTHROPIC_API_KEY to .env and restart, or use MCP mode.
-            Submitting now will fail at generation.
+            No API key set — add ANTHROPIC_API_KEY to .env and restart, or{" "}
+            <Link to="/getting-started">use MCP mode</Link>. Submitting now will fail at
+            generation.
           </div>
         ) : (
           <p className="muted">
             Generated with your Anthropic API key (~$0.15–$3 each, by research depth). Prefer
-            your own Claude agent? See MCP mode in Settings.
+            your own Claude agent? <Link to="/getting-started">See MCP mode →</Link>
           </p>
         )}
       </div>
