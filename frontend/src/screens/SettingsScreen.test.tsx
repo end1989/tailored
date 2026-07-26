@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import SettingsScreen from "./SettingsScreen";
 import * as api from "../api";
 
@@ -6,6 +7,16 @@ vi.mock("../api", () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
 }));
+
+vi.mock("../components/McpSetup", () => ({ default: () => <div>MCP setup block</div> }));
+
+function renderScreen() {
+  return render(
+    <MemoryRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+      <SettingsScreen />
+    </MemoryRouter>
+  );
+}
 
 describe("SettingsScreen", () => {
   it("renders the 'not set' warning pill and note when no API key is configured", async () => {
@@ -16,7 +27,7 @@ describe("SettingsScreen", () => {
       default_depth: "standard",
       page_size: "Letter",
     });
-    render(<SettingsScreen />);
+    renderScreen();
     expect(await screen.findByText("API key: not set")).toBeInTheDocument();
     expect(
       screen.getByText(/Add ANTHROPIC_API_KEY to the .env file and restart/)
@@ -32,7 +43,7 @@ describe("SettingsScreen", () => {
       default_depth: "standard",
       page_size: "Letter",
     });
-    render(<SettingsScreen />);
+    renderScreen();
     expect(await screen.findByText("API key: set")).toBeInTheDocument();
     expect(screen.queryByText("API key: not set")).not.toBeInTheDocument();
     expect(
@@ -48,9 +59,21 @@ describe("SettingsScreen", () => {
       default_depth: "standard",
       page_size: "Letter",
     });
-    render(<SettingsScreen />);
+    renderScreen();
     expect(await screen.findByText("How generation works")).toBeInTheDocument();
     expect(screen.getByText("Web app (this browser)")).toBeInTheDocument();
     expect(screen.getByText("Your own AI agent (MCP)")).toBeInTheDocument();
+  });
+
+  it("embeds the MCP setup block in the generation section", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "slate",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    renderScreen();
+    expect(await screen.findByText("MCP setup block")).toBeInTheDocument();
   });
 });
