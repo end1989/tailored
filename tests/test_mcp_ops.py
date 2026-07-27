@@ -103,6 +103,25 @@ def test_workflow_guide_contents():
     assert "section order" in guide
     assert "get_master_profile" in guide
 
+    # The fetch ladder. This guide IS the deliverable for the browser half of
+    # the design, and it silently rotting is the realistic failure mode.
+    assert "DIRECT FETCH" in guide
+    assert "BROWSER ESCALATION" in guide
+    assert "ASK FOR A PASTE" in guide
+    assert "403" in guide
+    assert "400 characters" in guide, "the short-body heuristic must survive"
+    assert "user's own browser" in guide
+    assert "report_fetch_blocked" in guide
+
+    # The explicit refusal to help with evasion is part of the deliverable.
+    lowered = guide.lower()
+    assert "do not attempt to disguise automated traffic" in lowered
+
+    # The batch loop.
+    assert "queue_jobs" in guide
+    assert "next_pending_job" in guide
+    assert "one job to completion before starting the next" in lowered
+
 
 # --- profile / template listing ---
 

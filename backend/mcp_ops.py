@@ -82,8 +82,33 @@ enforces truthfulness, and renders the print-ready exports.
 WORKFLOW (call the tools in this order):
 1. get_master_profile - read the candidate's contact info and master profile.
    The master profile is the single source of truth: the ONLY facts you may use.
-2. Fetch the job posting yourself (browse the URL with your own abilities - you
-   can read login-walled postings the app cannot fetch).
+2. Fetch the job posting. Escalate in this order, cheapest first:
+
+   2a. DIRECT FETCH
+       Fetch the URL with your normal tooling. If you get the posting text,
+       you are done - go to step 3.
+
+   2b. BROWSER ESCALATION - when the direct fetch is refused.
+       Triggers: HTTP 401, 403 or 429; a bot check or CAPTCHA interstitial; a
+       login wall; a consent gate; or a page whose extracted body is under
+       about 400 characters, which usually means you received a JavaScript
+       shell or a "please enable cookies" page rather than a posting. Many
+       sites return HTTP 200 for those, so do not key this on status alone.
+
+       Open the URL in the user's own browser (Claude in Chrome, or your
+       client's equivalent), let it render, and read the page text. This uses
+       the user's existing session, so postings behind a login they already
+       hold are readable.
+
+       Do not attempt to disguise automated traffic, defeat a CAPTCHA, or
+       reach anything the user could not open themselves in their own browser.
+       If the user is not logged in and the posting requires it, that is 2c.
+
+   2c. ASK FOR A PASTE - only when both of the above failed.
+       Call report_fetch_blocked(application_id, reason) so the user sees on
+       their dashboard why this posting stalled, then tell them which URL needs
+       pasting and why. Move on to the next job. Do not stall the batch on one
+       posting.
 3. create_application(profile_id, url, posting_text) - register the job with the
    posting text you gathered. Returns the application_id for every later call.
    Optionally call list_templates first and pass template= to pick a visual
@@ -100,6 +125,28 @@ WORKFLOW (call the tools in this order):
 Separately, to import a workspace portfolio scan straight into the master
 profile itself (not a single application), call add_profile_evidence - it
 additively merges agent-verified projects and skill groups into the profile.
+
+WORKING THROUGH A LIST OF JOBS:
+Call queue_jobs(profile_id, urls) once with every URL. It is free and instant -
+no fetching, no model call, no cost - and each URL becomes a saved job on the
+user's dashboard right away, so they can watch the list drain.
+
+Then loop:
+  job = next_pending_job(profile_id)   -> {{"application_id", "url"}} or null
+  if null: the queue is empty, you are finished.
+  otherwise: fetch it (step 2 above), then save_parsed_posting, optionally
+  save_research, then save_tailored_resume. Then ask for the next one.
+
+Process one job to completion before starting the next. If you lose
+context partway through a batch, that costs one job rather than twenty.
+
+The queue lives in the database, not in your context. After a restart, or after
+compacting, just call next_pending_job again: it returns the oldest job you have
+not finished, so you resume exactly where you stopped. Do not start over.
+
+If the user deletes a saved job while you are working, next_pending_job simply
+stops returning it. That is correct - it is the user changing their mind, not an
+error.
 
 TRUTHFULNESS CONTRACT (absolute, non-negotiable, enforced server-side):
 - You may SELECT which experiences, projects, and bullets to include.

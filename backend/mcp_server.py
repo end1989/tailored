@@ -142,10 +142,15 @@ async def list_templates() -> list[dict]:
 async def create_application(
     profile_id: int, url: str, posting_text: str, template: str = "slate"
 ) -> dict:
-    """Create a job application from a posting YOU gathered: browse/fetch the
-    URL yourself (you can read login-walled postings) and pass the full posting
-    text. Returns the application_id used by every later call. Next steps:
-    save_parsed_posting, then save_tailored_resume."""
+    """Create a job application from a posting YOU gathered: fetch the URL
+    yourself and pass the full posting text. If the site refuses you (403, a
+    bot check, a login wall, or a body under about 400 characters), open the
+    URL in the user's own browser and read it there - that uses their session,
+    so postings behind a login they already hold are readable. Never try to
+    disguise automated traffic or defeat a CAPTCHA. If both fail, call
+    report_fetch_blocked and ask the user to paste.
+    For more than one job, call queue_jobs instead. Returns the application_id
+    used by every later call. Next: save_parsed_posting, save_tailored_resume."""
     return await _run(
         mcp_ops.create_application, _engine, profile_id, url, posting_text, template
     )
