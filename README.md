@@ -9,11 +9,11 @@ and emphasizes* from it per job. It never invents anything
 ## Highlights
 
 - **Truthfulness enforced in the data layer, not the prompt.** Most AI resume tools ask the model nicely not to exaggerate. Tailored rejects any generated resume that contains an employer, title, date, degree, or certification not present in your Master Profile — a structural check on the write path, so the guarantee holds no matter which AI produced the text.
-- **Two ways to supply the intelligence, one contract.** Use the built-in Anthropic API pipeline (paste a batch of job URLs and walk away), or connect your own agent over MCP — a from-scratch MCP server (10 tools) that lets Claude Code, Codex, or any MCP-capable client do the work on its own subscription, no API key, and read login-walled postings its browser can reach. The same truthfulness guard applies to both.
+- **Two ways to supply the intelligence, one contract.** Use the built-in Anthropic API pipeline (paste a batch of job URLs and walk away), or connect your own agent over MCP — a from-scratch MCP server (11 tools) that lets Claude Code, Codex, or any MCP-capable client do the work on its own subscription, no API key, and read login-walled postings its browser can reach. The same truthfulness guard applies to both.
 - **Your codebase becomes resume evidence.** A portfolio-scan prompt plus an MCP write tool let an agent read the repos in your workspace and write evidence-backed, skill-tagged project entries straight into your profile (additive-only, validated, never destructive).
-- **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, four print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
+- **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, eight print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
 - **It tracks the job hunt, not just the generation.** Stages from Saved through Offer, a dated timeline for callbacks, interviews and notes, archive and permanent delete, and saved jobs you can park for free and generate later.
-- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 244 automated tests (192 backend including real headless-Chromium PDF rendering, 52 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
+- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 548 automated tests (479 backend including real headless-Chromium PDF rendering and text extraction, 69 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
 
 Job URLs can be queued for immediate generation or parked as a saved job to
 generate later at no cost. For each job URL you choose to generate, it runs a
@@ -25,10 +25,10 @@ four-stage pipeline:
    (per-job depth dial, see below).
 3. **Tailor** — Claude (`claude-opus-4-8`) selects and emphasizes the most relevant
    parts of your Master Profile and writes a matching cover letter.
-4. **Render** — four print-tuned templates (Meridian, Slate, Terminal, Signal) →
-   PDF, standalone HTML, and ATS-safe plain text.
+4. **Render** — eight print-tuned templates (see [Templates](#templates)) → PDF,
+   standalone HTML, and ATS-safe plain text.
 
-Compare all four templates side by side, with live previews, on the in-app
+Compare all eight templates side by side, with live previews, on the in-app
 **Templates** page. The UI also follows your system's light/dark preference
 automatically, with a one-click override in the nav bar or Settings.
 
@@ -171,6 +171,34 @@ each application's page):
 | `standard` | + fetch the company's own site (mission, products, values)          | $0.30-0.60   |
 | `deep`     | + web search: recent news, products, tech-stack & culture signals   | $1-3         |
 
+## Templates
+
+Eight print-tuned templates. Every one is single-column with no sidebars, icons,
+skill bars, or text baked into images, because all of those break ATS and LLM
+parsing. They differ in typography, rhythm and hierarchy, not in structure.
+
+| Template | Id | What it is | Best for |
+|---|---|---|---|
+| Meridian | `meridian` | Classic serif with small caps and hairline rules. Understated and traditional. | Corporate, finance, healthcare, government |
+| Slate | `slate` | Neutral contemporary sans-serif that builds hierarchy from weight and whitespace rather than rules. | General purpose, safe everywhere |
+| Terminal | `terminal` | Technical layout with monospace metadata and projects placed forward. | Engineering, data, infrastructure |
+| Signal | `signal` | Confident headline treatment with a single accent used once. | Design, marketing, product |
+| Ledger | `ledger` | Executive serif with a large name, wide leading and generous whitespace. | Director level and above |
+| Quarto | `quarto` | Academic CV that carries long publication lists gracefully across pages. | Academia, research, grants |
+| Dossier | `dossier` | Dense sans-serif that fits a long career onto fewer pages without crowding. | Fifteen or more years of history |
+| Plainwork | `plainwork` | Deliberately unstyled: no rules, no colour, no letterspacing, system fonts only. | Workday and government portals, maximum ATS compatibility |
+
+Templates are discovered from `backend/templates/*/template.json`, so the API,
+both dropdowns and the gallery all stay in step automatically. You can switch an
+existing application to a different template from its page at any time: it
+re-renders the resume you already have, with no model call and no cost.
+
+Every typeface except Meridian's and Plainwork's system stacks is a latin-subset
+[SIL Open Font License](https://openfontlicense.org/) `.woff2` vendored into the
+repo and base64-inlined at render time, so an exported `resume.html` is a single
+standalone file that needs no network access to render correctly. Adding a ninth
+template is three files and no code: see [docs/EXTENDING.md](docs/EXTENDING.md).
+
 ## Truthfulness
 
 Tailoring is a *selection and emphasis* problem, never invention. The generator may
@@ -230,7 +258,9 @@ tailored/
 │   │   ├── services/       # claude, intake, fetcher, research, tailor, render, pipeline
 │   │   ├── api/            # REST routes
 │   │   └── fixtures/       # offline fixtures (tests + demo mode)
-│   └── templates/          # meridian/ slate/ terminal/ signal/ + cover letter
+│   └── templates/          # one dir per resume template (template.json +
+│                           #   template.html + style.css), shared base.css,
+│                           #   vendored fonts/, + cover letter
 ├── frontend/               # React + Vite + TypeScript (dist/ committed)
 ├── tests/
 └── data/                   # gitignored: SQLite db, exports/, settings.json
