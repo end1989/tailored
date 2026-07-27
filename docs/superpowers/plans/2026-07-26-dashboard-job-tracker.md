@@ -2386,6 +2386,22 @@ git commit -m "feat: let the Add Jobs screen save jobs without generating"
 
 ---
 
+## Known follow-ups (triaged at final review, deliberately not done here)
+
+None of these affect correctness of what shipped. Recorded so they are not
+rediscovered from scratch.
+
+| Item | Where | Why later |
+|---|---|---|
+| `_column_ddl` emits a nullable column for a non-Optional field with `default_factory` | `backend/app/db.py` (`_column_ddl`) | Untriggered by any column in this plan. It *is* a precondition for spec 4's `voice_notes`, which reuses this helper — fix it there. |
+| The `saved → drafted` advance is duplicated verbatim | `services/pipeline.py`, `mcp_ops.py` | Two copies of the one sanctioned status/stage coupling. This is the exact shape that produced the `not_started` polling bug. A shared `_advance_saved_stage(session, app)` is ~5 lines. |
+| Bulk archive/delete use `Promise.all` and fail fast | `DashboardScreen.tsx` | One rejection skips `reload()`, leaving successfully-deleted rows on screen with the selection cleared and no per-item retry. Wants a sequential loop that collects errors and reloads in a `finally`. |
+| Filter-tab counts render only for the selected tab | `DashboardScreen.tsx` | Spec §7.1 wants counts so you can see how many are Saved/Active *without* clicking. |
+| "Last activity" does not move when you change stage | `applications.py` (`application_summary`) | Defined as `MAX(occurred_at)` or `created_at`, so the column stays frozen through the highest-frequency action. A backdated event also makes it read older than `created_at`. |
+| The "Saved" tab lists in-flight and failed generations | `DashboardScreen.tsx` (`visible`) | Every `generate: true` application is `stage="saved"` until the pipeline succeeds, so queued/researching/error rows appear under "Saved". Spec-conformant but reads oddly. |
+| Add Jobs copy contradicts save-for-later mode | `AddJobsScreen.tsx` | With the box ticked it still says "N jobs to queue", still shows the per-job cost estimate, and still warns that submitting will fail without an API key — precisely the user for whom parking jobs is the point. |
+| `DELETE`/`archive` are not refused for `status == "queued"` | `applications.py` (`PROCESSING_STATUSES`) | `queued` means a background task is scheduled but has not written its first status. Window is sub-millisecond and `pipeline.py` no-ops on a missing row, so the realistic residue is a re-created export directory. |
+
 ## Self-Review
 
 **Spec coverage:**
