@@ -23,7 +23,7 @@ workflow. The truthfulness guard runs server-side inside
 | `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |
 | `queue_jobs(profile_id, urls)` | Register many job URLs at once. Free; creates saved jobs. |
 | `next_pending_job(profile_id)` | The next queued job, or null when the queue is empty. |
-| `report_fetch_blocked(application_id, reason)` | Record that a posting could not be read, and why. |
+| `report_fetch_blocked(application_id, reason)` | Record that a posting could not be read, and why. Marks the job blocked, moves a queued application to `needs_paste` (out of the queue, with a paste box on the dashboard), and puts the reason on its timeline. |
 | `save_parsed_posting(application_id, parsed)` | Store the agent's `ParsedPosting` analysis (dashboard shows company/title from it). |
 | `save_research(application_id, findings)` | Optionally store agent-performed research as a `ResearchFindings` brief (tokens/cost 0). |
 | `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
@@ -64,8 +64,17 @@ permit. Tailored's part is the instruction and the record: the escalation ladder
 in `get_workflow_guide`, and `report_fetch_blocked` so giving up is visible
 rather than silent.
 
-Bot-detection evasion, CAPTCHA solving, proxying and user-agent spoofing are out
-of scope and will not be added.
+Tailored never asks a connected agent to disguise automated traffic or defeat
+a bot check, and no evasion tooling (CAPTCHA solving, proxying, fingerprint or
+user-agent rotation) will be added to this escalation path.
+
+One caveat, for honesty about the built-in pipeline (a separate code path from
+the agent ladder above): its fetcher (`backend/app/services/fetcher.py`) sends
+a browser-like User-Agent header (desktop Chrome) with its requests, because
+many job boards refuse the default Python client string outright. That is the
+whole of it: it solves no CAPTCHAs and uses no proxies, and any refusal simply
+falls through to the needs-paste flow, where the user pastes the posting text
+themselves.
 
 ## 2. The pipeline's provider seam (any model)
 

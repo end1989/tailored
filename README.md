@@ -13,7 +13,7 @@ and emphasizes* from it per job. It never invents anything
 - **Your codebase becomes resume evidence.** A portfolio-scan prompt plus an MCP write tool let an agent read the repos in your workspace and write evidence-backed, skill-tagged project entries straight into your profile (additive-only, validated, never destructive).
 - **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, eight print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
 - **It tracks the job hunt, not just the generation.** Stages from Saved through Offer, a dated timeline for callbacks, interviews and notes, archive and permanent delete, and saved jobs you can park for free and generate later.
-- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 589 automated tests (519 backend including real headless-Chromium PDF rendering and text extraction, 70 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
+- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 596 automated tests (526 backend including real headless-Chromium PDF rendering and text extraction, 70 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
 
 Job URLs can be queued for immediate generation or parked as a saved job to
 generate later at no cost. For each job URL you choose to generate, it runs a
@@ -161,10 +161,11 @@ delete a saved job partway through, the agent simply never receives it.
 
 When a job board refuses to be read, the agent opens the posting in your own
 Chrome using your own session, which is what works for postings behind a login
-you already hold. Tailored never tries to disguise automated traffic or defeat a
-bot check. If that still does not work, the job is marked blocked with the
-reason on its timeline, so you can see which posting needs pasting instead of
-finding a row that never moved.
+you already hold. Tailored never asks your agent to disguise automated traffic
+or defeat a bot check, and no evasion tooling will be added. If that still does
+not work, the job is marked blocked with the reason on its timeline and moves
+out of the queue into the needs-paste state, so you get a paste box for exactly
+that posting instead of finding a row that never moved.
 
 ## Demo mode (no API key, fully offline)
 
