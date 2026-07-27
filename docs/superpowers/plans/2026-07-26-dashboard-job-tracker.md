@@ -419,17 +419,34 @@ def test_add_and_list_events(client):
     assert listing[0]["id"] == created.json()["id"]
 
 
-def test_events_are_ordered_newest_occurrence_first(client):
+def test_events_are_ordered_by_occurrence_not_insertion(client):
+    """Post in the OPPOSITE order to the expected result, so a regression that
+    ordered by id alone would fail. Posting oldest-first would let id-only
+    ordering produce the same answer and pass a broken implementation."""
     pid = make_profile(client)
     aid = make_application(client, pid)
 
     client.post(f"/api/applications/{aid}/events",
-                json={"kind": "note", "body": "older", "occurred_at": "2026-01-01T00:00:00"})
-    client.post(f"/api/applications/{aid}/events",
                 json={"kind": "note", "body": "newer", "occurred_at": "2026-06-01T00:00:00"})
+    client.post(f"/api/applications/{aid}/events",
+                json={"kind": "note", "body": "older", "occurred_at": "2026-01-01T00:00:00"})
 
     bodies = [e["body"] for e in client.get(f"/api/applications/{aid}/events").json()]
     assert bodies == ["newer", "older"]
+
+
+def test_events_with_equal_occurrence_tiebreak_on_id_desc(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    same = "2026-03-01T00:00:00"
+
+    client.post(f"/api/applications/{aid}/events",
+                json={"kind": "note", "body": "first", "occurred_at": same})
+    client.post(f"/api/applications/{aid}/events",
+                json={"kind": "note", "body": "second", "occurred_at": same})
+
+    bodies = [e["body"] for e in client.get(f"/api/applications/{aid}/events").json()]
+    assert bodies == ["second", "first"]
 
 
 def test_event_kind_is_validated(client):
@@ -2242,7 +2259,10 @@ git commit -m "chore: rebuild frontend bundle and document the job tracker"
 2. Task 3 adds a rule the spec does not state: `PATCH` refuses `stage="saved"` on a `ready` application. This is required for the §4.4 backfill to be idempotent, since the backfill identifies pre-migration rows precisely by the `ready` + `saved` combination being otherwise impossible.
 3. Task 6 also advances `saved → drafted` in `backend/mcp_ops.py`. The spec only names the pipeline; without this, MCP-generated applications would sit in `saved` forever.
 
-**Type consistency:** `Stage`, `EventKind` and `ApplicationEvent` are defined once in Task 7 and used unchanged in Tasks 8 and 9. `STAGES` exists as `models.STAGES` (backend, Task 1) and as a `Stage[]` literal in both frontend screens — duplicated deliberately rather than fetched, matching how the codebase already handles `DEPTHS`. `application_summary`'s third parameter is optional, so the existing `backend/mcp_ops.py` caller is unaffected.
+**Type consistency:** `Stage`, `EventKind` and `ApplicationEvent` are defined once in Task 7 and used unchanged in Tasks 8 and 9. `STAGES` exists as `models.STAGES` (backend, Task 1) and as a `Stage[]` literal in both frontend screens — duplicated deliberately rather than fetched, matching how the codebase already handles `DEPTHS`. `application_summary`'s third parameter is optional so the call in
+`application_detail` stays two-argument. (An earlier draft of this line claimed
+`backend/mcp_ops.py` calls it — it does not; `mcp_ops` builds its own response
+dicts. The function's only callers are both inside `api/applications.py`.)
 
 **Placeholder scan:** none. Every step carries the code it needs.
 
