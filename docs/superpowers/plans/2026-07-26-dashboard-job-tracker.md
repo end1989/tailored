@@ -19,8 +19,12 @@
 - **Naive UTC datetimes everywhere.** The codebase stores naive UTC via `models._utcnow()`; any client-supplied timestamp is converted before storage.
 - **No bulk endpoints.** The frontend loops over selected ids.
 - **Archived rows are excluded from `GET /applications` by default.**
-- **Run backend tests with** `python -m pytest tests/ -q` from the repo root.
-- **Run frontend tests with** `npm test -- --run` from `frontend/`.
+- **Run backend tests with** `./.venv/Scripts/python.exe -m pytest tests/ -q` from the
+  repo root. The project has a `.venv`; the ambient `python` on this machine is a
+  conda interpreter that lacks `trafilatura` and every other project dependency, so
+  a bare `python -m pytest` fails at conftest import. Verified baseline: 154 passed.
+- **Run frontend tests with** `npm test -- --run` from `frontend/`, and type-check
+  with `npx tsc --noEmit`. Verified baseline: 37 passed, tsc clean.
 - **Commit after every task.** Work on branch `feature/dashboard-job-tracker`.
 
 ## File Structure
@@ -219,7 +223,14 @@ class ApplicationEvent(SQLModel, table=True):
 
 - [ ] **Step 4: Add the migration to `db.py`**
 
-In `backend/app/db.py`, add the imports `from sqlalchemy import text` alongside the existing imports, then add these two functions above `init_db`:
+In `backend/app/db.py`, add these imports alongside the existing ones:
+
+```python
+from sqlalchemy import text
+from sqlalchemy.dialects.sqlite import dialect as sqlite_dialect
+```
+
+then add these three functions above `init_db`:
 
 ```python
 def _column_ddl(column) -> str:
@@ -228,7 +239,7 @@ def _column_ddl(column) -> str:
     SQLite requires a constant default when adding a NOT NULL column, which
     every column added by this project supplies via its SQLModel default.
     """
-    type_sql = column.type.compile(dialect=__import__("sqlalchemy").dialects.sqlite.dialect())
+    type_sql = column.type.compile(dialect=sqlite_dialect())
     default = getattr(column, "default", None)
     if default is not None and getattr(default, "is_scalar", False):
         value = default.arg
@@ -524,13 +535,14 @@ and add to its returned dict, after `"created_at"`:
             .replace(tzinfo=timezone.utc).isoformat(),
 ```
 
-In `application_detail`, add `"events"` to the `detail.update({...})` call:
+In `application_detail`, replace the existing first line
 
 ```python
-            "events": [event_payload(e) for e in _events_for(session, app_row.id)],
+    detail = application_summary(app_row, job)
 ```
 
-and change its first line to pass the newest occurrence through:
+with a single fetch of the timeline that feeds both the activity timestamp and
+the embedded list (query once, use twice):
 
 ```python
     events = _events_for(session, app_row.id)
@@ -539,7 +551,12 @@ and change its first line to pass the newest occurrence through:
     )
 ```
 
-then reuse `events` in the `update` rather than querying twice.
+and add one entry to the existing `detail.update({...})` call, after
+`"raw_text_present"`:
+
+```python
+            "events": [event_payload(e) for e in events],
+```
 
 Add the request body next to the other `BaseModel`s:
 
@@ -692,25 +709,27 @@ def test_stage_is_independent_of_status(client):
     assert resp.json()["stage"] == "interview"
 
 
-def test_cannot_move_a_generated_application_back_to_saved(client, engine=None):
-    """'saved' means no documents exist. Allowing it on a ready application
-    would also break the migration backfill's idempotence."""
-    pid = make_profile(client)
-    aid = make_application(client, pid)
-    client.put(f"/api/applications/{aid}/content",
-               json={"cover_letter_md": "x"})
-    client.patch(f"/api/applications/{aid}", json={"stage": "drafted"})
-
-    # force status ready through the public retry->content path is not possible;
-    # assert the guard directly against a ready application created below.
+def set_status(client, application_id: int, status: str) -> None:
+    """Force a generation status the pipeline would normally set. The pipeline
+    is monkeypatched in these tests, so status is driven directly."""
     from sqlmodel import Session
+
     from backend.app.models import Application
-    engine = client.app.state.engine
-    with Session(engine) as s:
-        row = s.get(Application, aid)
-        row.status = "ready"
+
+    with Session(client.app.state.engine) as s:
+        row = s.get(Application, application_id)
+        row.status = status
         s.add(row)
         s.commit()
+
+
+def test_cannot_move_a_generated_application_back_to_saved(client):
+    """'saved' means no documents exist. Allowing it on a ready application
+    would also break the migration backfill's idempotence, which identifies
+    pre-migration rows precisely by ready + saved being impossible."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    set_status(client, aid, "ready")
 
     resp = client.patch(f"/api/applications/{aid}", json={"stage": "saved"})
     assert resp.status_code == 422
@@ -999,16 +1018,9 @@ def test_delete_with_no_export_directory_succeeds(client):
 
 
 def test_delete_is_refused_mid_pipeline(client):
-    from sqlmodel import Session
-    from backend.app.models import Application
-
     pid = make_profile(client)
     aid = make_application(client, pid)
-    with Session(client.app.state.engine) as s:
-        row = s.get(Application, aid)
-        row.status = "tailoring"
-        s.add(row)
-        s.commit()
+    set_status(client, aid, "tailoring")  # helper defined in the stage section
 
     resp = client.delete(f"/api/applications/{aid}")
     assert resp.status_code == 409
