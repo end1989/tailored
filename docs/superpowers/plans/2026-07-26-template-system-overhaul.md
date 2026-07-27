@@ -57,7 +57,13 @@
 | `frontend/dist/` | Rebuilt bundle. |
 | `README.md`, `docs/EXTENDING.md` | Eight templates, how to add a ninth. |
 
-**Dependency order.** Tasks 1-7 are strictly sequential. Tasks 8, 9 and 10 are mutually independent (each touches only its own template directories) and may run in parallel. Task 11 is independent of 8-10. Task 12 is independent of 11. Task 13 depends on 11 and 12. Task 14 is last.
+**Dependency order.** Tasks 1-7 are strictly sequential; each builds on the previous one's changes to `render.py`.
+
+Task 8 must land before Tasks 9 and 10, because its first step creates `backend/templates/_resume_body.html` and the shells written in 9 and 10 include it. Tasks 9 and 10 touch disjoint directories and are independent of each other.
+
+Task 11 (backend) and Task 12 (frontend) are independent of each other and of 8-10. Task 13 depends on both 11 and 12. Task 14 is last and depends on everything.
+
+If two tasks are worked concurrently, only one may run `git add`/`git commit` at a time: a shared index does not tolerate two writers.
 
 ---
 
