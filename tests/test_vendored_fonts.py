@@ -31,7 +31,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.services.render import FONTS_DIR
+from backend.app.services.render import FONTS_DIR, TEMPLATE_REGISTRY
 
 # Display name -> the files vendored for it. This is the roster: a font that is
 # not listed here should not be in the directory, and a font listed here that is
@@ -155,4 +155,32 @@ def test_every_vendored_file_belongs_to_a_licensed_family():
             f"{name} is in the fonts directory but not in EXPECTED_FAMILIES. Add "
             "it there and to LICENSES.md, or delete it - an unaccounted font "
             "binary is a licensing risk."
+        )
+
+
+def test_every_manifest_face_names_a_file_vendored_for_that_same_family():
+    """`family` and `file` are hand-written into template.json independently.
+
+    Nothing else pairs them. The family side is checked against the stylesheet
+    (tests/test_template_registry.py) and the file side only against
+    `path.is_file()`, so a face declaring family "Inter" with
+    `PublicSans-italic.woff2` satisfies both: the @font-face announces Inter,
+    Chromium resolves it, and every emphasis run in a Slate cover letter draws
+    in Public Sans Italic. The page is legible and the text extracts, so no
+    render or PDF test can see it. This roster is what the binaries were
+    fetched for, and it is the only record of which family each file holds.
+    """
+    owner = {
+        filename: family
+        for family, files in EXPECTED_FAMILIES.items()
+        for filename in files
+    }
+    faces = [(name, face) for name, m in TEMPLATE_REGISTRY.items() for face in m.fonts]
+    assert faces, "no manifest embeds a font; this test would assert nothing"
+    for name, face in faces:
+        assert owner.get(face.file) == face.family, (
+            f"{name}/template.json declares the family {face.family!r} with "
+            f"{face.file}, which was vendored for {owner.get(face.file)!r}. The "
+            "@font-face would announce one family and serve another family's "
+            "glyphs, silently."
         )

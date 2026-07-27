@@ -191,17 +191,56 @@ def _registry_fixture_resume():
 # nothing downstream errors either.
 
 
-def _font_family_declarations(template: str) -> str:
-    """The `font-family:` values in one template's own style.css.
+def _families_in(css: str) -> frozenset[str]:
+    """Every individual family name the `font-family:` declarations ask for.
+
+    Split on commas and unquoted, so each name is compared whole. A substring
+    test over the raw text cannot tell a family from a longer one that starts
+    with the same words, and two of the families vendored here have exactly such
+    a sibling on Google Fonts: `Inter Tight` and `IBM Plex Sans Condensed`. So
+    that blind spot is not hypothetical - either name is one plausible edit away.
+
+    Comments are stripped so a family named only in a header comment does not
+    count as a reference.
+    """
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    names = set()
+    for value in re.findall(r"font-family\s*:([^;}]*)", stripped):
+        for token in value.split(","):
+            # An unquoted family name may contain spaces (`font-family: Inter
+            # Tight, sans-serif`), so collapse runs of whitespace rather than
+            # splitting on them.
+            name = " ".join(token.strip().strip("\"'").split())
+            if name:
+                names.add(name)
+    return frozenset(names)
+
+
+def _font_families_named(template: str) -> frozenset[str]:
+    """The families one template's own style.css asks for.
 
     Read from disk rather than through `_load_css`, which prepends the generated
     @font-face block: its own `font-family:` line would make every check below
-    trivially self-satisfying. Comments are stripped so a family named only in a
-    header comment does not count as a reference.
+    trivially self-satisfying.
     """
-    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
-    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    return "\n".join(re.findall(r"font-family\s*:[^;}]*", stripped))
+    return _families_in((TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8"))
+
+
+def test_the_font_family_parse_does_not_confuse_a_family_with_a_longer_sibling():
+    """`Inter Tight` is a real, separate, unvendored Google family.
+
+    Both agreement tests below used to substring-search the raw declaration
+    text, which reads `"Inter Tight"` as a reference to `Inter` and so goes
+    green on a stylesheet asking for a family no manifest embeds and no
+    @font-face defines - the exact silent fallback they exist to catch.
+    """
+    named = _families_in('body { font-family: "Inter Tight", "Segoe UI", sans-serif; }')
+    assert named == {"Inter Tight", "Segoe UI", "sans-serif"}
+
+
+def test_the_font_family_parse_ignores_a_family_named_only_in_a_comment():
+    css = "/* font-family: Inter; */\nbody { font-family: Georgia, serif; }"
+    assert _families_in(css) == {"Georgia", "serif"}
 
 
 def _vendored_families() -> frozenset[str]:
@@ -225,13 +264,14 @@ def test_every_declared_font_family_is_named_in_the_template_stylesheet():
     The bytes ship in every export and no glyph of them is ever drawn.
     """
     for name, manifest in TEMPLATE_REGISTRY.items():
-        declarations = _font_family_declarations(name)
+        named = _font_families_named(name)
         for face in manifest.fonts:
-            assert face.family in declarations, (
+            assert face.family in named, (
                 f"{name}/template.json embeds {face.family!r} but "
-                f"{name}/style.css never names it in a font-family declaration. "
-                "The inlined @font-face is unreachable and the template renders "
-                "in a system fallback, silently."
+                f"{name}/style.css never names it in a font-family declaration; "
+                f"it asks for {sorted(named)}. The inlined @font-face is "
+                "unreachable and the template renders in a system fallback, "
+                "silently."
             )
 
 
@@ -307,12 +347,20 @@ def test_every_vendored_family_carries_its_own_copyright_notice():
 
 def test_every_family_a_manifest_embeds_is_named_in_the_licence_file():
     """A family shipped in an export with no licence entry is an unaccounted
-    redistribution, and manifests are where families actually reach users."""
-    text = _licences_text()
+    redistribution, and manifests are where families actually reach users.
+
+    Matched against the parsed provenance table rather than searched for in the
+    file text: `"Inter" in text` is also satisfied by an entry for Inter Tight,
+    and an entry for a different family is not a licence for this one.
+    """
+    listed = _vendored_families()
     embedded = {face.family for m in TEMPLATE_REGISTRY.values() for face in m.fonts}
     assert embedded, "no manifest embeds a font; this test would assert nothing"
     for family in sorted(embedded):
-        assert family in text, f"{family} is embedded by a template but absent from LICENSES.md"
+        assert family in listed, (
+            f"{family} is embedded by a template but is not a row of the "
+            f"LICENSES.md provenance table, which lists {sorted(listed)}."
+        )
 
 
 def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
@@ -325,10 +373,10 @@ def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
     vendored = _vendored_families()
     assert vendored, "LICENSES.md lists no families; the parse above is broken"
     for name, manifest in TEMPLATE_REGISTRY.items():
-        declarations = _font_family_declarations(name)
+        named = _font_families_named(name)
         embedded = {face.family for face in manifest.fonts}
         for family in sorted(vendored):
-            if family in declarations:
+            if family in named:
                 assert family in embedded, (
                     f"{name}/style.css asks for the vendored family {family!r} "
                     f"but {name}/template.json does not embed it. Chromium "
