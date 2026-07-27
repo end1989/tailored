@@ -271,3 +271,72 @@ def test_stage_filter(client):
 
 def test_invalid_stage_filter_is_rejected(client):
     assert client.get("/api/applications?stage=nope").status_code == 422
+
+
+# --- permanent delete ------------------------------------------------------
+
+
+def test_delete_removes_rows_and_exports(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    client.post(f"/api/applications/{aid}/events", json={"kind": "note", "body": "x"})
+
+    export_dir = client.data_dir / "exports" / str(aid)
+    export_dir.mkdir(parents=True)
+    (export_dir / "resume.pdf").write_bytes(b"%PDF-1.4")
+
+    resp = client.delete(f"/api/applications/{aid}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"deleted": aid}
+
+    assert client.get(f"/api/applications/{aid}").status_code == 404
+    assert not export_dir.exists()
+
+
+def test_delete_leaves_other_export_directories_alone(client):
+    pid = make_profile(client)
+    doomed = make_application(client, pid)
+    kept = make_application(client, pid)
+
+    for aid in (doomed, kept):
+        d = client.data_dir / "exports" / str(aid)
+        d.mkdir(parents=True)
+        (d / "resume.pdf").write_bytes(b"%PDF-1.4")
+
+    client.delete(f"/api/applications/{doomed}")
+
+    assert not (client.data_dir / "exports" / str(doomed)).exists()
+    assert (client.data_dir / "exports" / str(kept) / "resume.pdf").is_file()
+
+
+def test_delete_with_no_export_directory_succeeds(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    assert client.delete(f"/api/applications/{aid}").status_code == 200
+
+
+def test_delete_is_refused_mid_pipeline(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    set_status(client, aid, "tailoring")  # helper defined in the stage section
+
+    resp = client.delete(f"/api/applications/{aid}")
+    assert resp.status_code == 409
+    assert "tailoring" in resp.json()["detail"]
+
+
+def test_delete_removes_timeline_rows(client):
+    from sqlmodel import Session, select
+    from backend.app.models import ApplicationEvent
+
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    client.post(f"/api/applications/{aid}/events", json={"kind": "note", "body": "x"})
+
+    client.delete(f"/api/applications/{aid}")
+
+    with Session(client.app.state.engine) as s:
+        remaining = s.exec(
+            select(ApplicationEvent).where(ApplicationEvent.application_id == aid)
+        ).all()
+    assert remaining == []

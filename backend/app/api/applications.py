@@ -2,6 +2,7 @@
 HTML preview, and export downloads."""
 from __future__ import annotations
 
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -114,6 +115,28 @@ def _get_app_and_job(session: Session, application_id: int) -> tuple[Application
     if job is None:
         raise HTTPException(status_code=404, detail="job not found for application")
     return app_row, job
+
+
+def _remove_export_dir(data_dir: Path, application_id: int) -> None:
+    """Delete data/exports/<application_id>/ recursively.
+
+    The path is rebuilt from data_dir and the integer id -- never from the
+    stored Application.export_dir string, which is user-visible state that
+    could be stale or wrong. The containment check is defence in depth: it is
+    unreachable through the route because application_id is typed int, but it
+    protects any future caller.
+
+    A missing directory is not an error.
+    """
+    data_dir = Path(data_dir).resolve()
+    target = (data_dir / "exports" / str(application_id)).resolve()
+    if not target.is_dir():
+        return
+    if data_dir not in target.parents:
+        raise HTTPException(
+            status_code=500, detail="refusing to delete outside the data directory"
+        )
+    shutil.rmtree(target)
 
 
 def _naive_utc(dt: datetime) -> datetime:
@@ -521,3 +544,34 @@ def delete_event(
     session.delete(event)
     session.commit()
     return {"deleted": event_id}
+
+
+@router.delete("/applications/{application_id}")
+def delete_application(
+    application_id: int,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Permanent, unrecoverable delete: rows, versions, timeline, and the
+    exported files on disk. The reversible path is /archive."""
+    app_row, _job = _get_app_and_job(session, application_id)
+    if app_row.status in PROCESSING_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
+
+    for event in session.exec(
+        select(ApplicationEvent).where(ApplicationEvent.application_id == application_id)
+    ).all():
+        session.delete(event)
+    for version in session.exec(
+        select(ApplicationVersion)
+        .where(ApplicationVersion.application_id == application_id)
+    ).all():
+        session.delete(version)
+    session.delete(app_row)
+    session.commit()
+
+    _remove_export_dir(request.app.state.settings.data_dir, application_id)
+    return {"deleted": application_id}
