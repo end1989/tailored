@@ -4002,7 +4002,37 @@ it("shows template labels rather than raw ids", async () => {
 });
 ```
 
-Add the equivalent pair to `frontend/src/screens/AddJobsScreen.test.tsx`, targeting the "Default template" select and one per-row select (`aria-label="Template for row 1"`).
+**Pin the contract half too.** This task splits one string into two — `label` is display, `name` is what the backend validates — so a test that only matches on the option's accessible name (its text) leaves `value` free. `value={t.label}` would render identically, keep every label test green, and make `api/settings.py` and `api/applications.py` reject every write with a 422. Until this task, option text and value were the same string and could not desynchronize; from here on, each select needs an assertion on the id side:
+
+```tsx
+it("carries the template id as the option value while showing the label", async () => {
+  vi.mocked(api.getSettings).mockResolvedValue({ /* ... default_template: "meridian" */ });
+  vi.mocked(api.listTemplates).mockResolvedValue([
+    { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+    { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+  ]);
+  render(<SettingsScreen />);
+  const select = (await screen.findByLabelText(/default template/i)) as HTMLSelectElement;
+  const ledger = within(select).getByRole("option", { name: "Ledger" }) as HTMLOptionElement;
+  expect(ledger.value).toBe("ledger");
+  // the saved id must resolve to a real option, or the select shows the wrong entry
+  expect(select.value).toBe("meridian");
+});
+
+it("saves the selected template id, not its label", async () => {
+  // ... same mocks, plus api.updateSettings mocked to resolve
+  const select = await screen.findByLabelText(/default template/i);
+  fireEvent.change(select, { target: { value: "ledger" } });
+  await waitFor(() => {
+    const calls = vi.mocked(api.updateSettings).mock.calls;
+    expect(calls[calls.length - 1]?.[0]).toEqual({ default_template: "ledger" });
+  });
+});
+```
+
+Add the equivalent set to `frontend/src/screens/AddJobsScreen.test.tsx`, targeting the "Default template" select and one per-row select (`aria-label="Template for row 1"`). There the write assertion is on the `createApplications` payload: change the select, submit, and assert the last call's `jobs` array carries `template: "ledger"` (and, for the default select, that the fallback argument does too).
+
+Vitest here runs without `clearMocks`, so mock calls accumulate across tests in a file. Read `mock.calls[mock.calls.length - 1]` rather than asserting `toHaveBeenCalledWith` on a mock an earlier test also drove.
 
 Import `within` from `@testing-library/react` in both files if it is not already imported, and make sure `api.listTemplates` is part of the existing `vi.mock("../api", ...)` factory in each file.
 

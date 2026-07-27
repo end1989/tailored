@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import SettingsScreen from "./SettingsScreen";
 import * as api from "../api";
@@ -119,5 +119,57 @@ describe("SettingsScreen", () => {
     const select = await screen.findByLabelText(/default template/i);
     expect(within(select).getByRole("option", { name: "Meridian" })).toBeInTheDocument();
     expect(within(select).queryByRole("option", { name: "meridian" })).toBeNull();
+  });
+
+  // The label is display, the name is the contract the backend validates against
+  // (api/settings.py rejects anything not in the registry). Options that render the
+  // label but carry the label as their value would look right and write garbage.
+  it("carries the template id as the option value while showing the label", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "meridian",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    const select = (await screen.findByLabelText(/default template/i)) as HTMLSelectElement;
+    const ledger = within(select).getByRole("option", { name: "Ledger" }) as HTMLOptionElement;
+    expect(ledger.value).toBe("ledger");
+    // the saved id must resolve to a real option, or the select shows the wrong entry
+    expect(select.value).toBe("meridian");
+  });
+
+  it("saves the selected template id, not its label", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "meridian",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    vi.mocked(api.updateSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "ledger",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    const select = await screen.findByLabelText(/default template/i);
+    fireEvent.change(select, { target: { value: "ledger" } });
+
+    await waitFor(() => {
+      const calls = vi.mocked(api.updateSettings).mock.calls;
+      expect(calls[calls.length - 1]?.[0]).toEqual({ default_template: "ledger" });
+    });
   });
 });
