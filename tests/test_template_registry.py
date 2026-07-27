@@ -178,3 +178,79 @@ def _registry_fixture_resume():
     fixtures = _Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
     data = _json.loads((fixtures / "tailor.json").read_text(encoding="utf-8"))
     return TailorResult.model_validate(data).resume
+
+
+# --- The manifest and the stylesheet must agree on the family name ---------
+#
+# Every test above inspects the CSS `_font_css` produces. None of them checks
+# that anything *consumes* it, and that is the exact failure `_font_css` exists
+# to prevent, seen from the other end: transpose one character in slate's
+# `font-family: Inter, ...` and the whole suite stays green while every slate
+# export renders in the Segoe UI fallback and still carries 128 KB of
+# unreachable base64 Inter. Chromium does not report an unmatched family, so
+# nothing downstream errors either.
+
+
+def _font_family_declarations(template: str) -> str:
+    """The `font-family:` values in one template's own style.css.
+
+    Read from disk rather than through `_load_css`, which prepends the generated
+    @font-face block: its own `font-family:` line would make every check below
+    trivially self-satisfying. Comments are stripped so a family named only in a
+    header comment does not count as a reference.
+    """
+    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    return "\n".join(re.findall(r"font-family\s*:[^;}]*", stripped))
+
+
+def _vendored_families() -> frozenset[str]:
+    """Family display names from the fonts LICENSES.md provenance table.
+
+    Used instead of a second hardcoded roster: tests/test_vendored_fonts.py
+    already asserts that table and the binaries on disk agree in both
+    directions, so this stays correct as families are added.
+    """
+    text = (TEMPLATES_DIR / "fonts" / "LICENSES.md").read_text(encoding="utf-8")
+    return frozenset(
+        row.split("|")[1].strip()
+        for row in text.splitlines()
+        if row.startswith("| ") and "http" in row
+    )
+
+
+def test_every_declared_font_family_is_named_in_the_template_stylesheet():
+    """An embedded family the stylesheet never asks for is dead weight.
+
+    The bytes ship in every export and no glyph of them is ever drawn.
+    """
+    for name, manifest in TEMPLATE_REGISTRY.items():
+        declarations = _font_family_declarations(name)
+        for face in manifest.fonts:
+            assert face.family in declarations, (
+                f"{name}/template.json embeds {face.family!r} but "
+                f"{name}/style.css never names it in a font-family declaration. "
+                "The inlined @font-face is unreachable and the template renders "
+                "in a system fallback, silently."
+            )
+
+
+def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
+    """The same disagreement from the other side: asked for but not embedded.
+
+    render_pdf calls page.set_content with no base URL and Chromium has none of
+    these families installed, so a stylesheet naming a vendored family that its
+    manifest does not declare falls straight through to the next stack entry.
+    """
+    vendored = _vendored_families()
+    assert vendored, "LICENSES.md lists no families; the parse above is broken"
+    for name, manifest in TEMPLATE_REGISTRY.items():
+        declarations = _font_family_declarations(name)
+        embedded = {face.family for face in manifest.fonts}
+        for family in sorted(vendored):
+            if family in declarations:
+                assert family in embedded, (
+                    f"{name}/style.css asks for the vendored family {family!r} "
+                    f"but {name}/template.json does not embed it. Chromium "
+                    "cannot resolve it and falls back without an error."
+                )

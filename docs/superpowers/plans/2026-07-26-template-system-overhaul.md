@@ -965,6 +965,7 @@ git commit -m "feat: vendor latin-subset OFL woff2 fonts"
 **Files:**
 - Modify: `backend/app/services/render.py` (`_font_css`, `_load_css`)
 - Modify: `backend/templates/{slate,terminal,signal}/template.json` (fill in `fonts`)
+- Modify: `backend/templates/{slate,terminal,signal}/style.css` (point `font-family` at the embedded families)
 - Modify: `tests/test_template_registry.py` (append)
 
 **Interfaces:**
@@ -1035,6 +1036,82 @@ def _registry_fixture_resume():
     fixtures = _Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
     data = _json.loads((fixtures / "tailor.json").read_text(encoding="utf-8"))
     return TailorResult.model_validate(data).resume
+
+
+# --- The manifest and the stylesheet must agree on the family name ---------
+#
+# Every test above inspects the CSS `_font_css` produces. None of them checks
+# that anything *consumes* it, and that is the exact failure `_font_css` exists
+# to prevent, seen from the other end: transpose one character in slate's
+# `font-family: Inter, ...` and the whole suite stays green while every slate
+# export renders in the Segoe UI fallback and still carries 128 KB of
+# unreachable base64 Inter. Chromium does not report an unmatched family, so
+# nothing downstream errors either.
+
+
+def _font_family_declarations(template: str) -> str:
+    """The `font-family:` values in one template's own style.css.
+
+    Read from disk rather than through `_load_css`, which prepends the generated
+    @font-face block: its own `font-family:` line would make every check below
+    trivially self-satisfying. Comments are stripped so a family named only in a
+    header comment does not count as a reference.
+    """
+    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    return "\n".join(re.findall(r"font-family\s*:[^;}]*", stripped))
+
+
+def _vendored_families() -> frozenset[str]:
+    """Family display names from the fonts LICENSES.md provenance table.
+
+    Used instead of a second hardcoded roster: tests/test_vendored_fonts.py
+    already asserts that table and the binaries on disk agree in both
+    directions, so this stays correct as families are added.
+    """
+    text = (TEMPLATES_DIR / "fonts" / "LICENSES.md").read_text(encoding="utf-8")
+    return frozenset(
+        row.split("|")[1].strip()
+        for row in text.splitlines()
+        if row.startswith("| ") and "http" in row
+    )
+
+
+def test_every_declared_font_family_is_named_in_the_template_stylesheet():
+    """An embedded family the stylesheet never asks for is dead weight.
+
+    The bytes ship in every export and no glyph of them is ever drawn.
+    """
+    for name, manifest in TEMPLATE_REGISTRY.items():
+        declarations = _font_family_declarations(name)
+        for face in manifest.fonts:
+            assert face.family in declarations, (
+                f"{name}/template.json embeds {face.family!r} but "
+                f"{name}/style.css never names it in a font-family declaration. "
+                "The inlined @font-face is unreachable and the template renders "
+                "in a system fallback, silently."
+            )
+
+
+def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
+    """The same disagreement from the other side: asked for but not embedded.
+
+    render_pdf calls page.set_content with no base URL and Chromium has none of
+    these families installed, so a stylesheet naming a vendored family that its
+    manifest does not declare falls straight through to the next stack entry.
+    """
+    vendored = _vendored_families()
+    assert vendored, "LICENSES.md lists no families; the parse above is broken"
+    for name, manifest in TEMPLATE_REGISTRY.items():
+        declarations = _font_family_declarations(name)
+        embedded = {face.family for face in manifest.fonts}
+        for family in sorted(vendored):
+            if family in declarations:
+                assert family in embedded, (
+                    f"{name}/style.css asks for the vendored family {family!r} "
+                    f"but {name}/template.json does not embed it. Chromium "
+                    "cannot resolve it and falls back without an error."
+                )
 ```
 
 - [ ] **Step 2: Run and confirm they fail**
@@ -1131,16 +1208,24 @@ import functools
 
 - [ ] **Step 5: Point the three rebuilt templates at their families**
 
-`style.css` for slate, terminal and signal still names system fonts. Task 8 rebuilds them properly; for now, so this task is independently verifiable, change only the `font-family` declaration in each:
+`style.css` for slate, terminal and signal still names system fonts. Task 8 rebuilds them properly; for now, so this task is independently verifiable, change the `font-family` declarations in each:
 
-- `backend/templates/slate/style.css`: `font-family: Inter, "Segoe UI", system-ui, sans-serif;`
-- `backend/templates/terminal/style.css`: `font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;`
-- `backend/templates/signal/style.css`: `font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;`
+- `backend/templates/slate/style.css`, `body`: `font-family: Inter, "Segoe UI", system-ui, sans-serif;`
+- `backend/templates/terminal/style.css`, `body`: `font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;`
+- `backend/templates/signal/style.css`, `body`: `font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;`
+
+Terminal has **five further** `font-family` declarations — `.headline`, `.contact-line`, `.item-head .meta`, `.section-projects .item-head .primary`, `.skill-items` — all reading `ui-monospace, "Cascadia Code", Consolas, Menlo, monospace`. Every one of them must be re-pointed:
+
+```css
+font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
+```
+
+Missing this is not cosmetic. Terminal's manifest embeds two IBM Plex Mono files, so skipping it base64-inlines ~53 KB of a family no selector ever asks for while the mono runs render in Consolas — the exact silent fallback this task exists to prevent, and what the two agreement tests in Step 1 catch. Keep a trailing generic `monospace` so `tests/test_templates.py::test_template_visual_identity[terminal-monospace]` still holds.
 
 - [ ] **Step 6: Run the tests**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_template_registry.py -q`
-Expected: 18 passed (11 from Task 2 + 7 here).
+Expected: 20 passed (11 from Task 2 + 9 here).
 
 - [ ] **Step 7: Prove the fonts survive PDF extraction**
 
@@ -1152,7 +1237,7 @@ Expected: 16 passed. A failure here means a font subset has no usable ToUnicode 
 - [ ] **Step 8: Full suite**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/ -q`
-Expected: 245 passed (238 after Task 3 + 7 here), 0 failed.
+Expected: 247 passed (238 after Task 3 + 9 here), 0 failed.
 
 - [ ] **Step 9: Commit**
 

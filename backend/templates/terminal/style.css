@@ -1,7 +1,9 @@
 /* ============================================================
    Terminal — technical. Engineering, data.
-   Sans body with ui-monospace accents (skills, dates), left
-   border accent on section titles, projects read forward.
+   IBM Plex Sans body with IBM Plex Mono accents (skills,
+   dates), left border accent on section titles, projects read
+   forward. Both families are embedded by template.json; the
+   ui-monospace stack behind Plex Mono is fallback only.
    ============================================================ */
 
 body {
@@ -18,14 +20,14 @@ body {
 }
 
 .headline {
-  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 10pt;
   color: #2f3742;
   margin-top: var(--space-1);
 }
 
 .contact-line {
-  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 8.5pt;
   color: #49525e;
   margin-top: var(--space-2);
@@ -72,14 +74,14 @@ body {
 
 .item-head .meta {
   margin-left: auto;
-  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 8.5pt;
   color: #5b6470;
 }
 
 /* Projects read forward: heavier, mono name treatment */
 .section-projects .item-head .primary {
-  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 11pt;
   font-weight: 700;
 }
@@ -98,6 +100,6 @@ body {
 }
 
 .skill-items {
-  font-family: ui-monospace, "Cascadia Code", Consolas, Menlo, monospace;
+  font-family: "IBM Plex Mono", ui-monospace, "Cascadia Code", Consolas, monospace;
   font-size: 9pt;
 }
