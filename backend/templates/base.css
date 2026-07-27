@@ -78,8 +78,6 @@ body {
   line-height: var(--leading);
   color: var(--ink);
   background: #ffffff;
-  /* Tabular figures keep date columns aligned in every family that has them. */
-  font-variant-numeric: tabular-nums;
 }
 
 a {
@@ -136,6 +134,17 @@ img {
 .contact-line,
 .meta {
   font-size: var(--fs-meta);
+}
+
+/* Tabular figures keep the date column aligned down the right edge.
+   Scoped to .meta on purpose: several families (Inter among them) make the
+   hyphen-minus tabular-width under `tnum` so minus signs line up in a column
+   of numbers. Applied to body text that stretches every hyphen in ordinary
+   prose -- "monolith-to-services" renders as "monolith - to - services" --
+   which is a real typographic cost paid for an alignment nobody asked for
+   outside the date column. */
+.meta {
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- Measure: prose is capped, tables of facts are not --- */

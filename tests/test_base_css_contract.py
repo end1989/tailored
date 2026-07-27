@@ -212,3 +212,34 @@ def test_the_guards_accept_legitimate_css(css):
 def test_base_css_owns_item_pagination():
     assert "break-inside: var(--item-break)" in BASE_CSS
     assert "page-break-inside: var(--item-break)" in BASE_CSS
+
+
+def test_tabular_figures_are_scoped_to_the_date_column():
+    """`tnum` must not reach body prose.
+
+    Several families -- Inter among them -- make the hyphen-minus tabular-width
+    under `tnum`, so minus signs align in a column of numbers. Applied to body
+    text that stretches every hyphen in ordinary prose: "monolith-to-services"
+    renders as "monolith - to - services". The alignment is only wanted in the
+    date column, so the declaration belongs on .meta and nowhere broader.
+    """
+    body_block = re.search(r"^body\s*\{(.*?)\}", BASE_CSS, re.DOTALL | re.MULTILINE)
+    assert body_block, "base.css has no top-level body rule"
+    assert "font-variant-numeric" not in body_block.group(1), (
+        "font-variant-numeric on body stretches every hyphen in prose; "
+        "scope it to .meta"
+    )
+    assert re.search(
+        r"\.meta\s*\{[^}]*font-variant-numeric:\s*tabular-nums", BASE_CSS, re.DOTALL
+    ), "the date column still needs tabular figures"
+
+
+@pytest.mark.parametrize("template", TEMPLATES)
+def test_no_template_puts_tabular_figures_on_body(template):
+    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    body_block = re.search(r"(?:^|\})\s*body\s*\{(.*?)\}", stripped, re.DOTALL)
+    if body_block:
+        assert "font-variant-numeric" not in body_block.group(1), (
+            f"{template}/style.css puts font-variant-numeric on body"
+        )
