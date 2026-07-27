@@ -240,11 +240,25 @@ def create_batch(
 
 @router.get("/applications")
 def list_applications(
-    profile_id: Optional[int] = None, session: Session = Depends(get_session)
+    profile_id: Optional[int] = None,
+    stage: Optional[str] = None,
+    archived: bool = False,
+    session: Session = Depends(get_session),
 ) -> list[dict[str, Any]]:
+    if stage is not None and stage not in STAGES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid stage {stage!r}; must be one of {list(STAGES)}",
+        )
     stmt = select(Application)
     if profile_id is not None:
         stmt = stmt.where(Application.profile_id == profile_id)
+    if stage is not None:
+        stmt = stmt.where(Application.stage == stage)
+    if archived:
+        stmt = stmt.where(Application.archived_at.is_not(None))
+    else:
+        stmt = stmt.where(Application.archived_at.is_(None))
     rows = session.exec(stmt.order_by(Application.id.desc())).all()
     latest = dict(session.exec(
         select(ApplicationEvent.application_id,
@@ -295,6 +309,33 @@ def patch_application(
         session.add(app_row)
         session.commit()
         session.refresh(app_row)
+    return application_detail(session, app_row, job)
+
+
+@router.post("/applications/{application_id}/archive")
+def archive_application(
+    application_id: int, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    """Reversible removal: drops off the dashboard, keeps rows and exports."""
+    app_row, job = _get_app_and_job(session, application_id)
+    app_row.archived_at = _utcnow()
+    app_row.updated_at = _utcnow()
+    session.add(app_row)
+    session.commit()
+    session.refresh(app_row)
+    return application_detail(session, app_row, job)
+
+
+@router.post("/applications/{application_id}/restore")
+def restore_application(
+    application_id: int, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    app_row, job = _get_app_and_job(session, application_id)
+    app_row.archived_at = None
+    app_row.updated_at = _utcnow()
+    session.add(app_row)
+    session.commit()
+    session.refresh(app_row)
     return application_detail(session, app_row, job)
 
 

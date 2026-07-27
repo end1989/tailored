@@ -226,3 +226,48 @@ def test_cannot_move_a_generated_application_back_to_saved(client):
     resp = client.patch(f"/api/applications/{aid}", json={"stage": "saved"})
     assert resp.status_code == 422
     assert "saved" in resp.json()["detail"]
+
+
+# --- archive ---------------------------------------------------------------
+
+
+def test_archive_hides_from_default_listing(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    assert client.post(f"/api/applications/{aid}/archive").status_code == 200
+    assert [a["id"] for a in client.get("/api/applications").json()] == []
+
+
+def test_archived_filter_shows_only_archived(client):
+    pid = make_profile(client)
+    kept = make_application(client, pid)
+    gone = make_application(client, pid)
+    client.post(f"/api/applications/{gone}/archive")
+
+    archived = client.get("/api/applications?archived=true").json()
+    assert [a["id"] for a in archived] == [gone]
+    assert [a["id"] for a in client.get("/api/applications").json()] == [kept]
+
+
+def test_restore_returns_it_to_the_default_listing(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    client.post(f"/api/applications/{aid}/archive")
+
+    assert client.post(f"/api/applications/{aid}/restore").status_code == 200
+    assert [a["id"] for a in client.get("/api/applications").json()] == [aid]
+
+
+def test_stage_filter(client):
+    pid = make_profile(client)
+    a1 = make_application(client, pid)
+    a2 = make_application(client, pid)
+    client.patch(f"/api/applications/{a2}", json={"stage": "offer"})
+
+    rows = client.get("/api/applications?stage=offer").json()
+    assert [a["id"] for a in rows] == [a2]
+
+
+def test_invalid_stage_filter_is_rejected(client):
+    assert client.get("/api/applications?stage=nope").status_code == 422
