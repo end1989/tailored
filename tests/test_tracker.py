@@ -287,7 +287,7 @@ def test_delete_removes_rows_and_exports(client):
 
     resp = client.delete(f"/api/applications/{aid}")
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"deleted": aid, "exports_removed": True}
+    assert resp.json() == {"deleted": aid}
 
     assert client.get(f"/api/applications/{aid}").status_code == 404
     assert not export_dir.exists()
@@ -342,13 +342,17 @@ def test_delete_removes_timeline_rows(client):
     assert remaining == []
 
 
-def test_delete_survives_a_locked_export_directory(client, monkeypatch):
+def test_delete_is_refused_by_a_locked_export_directory(client, monkeypatch):
     """rmtree failure (e.g. WinError 32 on a PDF held open in a viewer) must
-    not escape as an unhandled 500 after the rows are already committed as
-    deleted -- that would tell the caller the delete failed when the
-    application has in fact vanished, and a retry would just 404."""
+    ABORT the whole delete, with nothing committed. Files are removed before
+    any row is deleted, so a locked directory must leave the application (and
+    its timeline) fully intact -- not vanish the rows while the directory
+    (and the id, which SQLite will recycle) survives to be inherited by the
+    next application created, whose Exports tab would then serve the deleted
+    application's resume."""
     pid = make_profile(client)
     aid = make_application(client, pid)
+    client.post(f"/api/applications/{aid}/events", json={"kind": "note", "body": "x"})
 
     export_dir = client.data_dir / "exports" / str(aid)
     export_dir.mkdir(parents=True)
@@ -362,9 +366,19 @@ def test_delete_survives_a_locked_export_directory(client, monkeypatch):
     monkeypatch.setattr(applications_module.shutil, "rmtree", boom)
 
     resp = client.delete(f"/api/applications/{aid}")
-    assert resp.status_code == 200, resp.text
-    assert resp.json() == {"deleted": aid, "exports_removed": False}
-    assert client.get(f"/api/applications/{aid}").status_code == 404
+    assert resp.status_code == 409, resp.text
+
+    get_resp = client.get(f"/api/applications/{aid}")
+    assert get_resp.status_code == 200, get_resp.text
+
+    from sqlmodel import Session, select
+    from backend.app.models import ApplicationEvent
+
+    with Session(client.app.state.engine) as s:
+        remaining = s.exec(
+            select(ApplicationEvent).where(ApplicationEvent.application_id == aid)
+        ).all()
+    assert remaining != []
 
 
 def test_remove_export_dir_refuses_a_path_outside_exports(client):
@@ -390,8 +404,9 @@ def test_remove_export_dir_refuses_a_path_outside_exports(client):
 def test_remove_export_dir_missing_directory_raises_nothing(client):
     from backend.app.api.applications import _remove_export_dir
 
-    # No exports directory exists at all yet.
-    assert _remove_export_dir(client.data_dir, 999) is True
+    # No exports directory exists at all yet -- nothing to remove, so this
+    # must return normally rather than raise.
+    assert _remove_export_dir(client.data_dir, 999) is None
 
 
 # --- saved jobs ------------------------------------------------------------

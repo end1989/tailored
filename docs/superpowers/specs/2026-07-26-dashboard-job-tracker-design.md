@@ -208,10 +208,26 @@ Application screen needs one request rather than two.
 
 `DELETE /applications/{id}` removes, in order:
 
-1. `ApplicationEvent` rows for the application
-2. `ApplicationVersion` rows for the application
-3. The `Application` row
-4. The `data/exports/<id>/` directory, recursively
+1. The `data/exports/<id>/` directory, recursively
+2. `ApplicationEvent` rows for the application
+3. `ApplicationVersion` rows for the application
+4. The `Application` row
+
+**Files first, not rows first.** This spec originally mandated rows-first
+(delete the DB rows, commit, then best-effort remove the directory,
+swallowing removal failures since the rows were already gone). That order was
+reversed during implementation, with the user's approval, after review found
+a real corruption path: `Application.id` is a bare SQLite rowid with no
+`AUTOINCREMENT`, so ids get recycled once a row is deleted. Combined with a
+tolerated `rmtree` failure (e.g. a PDF held open in a viewer on Windows) and
+`download_export`'s fallback to `data_dir/exports/<id>` whenever
+`export_dir` is NULL, a rows-first delete could leave a locked export
+directory on disk under an id that a subsequently created application would
+inherit — silently serving that new application's Exports tab the deleted
+application's resume. Files-first makes that state unreachable: removal now
+runs, and must fully succeed, before any row is touched, and a removal
+failure raises so the whole delete aborts with nothing committed. Do not
+revert this order back to rows-first.
 
 The `Job` row is left alone — it is shared state and may be referenced
 elsewhere; orphan cleanup is out of scope.
@@ -221,10 +237,13 @@ and gets the corresponding care: the path is rebuilt from
 `settings.data_dir / "exports" / str(application_id)`, never from
 `Application.export_dir` (a stored, potentially stale, potentially
 attacker-influenced string), and is verified to sit inside `data_dir` before
-`shutil.rmtree`. A missing directory is not an error.
+`shutil.rmtree`. A missing directory is not an error. A removal failure
+(e.g. `OSError` from a locked file) raises a 409 so the caller can close the
+file and retry — nothing is committed on that path.
 
 Returns 409 if the application is mid-pipeline; deleting rows out from under a
-running background task would leave it writing to a deleted row.
+running background task would leave it writing to a deleted row. A locked
+export directory now also returns 409, for the same "retry me" reason.
 
 There is no bulk endpoint. The frontend loops over selected ids. For a local
 single-user app, twenty sequential requests is not a problem worth new API

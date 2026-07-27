@@ -117,38 +117,48 @@ def _get_app_and_job(session: Session, application_id: int) -> tuple[Application
     return app_row, job
 
 
-def _remove_export_dir(data_dir: Path, application_id: int) -> bool:
+def _remove_export_dir(data_dir: Path, application_id: int) -> None:
     """Delete data/exports/<application_id>/ recursively.
 
     The path is rebuilt from data_dir and the integer id -- never from the
     stored Application.export_dir string, which is user-visible state that
     could be stale or wrong. The containment check is defence in depth: it is
     unreachable through the route because application_id is typed int, but it
-    protects any future caller -- it also rejects "", ".", and traversal like
-    "5/../6", which an untyped caller could plausibly produce.
+    protects any future caller. Both sides of the comparison are resolved, so
+    a symlinked or junctioned data/exports still compares correctly. The
+    check rejects "" and ".", which collapse back to the exports directory
+    itself. It does NOT reject traversal like "5/../6" -- resolve() silently
+    normalizes that to "exports/6", which is inside exports and gets deleted
+    like any ordinary id. Containment still holds (nothing outside
+    data_dir/exports is ever reachable), but this function is not a defence
+    against an id string smuggling a different id's number.
 
-    A missing directory is not an error. Returns True if the directory was
-    removed (or was already absent), False if removal was attempted but
-    failed (e.g. a file held open by another process). Callers must not let
-    that failure raise: by the time this runs, the DB rows are already
-    committed as deleted, so an exception here would surface as a false
-    "delete failed" while the application has in fact vanished. The
-    containment refusal is the one exception that still raises -- it signals
-    a programming error, not an operational one, and must stay loud.
+    A missing directory is not an error: there is nothing to remove, so this
+    returns normally. This function must run, and must fully succeed or
+    raise, BEFORE any row is deleted or anything committed -- both the
+    containment refusal and a removal failure (e.g. a file held open by
+    another process on Windows) raise, so the caller aborts the whole delete
+    with the database untouched rather than committing row deletions the
+    files never actually backed out of.
     """
     data_dir = Path(data_dir).resolve()
-    target = (data_dir / "exports" / str(application_id)).resolve()
+    exports_dir = (data_dir / "exports").resolve()
+    target = (exports_dir / str(application_id)).resolve()
     if not target.is_dir():
-        return True
-    if target.parent != data_dir / "exports":
+        return
+    if target.parent != exports_dir:
         raise HTTPException(
             status_code=500, detail="refusing to delete outside the data directory"
         )
     try:
         shutil.rmtree(target)
-    except OSError:
-        return False
-    return True
+    except OSError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="could not delete exported files: a file appears to be "
+                   "open elsewhere (e.g. a PDF viewer); close it and try "
+                   "again",
+        ) from exc
 
 
 def _naive_utc(dt: datetime) -> datetime:
@@ -602,6 +612,12 @@ def delete_application(
             detail=f"application is currently {app_row.status}; wait for it to finish",
         )
 
+    # Files first: if this raises, nothing below runs and nothing is
+    # committed. See _remove_export_dir's docstring for why the order
+    # matters -- ids are recycled, so leaving the directory behind while the
+    # rows vanish lets a future application inherit a deleted one's exports.
+    _remove_export_dir(request.app.state.settings.data_dir, application_id)
+
     for event in session.exec(
         select(ApplicationEvent).where(ApplicationEvent.application_id == application_id)
     ).all():
@@ -614,5 +630,4 @@ def delete_application(
     session.delete(app_row)
     session.commit()
 
-    exports_removed = _remove_export_dir(request.app.state.settings.data_dir, application_id)
-    return {"deleted": application_id, "exports_removed": exports_removed}
+    return {"deleted": application_id}

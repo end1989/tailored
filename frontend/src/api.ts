@@ -134,8 +134,8 @@ export function restoreApplication(id: number): Promise<ApplicationDetail> {
   return request<ApplicationDetail>(`/applications/${id}/restore`, { method: "POST" });
 }
 
-export function deleteApplication(id: number): Promise<{ deleted: number; exports_removed: boolean }> {
-  return request<{ deleted: number; exports_removed: boolean }>(`/applications/${id}`, {
+export function deleteApplication(id: number): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/applications/${id}`, {
     method: "DELETE",
   });
 }

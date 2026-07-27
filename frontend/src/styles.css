@@ -290,3 +290,11 @@ a { color: var(--accent); }
 .badge-applied { background: #EDE9FE; color: #6D28D9; }
 .badge-offer { background: #D1FAE5; color: #047857; }
 .badge-rejection { background: #FEE2E2; color: #B91C1C; }
+
+/* Dark surfaces: swap the pale badge fills for translucent tints of the same
+   hue with light text, so every timeline badge stays legible on --surface. */
+:root[data-theme="dark"] .badge-note, :root[data-theme="dark"] .badge-followup { background: rgba(168, 162, 158, 0.2); color: #E7E5E4; }
+:root[data-theme="dark"] .badge-callback, :root[data-theme="dark"] .badge-interview { background: rgba(59, 130, 246, 0.22); color: #93C5FD; }
+:root[data-theme="dark"] .badge-applied { background: rgba(167, 139, 250, 0.22); color: #C4B5FD; }
+:root[data-theme="dark"] .badge-offer { background: rgba(16, 185, 129, 0.22); color: #6EE7B7; }
+:root[data-theme="dark"] .badge-rejection { background: rgba(248, 113, 113, 0.22); color: #FCA5A5; }
