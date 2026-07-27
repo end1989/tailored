@@ -426,11 +426,24 @@ def test_the_serif_template_is_registered_with_its_own_family(name):
 # rest on synthetically. The page looks near enough right that no render test can
 # see it, and the weight the stylesheet wrote down is not the weight that prints.
 #
+# Resolving that request means resolving family, style and weight TOGETHER, and
+# a stylesheet rarely declares all three in one block: terminal names
+# `.skill-label`'s family in a list it shares with `.skill-items` and sets its
+# weight two rules later, and every template sets a weight on `.item-head`-style
+# containers that their `.secondary` children inherit. So the properties are
+# accumulated per selector across every rule that names it, and a selector
+# inherits from the ancestor its own text spells out, falling back to `body`.
+#
 # The parse is deliberately shallow, and these are its assumptions:
 #   * rules are flat - a nested at-rule raises rather than being mis-read;
-#   * the family in effect for a block is the one that block names, else the one
-#     `body` names, which is how all of these stylesheets are written;
-#   * a block that sets font-style without a weight inherits `body`'s weight.
+#   * a selector is matched by its literal text, so two different selectors that
+#     reach the same element (`.secondary` and `.item-head .secondary`) are
+#     treated as unrelated, and specificity never enters into it: within one
+#     selector, document order decides;
+#   * the only inheritance visible to a flat parse is the one a descendant
+#     selector writes down. An element whose real DOM ancestor is styled under a
+#     selector that does not appear in its own falls back to `body`.
+#   * combinators other than descendant are rejected rather than guessed at.
 # It is a guard against a stylesheet asking for a weight nobody vendored, not a
 # cascade implementation.
 
@@ -478,6 +491,65 @@ def _covers(face, weight: int) -> bool:
     return bounds[0] <= weight <= bounds[-1]
 
 
+_FONT_PROPS = ("font-family", "font-weight", "font-style")
+_COMBINATORS = (">", "+", "~")
+
+
+def _declared_font_properties(rules) -> dict[str, dict[str, str]]:
+    """selector -> the font declarations that land on it, later rules winning.
+
+    One selector may be written across several rules - terminal declares
+    `.skill-label`'s family in a list shared with `.skill-items` and its weight
+    in a block of its own - so reading a block in isolation would resolve the
+    weight against the wrong family. The declarations accumulate instead.
+    """
+    declared: dict[str, dict[str, str]] = {}
+    for selector_list, body in rules:
+        values = {
+            prop: value
+            for prop in _FONT_PROPS
+            if (value := _last_value(body, prop)) is not None
+        }
+        if not values:
+            continue
+        for part in selector_list.split(","):
+            selector = " ".join(part.split())
+            if not selector:
+                continue
+            assert not any(c in selector for c in _COMBINATORS), (
+                f"{selector!r} uses a combinator. This resolver reads the prefix "
+                "of a descendant selector as the context it inherits from, and "
+                "would read a sibling's prefix as one too. Rewrite "
+                "_inherits_from before a stylesheet uses one."
+            )
+            declared.setdefault(selector, {}).update(values)
+    return declared
+
+
+def _inherits_from(selector: str) -> str:
+    """The context a selector inherits from: the ancestor its own text names.
+
+    `.item-head .secondary` inherits from `.item-head`, `.resume-header::after`
+    from `.resume-header`, and a bare class from nothing (i.e. from `body`).
+    """
+    if "::" in selector:
+        return selector.rsplit("::", 1)[0]
+    return " ".join(selector.split()[:-1])
+
+
+def _computed_font(selector: str, declared: dict[str, dict[str, str]], root: dict) -> dict:
+    chain = []
+    current = selector
+    while current:
+        if current in declared:
+            chain.append(declared[current])
+        current = _inherits_from(current)
+    computed = dict(root)
+    for values in reversed(chain):
+        computed.update(values)
+    return computed
+
+
 def _uncovered_weights(css: str, faces) -> list[str]:
     """Every (family, style, weight) the stylesheet asks for that no face serves.
 
@@ -485,37 +557,29 @@ def _uncovered_weights(css: str, faces) -> list[str]:
     whatever the machine has, and a *vendored* family named without being
     embedded already fails test_every_vendored_family_a_stylesheet_asks_for_is_embedded.
     """
-    rules = _rules(css)
+    declared = _declared_font_properties(_rules(css))
     embedded = {face.family for face in faces}
-    body_family = ""
-    body_weight = 400
-    for selector, body in rules:
-        if not any(part.strip() == "body" for part in selector.split(",")):
-            continue
-        family = _last_value(body, "font-family")
-        if family:
-            body_family = _first_family(family)
-        weight = _last_value(body, "font-weight")
-        if weight:
-            body_weight = _weight_number(weight)
+    root = {"font-family": "", "font-weight": "400", "font-style": "normal"}
+    root.update(declared.get("body", {}))
 
     missing: list[str] = []
-    for selector, body in rules:
-        family_value = _last_value(body, "font-family")
-        weight_value = _last_value(body, "font-weight")
-        style_value = _last_value(body, "font-style")
-        if family_value is None and weight_value is None and style_value is None:
-            continue
-        family = _first_family(family_value) if family_value else body_family
+    for selector in declared:
+        computed = _computed_font(selector, declared, root)
+        family_value = computed["font-family"]
+        family = _first_family(family_value) if family_value else ""
         if family not in embedded:
             continue
-        style = "italic" if style_value in ("italic", "oblique") else "normal"
-        weight = _weight_number(weight_value) if weight_value else body_weight
+        style = (
+            "italic"
+            if computed["font-style"].strip() in ("italic", "oblique")
+            else "normal"
+        )
+        weight = _weight_number(computed["font-weight"].strip())
         if not any(
             face.family == family and face.style == style and _covers(face, weight)
             for face in faces
         ):
-            missing.append(f"{selector or 'body'} asks for {family} {style} {weight}")
+            missing.append(f"{selector} asks for {family} {style} {weight}")
     return missing
 
 
@@ -563,6 +627,10 @@ def test_the_heading_classes_declare_their_weight_explicitly(template, heading):
 _FAKE_FACES = (
     FontFace(family="Fake Serif", file="fake-normal.woff2", weight="400 600", style="normal"),
     FontFace(family="Fake Serif", file="fake-italic.woff2", weight="400", style="italic"),
+    # A second family, static rather than variable, the way a mono companion is
+    # usually cut: two discrete weights and nothing between or beyond them.
+    FontFace(family="Fake Mono", file="fake-mono-400.woff2", weight="400", style="normal"),
+    FontFace(family="Fake Mono", file="fake-mono-500.woff2", weight="500", style="normal"),
 )
 _FAKE_BODY = 'body { font-family: "Fake Serif", Georgia, serif; }\n'
 
@@ -575,6 +643,19 @@ _FAKE_BODY = 'body { font-family: "Fake Serif", Georgia, serif; }\n'
         ".name { font-weight: 400; font-weight: 900; }",
         ".headline { font-style: italic; font-weight: 600; }",
         ".rule { font-family: 'Fake Serif'; font-weight: 300; }",
+        # The family is declared for this selector in an EARLIER rule, in a list
+        # shared with a sibling, and the weight in a rule of its own. Reading a
+        # block in isolation resolves the second rule against body's family and
+        # waves through a weight the family it really uses never vendored -
+        # which is the exact shape terminal/style.css writes .skill-label in.
+        '.mono, .mono-items { font-family: "Fake Mono", monospace; }\n'
+        ".mono { font-weight: 600; }",
+        # The family comes from the ancestor the selector itself names.
+        '.card { font-family: "Fake Mono", monospace; }\n'
+        ".card .label { font-weight: 600; }",
+        # The weight comes from the ancestor the selector itself names: the
+        # descendant turns it italic, and only the upright face reaches 600.
+        ".item-head { font-weight: 600; }\n.item-head .secondary { font-style: italic; }",
     ),
 )
 def test_the_weight_guard_rejects(css):
@@ -593,11 +674,29 @@ def test_the_weight_guard_rejects(css):
         ".skills { font-family: 'Not Vendored', monospace; font-weight: 900; }",
         ".meta { color: #555; margin-left: auto; }",
         "/* .name { font-weight: 900; } */",
+        '.mono, .mono-items { font-family: "Fake Mono", monospace; }\n'
+        ".mono { font-weight: 500; }",
+        '.card { font-family: "Fake Mono", monospace; }\n'
+        ".card .label { font-weight: 500; }",
+        ".item-head { font-weight: 400; }\n.item-head .secondary { font-style: italic; }",
     ),
 )
 def test_the_weight_guard_accepts_what_the_faces_serve(css):
     found = _uncovered_weights(_FAKE_BODY + css, _FAKE_FACES)
     assert not found, f"the weight guard is too strict: {css!r} flagged as {found}"
+
+
+def test_the_weight_guard_names_the_family_the_element_really_resolves_to():
+    """A report that names the wrong family sends the fix to the wrong font.
+
+    `.mono` computes to Fake Mono, not to body's Fake Serif; blaming Fake Serif
+    would point at a face that does cover 700 in some other template and read as
+    a false alarm.
+    """
+    css = '.mono, .mono-items { font-family: "Fake Mono", monospace; }\n.mono { font-weight: 700; }'
+    assert _uncovered_weights(_FAKE_BODY + css, _FAKE_FACES) == [
+        ".mono asks for Fake Mono normal 700"
+    ]
 
 
 def test_the_weight_guard_refuses_to_parse_a_nested_at_rule():
