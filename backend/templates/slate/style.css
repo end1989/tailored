@@ -1,53 +1,56 @@
 /* ============================================================
-   Slate — clean contemporary sans. General-purpose default.
-   System font stack, strong hierarchy, subtle rules between
-   sections.
+   Slate — the neutral default.
+   Inter. Hierarchy from weight and whitespace, not from rules.
+   The only rule in the document sits under the header.
    ============================================================ */
+
+:root {
+  --fs-name: 22pt;
+  --fs-headline: 10.5pt;
+  --fs-section: 8.5pt;
+  --fs-body: 10pt;
+  --fs-meta: 9pt;
+  --leading: 1.45;
+  --measure: 34em;
+  --rule-color: #d4d4d4;
+  --space-4: 1.6rem;
+}
 
 body {
   font-family: Inter, "Segoe UI", system-ui, sans-serif;
-  color: #1a202c;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
+  letter-spacing: -0.005em;
+}
+
+.resume-header {
+  padding-bottom: var(--space-3);
+  border-bottom: var(--rule-weight) solid var(--rule-color);
 }
 
 .name {
-  font-size: 21pt;
   font-weight: 700;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
 }
 
 .headline {
-  font-size: 11pt;
-  font-weight: 600;
-  color: #2d3748;
+  font-weight: 400;
+  color: var(--ink-soft);
   margin-top: var(--space-1);
 }
 
 .contact-line {
-  font-size: 9pt;
-  color: #4a5568;
+  color: var(--ink-faint);
   margin-top: var(--space-2);
 }
 
 .summary {
-  font-size: 9.5pt;
-  color: #2d3748;
-  margin-top: var(--space-2);
-  max-width: 46em;
-}
-
-.section {
-  border-top: 1px solid #cbd5e0;
-  padding-top: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 .section-title {
-  font-size: 9.5pt;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: #2d3748;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
 }
 
 .item-head {
@@ -58,28 +61,21 @@ body {
 }
 
 .item-head .primary {
-  font-size: 10.5pt;
   font-weight: 600;
 }
 
 .item-head .secondary {
-  font-size: 10pt;
-  color: #2d3748;
+  color: var(--ink-soft);
 }
 
 .item-head .meta {
   margin-left: auto;
-  font-size: 9pt;
-  color: #718096;
+  color: var(--ink-faint);
 }
 
 .bullets,
 .detail {
-  font-size: 9.5pt;
-}
-
-.skill-group {
-  font-size: 9.5pt;
+  color: var(--ink);
 }
 
 .skill-label {

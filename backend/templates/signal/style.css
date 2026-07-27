@@ -1,68 +1,67 @@
 /* ============================================================
-   Signal — bold. Design, marketing, creative.
-   Large headline, one accent color #C2410C (name underline bar
-   + section markers), confident whitespace.
+   Signal — design, marketing, product.
+   Public Sans. One accent, used once: the short rule beneath
+   the header. Section titles carry no colour.
    ============================================================ */
+
+:root {
+  --fs-name: 21pt;
+  --fs-headline: 11pt;
+  --fs-section: 9pt;
+  --fs-body: 10pt;
+  --fs-meta: 9pt;
+  --leading: 1.45;
+  --measure: 33em;
+  --accent: #C2410C;
+  --rule-color: #dcdcdc;
+  --space-4: 1.5rem;
+}
 
 body {
   font-family: "Public Sans", "Segoe UI", system-ui, sans-serif;
-  color: #1c1917;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
 }
 
 .resume-header {
-  margin-bottom: calc(var(--space-4) * 1.3);
+  padding-bottom: var(--space-3);
 }
 
 .name {
-  display: inline-block;
-  font-size: 27pt;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  border-bottom: 4px solid #C2410C;
-  padding-bottom: 3px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+/* The one accent in the document. */
+.resume-header::after {
+  content: "";
+  display: block;
+  width: 2.4rem;
+  height: 2pt;
+  margin-top: var(--space-2);
+  background: var(--accent);
 }
 
 .headline {
-  font-size: 12pt;
-  font-weight: 600;
-  color: #44403c;
-  margin-top: var(--space-2);
+  font-weight: 400;
+  color: var(--ink-soft);
+  margin-top: var(--space-1);
 }
 
 .contact-line {
-  font-size: 9pt;
-  color: #57534e;
+  color: var(--ink-faint);
   margin-top: var(--space-2);
 }
 
 .summary {
-  font-size: 10pt;
-  color: #292524;
   margin-top: var(--space-3);
-  max-width: 44em;
-}
-
-.section {
-  margin-bottom: calc(var(--space-4) * 1.15);
 }
 
 .section-title {
-  font-size: 10pt;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  color: #1c1917;
-}
-
-.section-title::before {
-  content: "";
-  display: inline-block;
-  width: 0.6em;
-  height: 0.6em;
-  background: #C2410C;
-  margin-right: var(--space-2);
+  letter-spacing: 0.09em;
+  color: var(--ink);
+  padding-bottom: var(--space-1);
+  border-bottom: var(--rule-weight) solid var(--rule-color);
 }
 
 .item-head {
@@ -73,31 +72,18 @@ body {
 }
 
 .item-head .primary {
-  font-size: 11pt;
   font-weight: 700;
 }
 
 .item-head .secondary {
-  font-size: 10pt;
-  color: #44403c;
+  color: var(--ink-soft);
 }
 
 .item-head .meta {
   margin-left: auto;
-  font-size: 9pt;
-  color: #78716c;
-}
-
-.bullets,
-.detail {
-  font-size: 9.5pt;
-}
-
-.skill-group {
-  font-size: 9.5pt;
+  color: var(--ink-faint);
 }
 
 .skill-label {
   font-weight: 700;
-  color: #1c1917;
 }
