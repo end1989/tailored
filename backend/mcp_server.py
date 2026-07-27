@@ -152,6 +152,19 @@ async def create_application(
 
 
 @mcp.tool()
+async def queue_jobs(profile_id: int, urls: list[str]) -> list[dict]:
+    """Register many job URLs at once so you can work through them one at a
+    time. Free and instant: no fetching, no model call, no cost. Each becomes a
+    saved job on the user's dashboard, and the queue survives you losing
+    context - call next_pending_job to pick up where you left off.
+    Rejects the whole batch if any URL is malformed. URLs already queued for
+    this profile come back marked "skipped" with their existing id.
+    Then loop: next_pending_job, fetch the posting (see get_workflow_guide for
+    what to do when a site refuses), save_parsed_posting, save_tailored_resume."""
+    return await _run(mcp_ops.queue_jobs, _engine, profile_id, urls)
+
+
+@mcp.tool()
 async def save_parsed_posting(application_id: int, parsed: dict) -> dict:
     """Save your structured analysis of the posting as ParsedPosting JSON
     (title, company, company_domain, must_haves, nice_to_haves, keywords,

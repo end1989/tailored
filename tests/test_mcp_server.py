@@ -35,6 +35,7 @@ EXPECTED_TOOLS = {
     "add_profile_evidence",
     "list_templates",
     "create_application",
+    "queue_jobs",
     "save_parsed_posting",
     "save_research",
     "save_tailored_resume",

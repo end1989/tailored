@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 from sqlmodel import Session, select
@@ -354,6 +355,105 @@ def create_application(
             "status": app.status,
             "next": "save_parsed_posting, then save_tailored_resume",
         }
+
+
+_ALLOWED_URL_SCHEMES = ("http", "https")
+
+
+def _valid_url(url: str) -> bool:
+    """A URL an agent could plausibly open. Deliberately permissive.
+
+    There is no URL validation anywhere else in this project: the web batch
+    route accepts any string. This exists only so that a typo or a stray line
+    from a pasted list fails the whole batch loudly instead of creating a queue
+    entry that can never be fetched. It is not a security boundary.
+    """
+    if not url or not url.strip():
+        return False
+    parsed = urlparse(url.strip())
+    return parsed.scheme in _ALLOWED_URL_SCHEMES and bool(parsed.netloc)
+
+
+def queue_jobs(engine, profile_id: int, urls: list[str]) -> list[dict]:
+    """Register many job URLs at once, cheaply, for working through one by one.
+
+    Creates one parked application per URL: status "not_started", stage
+    "saved", no posting text, no pipeline run, no model call, no cost. They
+    appear on the dashboard immediately and the user can watch them drain.
+
+    All-or-nothing: if any URL is malformed the whole batch is rejected and
+    nothing is created, matching the web batch route. A partial queue is worse
+    than a rejected one, because the agent cannot tell which half landed.
+
+    Returns one entry per INPUT url, in input order, so the caller never has to
+    diff two lists. Entries already queued for this profile come back with
+    status "skipped" and the existing application_id.
+    """
+    if not urls:
+        raise McpOpsError("urls must not be empty - pass at least one job URL.")
+    bad = [u for u in urls if not _valid_url(u)]
+    if bad:
+        raise McpOpsError(
+            f"{len(bad)} malformed URL(s), so nothing was queued: {bad[:5]}. "
+            "Every URL must be an absolute http or https address."
+        )
+
+    with Session(engine) as session:
+        profile = session.get(Profile, profile_id)
+        if profile is None:
+            raise McpOpsError(
+                f"Profile {profile_id} not found. Call list_profiles to see "
+                "what exists."
+            )
+
+        # Existing, non-archived applications for this profile, by URL.
+        # Archiving is how a user says "done with this", so an archived row
+        # must not block re-queueing.
+        existing: dict[str, int] = {}
+        rows = session.exec(
+            select(Application, Job)
+            .where(Application.job_id == Job.id)
+            .where(Application.profile_id == profile_id)
+            .where(Application.archived_at.is_(None))
+        ).all()
+        for app_row, job_row in rows:
+            existing.setdefault(job_row.url, app_row.id)
+
+        results: list[dict] = []
+        for url in urls:
+            url = url.strip()
+            if url in existing:
+                results.append(
+                    {
+                        "application_id": existing[url],
+                        "url": url,
+                        "status": "skipped",
+                        "reason": "already queued for this profile",
+                    }
+                )
+                continue
+            job = Job(url=url, depth="external")
+            session.add(job)
+            session.commit()
+            session.refresh(job)
+            app_row = Application(
+                profile_id=profile_id,
+                job_id=job.id,
+                status="not_started",
+            )
+            session.add(app_row)
+            session.commit()
+            session.refresh(app_row)
+            # A duplicate later in the same list is a skip, not a second row.
+            existing[url] = app_row.id
+            results.append(
+                {
+                    "application_id": app_row.id,
+                    "url": url,
+                    "status": "not_started",
+                }
+            )
+        return results
 
 
 def set_application_template(

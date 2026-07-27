@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -27,6 +28,12 @@ from backend.app.services import render
 from backend.app.services.intake import IntakeResult
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
+
+
+def _utcnow() -> datetime:
+    """Naive UTC, matching backend.app.models._utcnow (datetime.utcnow is
+    deprecated on this Python and warns)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 POSTING_TEXT = (
     "Senior Backend Engineer at Northwind Labs. Python, FastAPI, PostgreSQL, "
@@ -570,3 +577,135 @@ def test_add_profile_evidence_returns_expected_keys(engine, profile_id):
     assert result["skill_groups_added"] == ["New Skills"]
     assert result["skill_groups_merged"] == []
     assert result["summary_appended"] is True
+
+
+# --- queue_jobs (the MCP batch queue) ---
+
+QUEUE_URLS = [
+    "https://jobs.example.com/one",
+    "https://jobs.example.com/two",
+    "https://jobs.example.com/three",
+]
+
+
+def test_queue_jobs_creates_one_parked_application_per_url(engine, profile_id):
+    result = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    assert len(result) == 3
+    assert [r["url"] for r in result] == QUEUE_URLS
+    with Session(engine) as session:
+        apps = session.exec(select(Application)).all()
+        assert len(apps) == 3
+        for app in apps:
+            assert app.status == "not_started"
+            assert app.stage == "saved"
+            assert app.cost_usd == 0.0
+            assert app.resume_json is None
+
+
+def test_queue_jobs_stores_no_posting_text(engine, profile_id):
+    """The agent fetches each posting later, one at a time."""
+    mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        for job in session.exec(select(Job)).all():
+            assert job.raw_text is None
+            assert job.fetch_status == "pending"
+
+
+def test_queue_jobs_returns_the_ids_and_urls(engine, profile_id):
+    result = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    for entry in result:
+        assert entry["status"] == "not_started"
+        assert isinstance(entry["application_id"], int)
+
+
+def test_queue_jobs_never_calls_claude(engine, profile_id, monkeypatch):
+    """Queueing twenty URLs must cost nothing."""
+    from backend.app.services import claude as claude_module
+
+    def explode(*args, **kwargs):
+        raise AssertionError("queue_jobs must not call Claude")
+
+    monkeypatch.setattr(claude_module.ClaudeService, "structured", explode)
+    assert len(mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)) == 3
+
+
+def test_queue_jobs_rejects_an_empty_list(engine, profile_id):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.queue_jobs(engine, profile_id, [])
+    assert "empty" in str(exc.value).lower()
+
+
+def test_queue_jobs_rejects_an_unknown_profile(engine):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.queue_jobs(engine, 9999, QUEUE_URLS)
+    assert "9999" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["", "   ", "not-a-url", "example.com/job", "ftp://example.com/job", "javascript:alert(1)"],
+)
+def test_queue_jobs_rejects_a_malformed_url(engine, profile_id, bad):
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.queue_jobs(engine, profile_id, [bad])
+
+
+def test_one_bad_url_in_twenty_creates_nothing(engine, profile_id):
+    """All-or-nothing, matching the web batch route. A partial queue is worse
+    than a rejected one: the agent cannot tell which half landed."""
+    urls = [f"https://jobs.example.com/{i}" for i in range(19)] + ["not-a-url"]
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.queue_jobs(engine, profile_id, urls)
+    with Session(engine) as session:
+        assert session.exec(select(Application)).all() == []
+        assert session.exec(select(Job)).all() == []
+
+
+def test_queueing_the_same_url_twice_skips_the_second(engine, profile_id):
+    """Pasting a list twice is normal user behaviour and must not create
+    twenty duplicates."""
+    first = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    second = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+
+    assert [r["status"] for r in second] == ["skipped"] * 3
+    assert [r["application_id"] for r in second] == [r["application_id"] for r in first]
+    assert all("reason" in r for r in second)
+    with Session(engine) as session:
+        assert len(session.exec(select(Application)).all()) == 3
+
+
+def test_a_duplicate_within_one_queue_call_is_skipped(engine, profile_id):
+    result = mcp_ops.queue_jobs(
+        engine, profile_id, ["https://jobs.example.com/a", "https://jobs.example.com/a"]
+    )
+    assert [r["status"] for r in result] == ["not_started", "skipped"]
+    with Session(engine) as session:
+        assert len(session.exec(select(Application)).all()) == 1
+
+
+def test_dedup_is_scoped_to_the_profile(engine, profile_id, claude_fake):
+    """Two people may legitimately apply to the same job."""
+    with Session(engine) as session:
+        other = Profile(name="Someone Else")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+        other_id = other.id
+
+    mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    result = mcp_ops.queue_jobs(engine, other_id, ["https://jobs.example.com/a"])
+    assert result[0]["status"] == "not_started"
+
+
+def test_an_archived_application_does_not_block_requeueing(engine, profile_id):
+    """Archiving is how a user says 'done with this'. Re-queueing must work."""
+    first = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    with Session(engine) as session:
+        app = session.get(Application, first[0]["application_id"])
+        app.archived_at = _utcnow()
+        session.add(app)
+        session.commit()
+
+    second = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    assert second[0]["status"] == "not_started"
+    assert second[0]["application_id"] != first[0]["application_id"]
