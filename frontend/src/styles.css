@@ -281,3 +281,12 @@ a { color: var(--accent); }
   display: flex; align-items: center; justify-content: center; z-index: 50;
 }
 .modal { max-width: 32rem; margin: 0; }
+
+/* ---- application screen: timeline panel ---- */
+.timeline { list-style: none; margin-top: 1rem; padding: 0; }
+.timeline li { padding: 0.4rem 0; border-top: 1px solid var(--border); }
+.badge-note, .badge-followup { background: #F5F5F4; color: #57534E; }
+.badge-callback, .badge-interview { background: #DBEAFE; color: #1D4ED8; }
+.badge-applied { background: #EDE9FE; color: #6D28D9; }
+.badge-offer { background: #D1FAE5; color: #047857; }
+.badge-rejection { background: #FEE2E2; color: #B91C1C; }

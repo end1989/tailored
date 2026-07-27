@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
+  addEvent,
+  deleteEvent,
   exportUrl,
   getApplication,
   pasteJobText,
+  patchApplication,
   previewUrl,
   regenerate,
   retryApplication,
@@ -11,10 +14,13 @@ import {
 } from "../api";
 import type {
   ApplicationDetail,
+  ApplicationEvent,
   AppStatus,
+  EventKind,
   ExportKind,
   ResumeDoc,
   SkillGroup,
+  Stage,
 } from "../types";
 
 const TERMINAL: AppStatus[] = ["ready", "error", "needs_paste"];
@@ -26,6 +32,15 @@ const EXPORT_KINDS: ExportKind[] = [
   "cover_letter.txt",
 ];
 
+const EVENT_KINDS: EventKind[] = [
+  "note", "applied", "callback", "interview", "offer", "rejection", "followup",
+];
+
+const STAGES: Stage[] = [
+  "saved", "drafted", "applied", "screening",
+  "interview", "offer", "rejected", "withdrawn",
+];
+
 type Tab = "resume" | "cover" | "research" | "exports";
 
 function splitCsv(value: string): string[] {
@@ -33,6 +48,102 @@ function splitCsv(value: string): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+function Timeline({
+  applicationId,
+  events,
+  onChanged,
+}: {
+  applicationId: number;
+  events: ApplicationEvent[];
+  onChanged: () => void;
+}) {
+  const [kind, setKind] = useState<EventKind>("note");
+  const [body, setBody] = useState("");
+  const [when, setWhen] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    try {
+      await addEvent(applicationId, {
+        kind,
+        body,
+        occurred_at: when ? new Date(when).toISOString() : undefined,
+      });
+      setBody("");
+      setWhen("");
+      onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-title">Timeline</div>
+      <div className="row">
+        <div className="field">
+          <label className="field-label" htmlFor="event-kind">Entry type</label>
+          <select
+            id="event-kind"
+            className="select"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as EventKind)}
+          >
+            {EVENT_KINDS.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="event-date">Date</label>
+          <input
+            id="event-date"
+            className="input"
+            type="date"
+            value={when}
+            onChange={(e) => setWhen(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="event-body">Entry note</label>
+        <textarea
+          id="event-body"
+          className="textarea"
+          rows={2}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </div>
+      <button className="btn btn-primary" disabled={busy} onClick={submit}>
+        Add to timeline
+      </button>
+
+      <ul className="timeline">
+        {events.map((e) => (
+          <li key={e.id}>
+            <span className={`badge badge-${e.kind}`}>{e.kind}</span>{" "}
+            <span className="muted">{new Date(e.occurred_at).toLocaleDateString()}</span>{" "}
+            {e.body}{" "}
+            <button
+              className="btn btn-small"
+              aria-label={`Delete timeline entry ${e.id}`}
+              onClick={async () => {
+                await deleteEvent(applicationId, e.id);
+                onChanged();
+              }}
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+        {events.length === 0 && <li className="muted">Nothing logged yet.</li>}
+      </ul>
+    </div>
+  );
 }
 
 export default function ApplicationScreen() {
@@ -256,6 +367,10 @@ export default function ApplicationScreen() {
     }
   }
 
+  function reload() {
+    setPollNonce((n) => n + 1);
+  }
+
   if (!detail) {
     return (
       <div>
@@ -279,6 +394,23 @@ export default function ApplicationScreen() {
         </span>
         {working && <span className="spinner" style={{ marginLeft: "0.5rem" }} />}
       </p>
+
+      <div className="field" style={{ maxWidth: "14rem" }}>
+        <label className="field-label" htmlFor="app-stage">Stage</label>
+        <select
+          id="app-stage"
+          className="select"
+          value={detail.stage}
+          onChange={async (e) => {
+            await patchApplication(detail.id, { stage: e.target.value as Stage });
+            reload();
+          }}
+        >
+          {STAGES.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -632,6 +764,8 @@ export default function ApplicationScreen() {
           )}
         </>
       )}
+
+      <Timeline applicationId={detail.id} events={detail.events} onChanged={reload} />
     </div>
   );
 }
