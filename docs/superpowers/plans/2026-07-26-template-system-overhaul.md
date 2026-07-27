@@ -3491,7 +3491,7 @@ git commit -m "feat: add the Dossier and Plainwork templates"
 **Interfaces:**
 - Produces:
   - `PATCH /api/applications/{application_id}/template`, body `{"template": "ledger"}`, returns the updated `application_detail`.
-  - `mcp_ops.set_application_template(engine, application_id: int, template: str) -> dict` returning the same shape as `mcp_ops.get_application`.
+  - `mcp_ops.set_application_template(engine, data_dir: Path, application_id: int, template: str) -> dict` returning the same shape as `mcp_ops.get_application`. `data_dir` is the second positional argument, per the convention Step 4 spells out; an earlier draft of this line omitted it and contradicted Step 4's code block.
 
 **A limitation to state plainly, not paper over.** Section *order* is decided at tailoring time from the template's `structure` hint, so switching from Terminal (projects-forward) to a template that is experience-first leaves the sections in their original order. That is the honest consequence of not re-running the LLM, and it is what the user asked for: no Claude call, no cost, no version bump. The endpoint's docstring says so, and a test asserts it, so nobody later mistakes it for a bug.
 
@@ -3513,6 +3513,7 @@ from pathlib import Path
 import pytest
 from sqlmodel import Session
 
+from backend import mcp_ops
 from backend.app.models import Application, Job, Profile
 from backend.app.schemas import TailorResult
 from backend.app.services import render
@@ -3527,13 +3528,21 @@ def _resume_json() -> str:
 
 @pytest.fixture()
 def seeded(engine, tmp_path, monkeypatch):
-    """A ready application with stored resume content, and no real PDF rendering."""
+    """A ready application with stored resume content, and no real PDF rendering.
+
+    The stub records `data_dir` as well as the template, because WHERE the files
+    land is as much a part of the re-export contract as which template rendered
+    them; and it writes the real export filenames so the MCP op's `files` list
+    reports something a caller could actually open.
+    """
     calls: list[tuple] = []
 
     def fake_export(application_id, resume, cover_md, contact, template, data_dir, page_size="Letter"):
-        calls.append((application_id, template))
+        calls.append((application_id, template, Path(data_dir)))
         out = Path(data_dir) / "exports" / str(application_id)
         out.mkdir(parents=True, exist_ok=True)
+        for name in mcp_ops.EXPORT_FILES:
+            (out / name).write_bytes(b"%PDF-1.4 fake" if name.endswith(".pdf") else b"text")
         return out
 
     monkeypatch.setattr(render, "export_application", fake_export)
@@ -3581,6 +3590,29 @@ def test_switching_template_re_exports_in_the_new_template(client, seeded):
     )
     assert seeded["calls"], "export_application was never called"
     assert seeded["calls"][-1][1] == "ledger"
+
+
+def test_switching_template_re_exports_into_the_configured_data_dir(
+    client, seeded, engine, tmp_path
+):
+    """Re-rendering somewhere else is not a re-render.
+
+    The files have to replace the ones under the application's own data_dir,
+    and Application.export_dir has to point at them -- that stored string is
+    what GET /applications/{id}/exports/{kind} serves from, and the delete
+    route rebuilds data_dir/exports/{id} independently, so a re-export that
+    drifts elsewhere both serves and orphans the wrong files.
+    """
+    app_id = seeded["application_id"]
+    client.patch(f"/api/applications/{app_id}/template", json={"template": "ledger"})
+
+    assert seeded["calls"][-1][2] == tmp_path
+    expected = tmp_path / "exports" / str(app_id)
+    with Session(engine) as session:
+        assert session.get(Application, app_id).export_dir == str(expected)
+
+    resp = client.get(f"/api/applications/{app_id}/exports/resume.pdf")
+    assert resp.status_code == 200
 
 
 def test_switching_template_does_not_bump_the_version(client, seeded):
@@ -3677,14 +3709,22 @@ def test_switching_template_does_not_reorder_sections(client, seeded):
     assert after == before
 
 
-def test_mcp_set_application_template(engine, seeded):
-    from backend import mcp_ops
-
+def test_mcp_set_application_template(engine, seeded, tmp_path):
     result = mcp_ops.set_application_template(
         engine, seeded["data_dir"], seeded["application_id"], "ledger"
     )
     assert result["template"] == "ledger"
     assert result["application_id"] == seeded["application_id"]
+    # The op must export into the data_dir it was handed, and report that same
+    # directory back: `data_dir` is the argument an agent has no way to check.
+    assert seeded["calls"][-1][2] == tmp_path
+    expected = tmp_path / "exports" / str(seeded["application_id"])
+    assert result["export_dir"] == str(expected)
+    assert set(result["files"]) == set(mcp_ops.EXPORT_FILES)
+    with Session(engine) as session:
+        assert session.get(Application, seeded["application_id"]).export_dir == str(
+            expected
+        )
 
 
 def test_mcp_set_application_template_rejects_unknown(engine, seeded):
@@ -3738,7 +3778,7 @@ def test_mcp_set_application_template_allows_the_mcp_parking_state(engine, seede
 - [ ] **Step 2: Run and confirm they fail**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_template_switch.py -q`
-Expected: 405 or 404 on every route test, `AttributeError` on the two MCP tests.
+Expected: 405 or 404 on every route test, `AttributeError` on the four MCP tests.
 
 - [ ] **Step 3: Add the route**
 
@@ -3904,7 +3944,7 @@ async def set_application_template(application_id: int, template: str) -> dict:
 - [ ] **Step 6: Run the tests**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_template_switch.py -q`
-Expected: 13 passed.
+Expected: 16 passed.
 
 - [ ] **Step 7: Full suite**
 
