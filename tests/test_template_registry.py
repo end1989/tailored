@@ -389,6 +389,32 @@ def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
                 )
 
 
+# --- The two serif templates ------------------------------------------------
+
+SERIF_TEMPLATES = {
+    "ledger": ("Ledger", 5, "Source Serif 4"),
+    "quarto": ("Quarto", 6, "EB Garamond"),
+}
+
+
+@pytest.mark.parametrize("name", sorted(SERIF_TEMPLATES))
+def test_the_serif_template_is_registered_with_its_own_family(name):
+    """Both are new directories, and a directory is all they are until the
+    manifest names them, the registry finds them and the stylesheet asks for the
+    family the manifest embeds. Every other check in this suite is parametrised
+    over TEMPLATES, so a template that failed to register would simply not be
+    tested rather than fail."""
+    label, order, family = SERIF_TEMPLATES[name]
+    assert name in TEMPLATE_REGISTRY, (
+        f"{name} is not in the registry; every check parametrised over "
+        "TEMPLATES would silently skip it"
+    )
+    manifest = TEMPLATE_REGISTRY[name]
+    assert (manifest.label, manifest.order) == (label, order)
+    assert {face.family for face in manifest.fonts} == {family}
+    assert family in _font_families_named(name)
+
+
 # --- The manifest and the stylesheet must agree on the WEIGHTS too ----------
 #
 # The family checks above pair the two on the name and stop there. The weight is

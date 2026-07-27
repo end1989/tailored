@@ -1,0 +1,12 @@
+{
+  "name": "ledger",
+  "label": "Ledger",
+  "description": "Executive serif with a large name, wide leading and generous whitespace.",
+  "best_for": "Director level and above",
+  "structure": "experience-first",
+  "order": 5,
+  "fonts": [
+    {"family": "Source Serif 4", "file": "SourceSerif4-italic.woff2", "weight": "400", "style": "italic"},
+    {"family": "Source Serif 4", "file": "SourceSerif4-normal.woff2", "weight": "400 600", "style": "normal"}
+  ]
+}

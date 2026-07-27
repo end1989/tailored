@@ -1,0 +1,80 @@
+/* ============================================================
+   Ledger — executive.
+   Source Serif 4. A large, quiet name; wide leading; a narrow
+   measure so paragraphs read as considered rather than dense.
+   Section rules sit ABOVE their title, which reads as a ledger
+   line and separates Ledger from Meridian's rule-below.
+   ============================================================ */
+
+:root {
+  --fs-name: 24pt;
+  --fs-headline: 11pt;
+  --fs-section: 8.5pt;
+  --fs-body: 10.5pt;
+  --fs-meta: 9pt;
+  --leading: 1.55;
+  --measure: 32em;
+  --rule-color: #b0b0b0;
+  --space-3: 1rem;
+  --space-4: 2rem;
+}
+
+body {
+  font-family: "Source Serif 4", Georgia, "Times New Roman", serif;
+}
+
+.name {
+  font-weight: 400;
+  letter-spacing: 0.005em;
+}
+
+.headline {
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-top: var(--space-2);
+}
+
+.contact-line {
+  color: var(--ink-faint);
+  margin-top: var(--space-2);
+}
+
+.summary {
+  margin-top: var(--space-3);
+}
+
+.section-title {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--ink-faint);
+  padding-top: var(--space-2);
+  border-top: var(--rule-weight) solid var(--rule-color);
+  margin-bottom: var(--space-3);
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.item-head .primary {
+  font-size: 11pt;
+  font-weight: 600;
+}
+
+.item-head .secondary {
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.item-head .meta {
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+
+.skill-label {
+  font-weight: 600;
+}
