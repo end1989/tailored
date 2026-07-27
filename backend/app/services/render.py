@@ -187,7 +187,12 @@ def render_resume_html(resume: ResumeDoc, template: str) -> str:
     """Render a ResumeDoc into a fully standalone HTML document."""
     base_css, style_css = _load_css(template)
     tpl = _env.get_template(f"{template}/template.html")
-    return tpl.render(resume=resume, base_css=base_css, style_css=style_css)
+    return tpl.render(
+        resume=resume,
+        base_css=base_css,
+        style_css=style_css,
+        json_ld=_json_ld_payload(resume),
+    )
 
 
 def render_cover_letter_html(cover_md: str, contact: Contact, template: str) -> str:
@@ -276,6 +281,110 @@ def render_ats_text(resume: ResumeDoc) -> str:
             for item in section.items:
                 lines.append(f"- {item}")
     return "\n".join(lines) + "\n"
+
+
+def resume_json_ld(resume: ResumeDoc) -> dict:
+    """A schema.org Person describing this resume.
+
+    Additive machine readability for the HTML export. Keys with no value are
+    omitted rather than emitted empty, because an empty schema.org property is
+    worse than an absent one: it asserts the absence of a fact.
+    """
+    contact = resume.contact
+    data: dict = {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": contact.name,
+    }
+    if contact.email:
+        data["email"] = contact.email
+    if contact.phone:
+        data["telephone"] = contact.phone
+    if contact.location:
+        data["address"] = {
+            "@type": "PostalAddress",
+            "addressLocality": contact.location,
+        }
+    urls = [link.url for link in contact.links if link.url]
+    if urls:
+        data["url"] = urls[0]
+        data["sameAs"] = urls
+    if resume.headline:
+        data["jobTitle"] = resume.headline
+    if resume.summary:
+        data["description"] = resume.summary
+
+    occupations: list[dict] = []
+    organizations: list[dict] = []
+    alumni: list[dict] = []
+    credentials: list[dict] = []
+    skills: list[str] = []
+
+    for section in resume.sections:
+        if section.type == "experience":
+            for item in section.items:
+                occupation: dict = {"@type": "Occupation", "name": item.role}
+                if item.location:
+                    occupation["occupationLocation"] = {
+                        "@type": "Place",
+                        "name": item.location,
+                    }
+                occupations.append(occupation)
+                organizations.append({"@type": "Organization", "name": item.company})
+        elif section.type == "education":
+            for item in section.items:
+                alumni.append(
+                    {"@type": "EducationalOrganization", "name": item.institution}
+                )
+                credentials.append(
+                    {
+                        "@type": "EducationalOccupationalCredential",
+                        "name": item.credential,
+                        "recognizedBy": {
+                            "@type": "EducationalOrganization",
+                            "name": item.institution,
+                        },
+                    }
+                )
+        elif section.type == "certifications":
+            for item in section.items:
+                credential: dict = {
+                    "@type": "EducationalOccupationalCredential",
+                    "name": item.name,
+                }
+                if item.issuer:
+                    credential["recognizedBy"] = {
+                        "@type": "Organization",
+                        "name": item.issuer,
+                    }
+                credentials.append(credential)
+        elif section.type == "skills":
+            for group in section.groups:
+                skills.extend(group.items)
+
+    if occupations:
+        data["hasOccupation"] = occupations
+    if organizations:
+        data["worksFor"] = organizations
+    if alumni:
+        data["alumniOf"] = alumni
+    if credentials:
+        data["hasCredential"] = credentials
+    if skills:
+        data["knowsAbout"] = skills
+    return data
+
+
+def _json_ld_payload(resume: ResumeDoc) -> str:
+    """resume_json_ld serialized for safe embedding inside a <script> element.
+
+    Every "<" becomes the JSON escape \\u003c. That is exhaustive: it neutralises
+    "</script>" and "<!--" alike, and the result is still valid JSON. This is the
+    one place Jinja autoescaping is bypassed, so it does the escaping itself.
+    """
+    return json.dumps(resume_json_ld(resume), ensure_ascii=False).replace(
+        "<", "\\u003c"
+    )
 
 
 def render_pdf(html: str, out_path: Path, page_size: str = "Letter") -> None:
