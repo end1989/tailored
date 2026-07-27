@@ -310,6 +310,49 @@ def test_render_crash_marks_error(engine, profile_id, tmp_path, monkeypatch):
         assert "chromium exploded" in app.error_message
 
 
+# --- saved -> drafted stage advance -----------------------------------------
+
+def test_save_tailored_resume_advances_stage_saved_to_drafted(
+    engine, profile_id, tmp_path, pdf_faked
+):
+    """The one sanctioned status/stage coupling: a successful MCP-driven save
+    moves a freshly created ('saved') application to 'drafted'. Without the
+    `if app.stage == "saved":` guard in save_tailored_resume, every
+    MCP-generated application would sit in 'saved' forever."""
+    app_id = _create_app(engine, profile_id)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.stage == "saved"  # sanity: default stage before generation
+
+    result = _save_tailor(engine, tmp_path, app_id, _fixture("tailor"))
+    assert result["status"] == "ready"
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.stage == "drafted"
+
+
+def test_save_tailored_resume_leaves_non_saved_stage_alone(
+    engine, profile_id, tmp_path, pdf_faked
+):
+    """The other half of the guard: a job already moved further down the
+    funnel (e.g. 'interview') must not be reset by a regeneration. Only
+    stage == 'saved' advances."""
+    app_id = _create_app(engine, profile_id)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        app.stage = "interview"
+        session.add(app)
+        session.commit()
+
+    result = _save_tailor(engine, tmp_path, app_id, _fixture("tailor"))
+    assert result["status"] == "ready"
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.stage == "interview"  # unchanged
+
+
 # --- add_profile_evidence (portfolio import) ---
 
 def test_add_profile_evidence_appends_projects(engine, profile_id):

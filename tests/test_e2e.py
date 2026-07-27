@@ -192,6 +192,7 @@ def _run_full_flow(client: TestClient, engine, claude: ClaudeService) -> int:
     assert detail["cover_letter_md"]
     assert detail["raw_text_present"] is True
     assert detail["parsed"]["company"], "parsed posting missing company"
+    assert detail["stage"] == "drafted"  # saved -> drafted: the one sanctioned status/stage coupling
 
     # 7. Preview HTML renders the tailored resume (fixture company + contact name).
     r = client.get(f"/api/applications/{app_id}/preview")
