@@ -189,21 +189,121 @@ def test_every_template_embeds_valid_json_ld(template):
     assert data["@type"] == "Person"
 
 
-def test_a_bullet_containing_a_script_tag_cannot_break_out():
-    """The one place autoescaping is bypassed. It must not be an injection point."""
-    resume = _resume().model_copy(deep=True)
-    payload = '</script><script>alert("xss")</script>'
+# --- Injection, into the fields that actually reach the script element -------
+#
+# `_json_ld_payload` is the one place Jinja's autoescaping is bypassed, so it
+# does the escaping itself and these are the only tests standing over it.
+#
+# The version of this that they replace injected its payload into an experience
+# **bullet**. `resume_json_ld` never serializes bullets - it emits contact,
+# headline, summary, roles, employers, institutions, credentials and skills -
+# so the payload never got within reach of the script element, and the test
+# passed against an implementation doing no escaping at all. Everything below
+# goes into a field that is genuinely serialized, and
+# `test_the_injected_fields_are_the_ones_that_reach_the_script_element` keeps it
+# that way.
+
+BREAKOUT = '</script><script>alert("xss")</script>'
+
+
+def _inject_summary(resume: ResumeDoc, value: str):
+    resume.summary = f"Cut cloud spend by 40%. {value}"
+    return resume.summary, lambda data: [data["description"]]
+
+
+def _inject_headline(resume: ResumeDoc, value: str):
+    resume.headline = f"Platform Engineer {value}"
+    return resume.headline, lambda data: [data["jobTitle"]]
+
+
+def _inject_skill(resume: ResumeDoc, value: str):
     for section in resume.sections:
-        if section.type == "experience":
-            section.items[0].bullets[0] = payload
-            break
-    html = render_resume_html(resume, "meridian")
+        if section.type == "skills":
+            section.groups[0].items[0] = value
+            return value, lambda data: data["knowsAbout"]
+    raise AssertionError("the fixture has no skills section to inject into")
+
+
+_INJECTIONS = (_inject_summary, _inject_headline, _inject_skill)
+
+
+def _intact_json_ld(html: str) -> dict:
+    """The embedded block, asserting it was neither terminated nor broken."""
     block = SCRIPT.search(html)
     assert block, "the injected payload terminated the script element early"
-    assert "alert(" not in block.group(1) or "\\u003c" in block.group(1)
-    assert "</script><script>" not in block.group(1)
-    # and it is still parseable JSON
-    json.loads(block.group(1))
+    raw = block.group(1)
+    assert "</script" not in raw.lower(), "a literal </script> reached the script element"
+    assert "<script" not in raw.lower(), "a literal <script> reached the script element"
+    # A break-out truncates the JSON at the injected tag, so this is the check
+    # that bites hardest if the escaping is removed.
+    return json.loads(raw)
+
+
+@pytest.mark.parametrize(
+    "inject", _INJECTIONS, ids=["summary", "headline", "skills-group-item"]
+)
+def test_a_script_tag_in_a_serialized_field_cannot_break_out(inject):
+    resume = _resume().model_copy(deep=True)
+    expected, read = inject(resume, BREAKOUT)
+    data = _intact_json_ld(render_resume_html(resume, "meridian"))
+    assert expected in read(data), (
+        "the field survived the script element but not intact: the payload must "
+        "be escaped, not stripped or mangled"
+    )
+
+
+def test_the_injected_fields_are_the_ones_that_reach_the_script_element():
+    """Keeps the tests above from going vacuous the way their predecessor did.
+
+    Both halves are asserted: a sentinel in each injected field does show up in
+    the serialized graph, and a sentinel in a bullet does not - which is exactly
+    why a bullet is worthless as an injection vector.
+    """
+    for index, inject in enumerate(_INJECTIONS):
+        resume = _resume().model_copy(deep=True)
+        sentinel = f"sentinel-{index}"
+        inject(resume, sentinel)
+        assert sentinel in json.dumps(resume_json_ld(resume)), (
+            f"{inject.__name__} writes to a field resume_json_ld never emits, so "
+            "injecting there proves nothing about escaping"
+        )
+
+    resume = _resume().model_copy(deep=True)
+    for section in resume.sections:
+        if section.type == "experience":
+            section.items[0].bullets[0] = "sentinel-bullet"
+            break
+    assert "sentinel-bullet" not in json.dumps(resume_json_ld(resume))
+
+
+def test_json_ld_payload_escapes_every_angle_bracket():
+    """The seam itself. Every "<" becomes \\u003c, which neutralises "</script>"
+    and "<!--" alike and leaves the result valid JSON."""
+    from backend.app.services.render import _json_ld_payload
+
+    resume = _resume().model_copy(deep=True)
+    resume.summary = '</script> <!-- <b>&</b> --> <img src=x onerror=alert(1)>'
+    payload = _json_ld_payload(resume)
+    assert "<" not in payload
+    assert json.loads(payload)["description"] == resume.summary
+
+
+def test_a_bullet_containing_a_script_tag_is_escaped_in_the_document_body():
+    """The other half: bullets go through Jinja, which must escape them there.
+
+    This is deliberately not an assertion about the JSON-LD - bullets never
+    reach it. It guards the document, where an unescaped bullet really could
+    open a script element.
+    """
+    resume = _resume().model_copy(deep=True)
+    for section in resume.sections:
+        if section.type == "experience":
+            section.items[0].bullets[0] = BREAKOUT
+            break
+    html = render_resume_html(resume, "meridian")
+    assert BREAKOUT not in html, "the bullet was written into the document unescaped"
+    assert "&lt;/script&gt;" in html, "the bullet is missing; this test asserts nothing"
+    _intact_json_ld(html)
 
 
 def test_a_comment_opener_in_the_resume_cannot_open_a_comment():

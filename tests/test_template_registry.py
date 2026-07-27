@@ -235,6 +235,86 @@ def test_every_declared_font_family_is_named_in_the_template_stylesheet():
             )
 
 
+# --- The licence file must satisfy the licence ------------------------------
+#
+# OFL 1.1 condition 2 permits redistributing the font software "provided that
+# each copy contains the above copyright notice and this license". Fourteen
+# woff2 binaries are committed here and base64-inlined into every export, so
+# LICENSES.md is the only place that notice and that licence can travel with
+# them. A hyperlink to openfontlicense.org is neither: it carries no copyright
+# notice at all, and a link is not a copy.
+
+LICENCES_PATH = TEMPLATES_DIR / "fonts" / "LICENSES.md"
+
+
+def _licences_text() -> str:
+    return LICENCES_PATH.read_text(encoding="utf-8")
+
+
+def _copyright_notices() -> dict[str, list[str]]:
+    """Each `### Family` heading in LICENSES.md mapped to its Copyright lines.
+
+    Structural rather than a bare substring count: it is what distinguishes
+    "seven families each carry their own notice" from "one family carries seven".
+    """
+    notices: dict[str, list[str]] = {}
+    current: str | None = None
+    for line in _licences_text().splitlines():
+        if line.startswith("### "):
+            current = line[4:].strip()
+            notices[current] = []
+        elif line.startswith("## "):
+            current = None
+        elif current and line.strip().startswith("Copyright"):
+            notices[current].append(line.strip())
+    return notices
+
+
+def test_the_licence_file_reproduces_the_full_ofl_text():
+    """Not the title alone: the operative clauses have to be here verbatim."""
+    text = _licences_text()
+    assert "SIL OPEN FONT LICENSE Version 1.1" in text
+    for clause in (
+        "PREAMBLE",
+        "DEFINITIONS",
+        "PERMISSION",
+        "Permission is hereby granted, free of charge",
+        "contains the above copyright notice and this license",
+        "TERMINATION",
+        "DISCLAIMER",
+        'THE FONT SOFTWARE IS PROVIDED "AS IS"',
+    ):
+        assert clause in text, f"LICENSES.md omits the OFL clause {clause!r}"
+
+
+def test_every_vendored_family_carries_its_own_copyright_notice():
+    """One notice per family. The OFL requires "the above copyright notice",
+    which is the holder's own line, not a generic mention of the word."""
+    families = _vendored_families()
+    assert families, "LICENSES.md lists no families; the parse above is broken"
+    notices = _copyright_notices()
+    assert set(notices) == families, (
+        "the copyright-notice sections and the provenance table disagree: "
+        f"{families ^ set(notices)}"
+    )
+    for family, lines in sorted(notices.items()):
+        assert lines, (
+            f"{family} is vendored but LICENSES.md gives no copyright line for "
+            "it. Fetch it from the family's own upstream licence file; do not "
+            "invent one."
+        )
+
+
+def test_every_family_a_manifest_embeds_is_named_in_the_licence_file():
+    """A family shipped in an export with no licence entry is an unaccounted
+    redistribution, and manifests are where families actually reach users."""
+    text = _licences_text()
+    embedded = {face.family for m in TEMPLATE_REGISTRY.values() for face in m.fonts}
+    assert embedded, "no manifest embeds a font; this test would assert nothing"
+    for family in sorted(embedded):
+        assert family in text, f"{family} is embedded by a template but absent from LICENSES.md"
+
+
 def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
     """The same disagreement from the other side: asked for but not embedded.
 

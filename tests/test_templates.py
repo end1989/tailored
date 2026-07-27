@@ -23,7 +23,12 @@ from backend.app.schemas import (
     SkillsSection,
     TailorResult,
 )
-from backend.app.services.render import TEMPLATES, TEMPLATES_DIR, render_resume_html
+from backend.app.services.render import (
+    TEMPLATE_REGISTRY,
+    TEMPLATES,
+    TEMPLATES_DIR,
+    render_resume_html,
+)
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
 
@@ -186,6 +191,77 @@ def test_the_body_typeface_guard_rejects_a_family_declared_elsewhere():
     assert _body_font_family("@media print { body { font-family: Inter; } }") is None
     assert _body_font_family("body { font-family: Inter, sans-serif; }") == "Inter, sans-serif"
     assert _body_font_family("html,\nbody {\n  font-family: Georgia, serif;\n}") == "Georgia, serif"
+
+
+# --- Meridian's visual identity is frozen ------------------------------------
+#
+# "Meridian's visual identity does not change. Same Georgia stack, same small
+# caps, same hairline rules, same centered header" is a Global Constraint of the
+# plan (spec 3.1): it is the one template that predates the overhaul, and users
+# have already exported resumes with it. The registry-driven tests above are
+# deliberately generic - `test_template_declares_its_own_body_typeface` asks
+# only that *some* family is declared - so nothing else in the suite fails if
+# Meridian is redrawn in Helvetica with sentence-case headings. This is a
+# single-template guard on purpose; the other templates are free to change.
+
+
+def _declaration(css: str, selector: str, prop: str) -> str | None:
+    """`prop`'s value in the top-level rule whose selector list contains `selector`.
+
+    Top-level only, and exact selector match, for the same reasons as
+    `_body_font_family`: a declaration nested in `@media print` does not style
+    the preview, and `.section-title em` is not `.section-title`.
+    """
+    for prelude, block in _top_level_rules(css):
+        if selector not in {part.strip() for part in prelude.split(",")}:
+            continue
+        match = re.search(rf"(?<![\w-]){re.escape(prop)}\s*:\s*([^;}}]+)", block)
+        if match and match.group(1).strip():
+            return match.group(1).strip()
+    return None
+
+
+def test_meridian_keeps_its_visual_identity():
+    css = (TEMPLATES_DIR / "meridian" / "style.css").read_text(encoding="utf-8")
+
+    body = _body_font_family(css)
+    assert body and body.split(",")[0].strip() == "Georgia", (
+        f"meridian's body typeface is {body!r}. Spec 3.1 fixes it as the Georgia "
+        "stack; changing it changes every resume already exported with Meridian."
+    )
+    assert _declaration(css, ".section-title", "font-variant") == "small-caps", (
+        "meridian's section titles are small caps by spec, not uppercase and not "
+        "sentence case."
+    )
+    assert _declaration(css, ".resume-header", "text-align") == "center", (
+        "meridian's header is centered by spec."
+    )
+    for selector in (".resume-header", ".section-title"):
+        rule = _declaration(css, selector, "border-bottom")
+        assert rule and rule.startswith("0.5pt solid"), (
+            f"meridian's {selector} lost its 0.5pt hairline rule (found {rule!r}). "
+            "The hairlines are named in spec 3.1."
+        )
+
+
+def test_meridian_vendors_no_font():
+    """Georgia is a system face. Embedding one would be bytes in every export
+    that no glyph is ever drawn from, and it would change Meridian's typeface."""
+    assert TEMPLATE_REGISTRY["meridian"].fonts == (), (
+        "meridian/template.json declares fonts. It must stay empty: Georgia and "
+        "its fallbacks are system fonts, so there is nothing to vendor."
+    )
+
+
+def test_the_meridian_identity_guard_reads_the_declaration_it_claims_to():
+    """Without this, `_declaration` could be weakened to a whole-file search and
+    the guard above would stay green, since Meridian satisfies it today."""
+    assert _declaration(".section-title { font-variant: small-caps; }", ".section-title", "font-variant") == "small-caps"
+    assert _declaration(".section-title em { font-variant: small-caps; }", ".section-title", "font-variant") is None
+    assert _declaration("@media print { .a { text-align: center; } }", ".a", "text-align") is None
+    assert _declaration("/* .a { text-align: center; } */", ".a", "text-align") is None
+    assert _declaration(".a, .b { text-align: center; }", ".b", "text-align") == "center"
+    assert _declaration(".a { color: red; }", ".a", "text-align") is None
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
