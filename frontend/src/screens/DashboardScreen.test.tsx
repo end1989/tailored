@@ -49,6 +49,7 @@ vi.mock("../api", () => {
     ]),
     patchApplication: vi.fn().mockResolvedValue(undefined),
     archiveApplication: vi.fn().mockResolvedValue(undefined),
+    restoreApplication: vi.fn().mockResolvedValue(undefined),
     deleteApplication: vi.fn().mockResolvedValue(undefined),
     generateApplication: vi.fn().mockResolvedValue(undefined),
   };
@@ -193,5 +194,59 @@ describe("DashboardScreen", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("refreshes the table even when an action fails", async () => {
+    // Regression: reload() used to sit inside the try, so a rejection left the
+    // table showing rows the server had already changed until the next poll.
+    //
+    // Asserted via an observable outcome, not a call count: swapping what the
+    // API returns AFTER the screen has settled means the new company name can
+    // only appear if a refetch happened following the failed action. Counting
+    // listApplications calls does NOT work here -- profileId resolving async
+    // triggers its own refetch, so the count rises with or without the fix.
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 5, company: "Before Co" },
+    ]);
+    vi.mocked(api.patchApplication).mockRejectedValueOnce(new Error("API 422: nope"));
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await screen.findByText("Before Co");
+
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 5, company: "Refetched Co" },
+    ]);
+    fireEvent.change(await screen.findByLabelText(/stage for row 1/i), {
+      target: { value: "offer" },
+    });
+
+    await waitFor(() => expect(screen.getByText(/API 422: nope/)).toBeInTheDocument());
+    expect(await screen.findByText("Refetched Co")).toBeInTheDocument();
+  });
+
+  it("reports how many items failed in a bulk action, not just the first", async () => {
+    // Promise.all surfaces only the FIRST rejection, so a 2-of-3 failure would
+    // report one error and silently drop the other. allSettled counts them.
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 1, company: "One" },
+      { ...BASE_APP, id: 2, company: "Two" },
+      { ...BASE_APP, id: 3, company: "Three" },
+    ]);
+    vi.mocked(api.archiveApplication)
+      .mockRejectedValueOnce(new Error("API 409: busy"))
+      .mockResolvedValueOnce(undefined as never)
+      .mockRejectedValueOnce(new Error("API 500: boom"));
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await screen.findByText("One");
+
+    for (const n of [1, 2, 3]) {
+      fireEvent.click(screen.getByLabelText(new RegExp(`select row ${n}`, "i")));
+    }
+    fireEvent.click(screen.getByRole("button", { name: /^archive$/i }));
+
+    // All three attempted despite two failures, and the count is reported.
+    await waitFor(() =>
+      expect(screen.getByText(/2 of 3 could not be archived/i)).toBeInTheDocument()
+    );
+    expect(vi.mocked(api.archiveApplication)).toHaveBeenCalledTimes(3);
   });
 });

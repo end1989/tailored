@@ -126,10 +126,36 @@ export default function DashboardScreen() {
     setError(null);
     try {
       await action();
-      reload();
     } catch (e) {
       setError(String(e));
+    } finally {
+      // Always reload, including on failure. Showing rows the server has
+      // already changed is worse than showing an error beside fresh data.
+      reload();
     }
+  }
+
+  /**
+   * Bulk actions: one request per id. There is no bulk endpoint by design, so
+   * `Promise.allSettled` rather than `Promise.all` -- the latter surfaces only
+   * the FIRST rejection, which for a 5-row delete where 2 fail reports one
+   * error and silently drops the other. Reports the count instead.
+   */
+  async function runBulk(
+    ids: number[],
+    op: (id: number) => Promise<unknown>,
+    pastTense: string
+  ) {
+    setError(null);
+    const results = await Promise.allSettled(ids.map(op));
+    const failures = results.filter((r) => r.status === "rejected");
+    if (failures.length > 0) {
+      const first = failures[0] as PromiseRejectedResult;
+      setError(
+        `${failures.length} of ${ids.length} could not be ${pastTense}. First error: ${String(first.reason)}`
+      );
+    }
+    reload();
   }
 
   function toggle(id: number) {
@@ -182,14 +208,18 @@ export default function DashboardScreen() {
           {tab === "archived" ? (
             <button
               className="btn"
-              onClick={() => run(() => Promise.all(chosen.map((a) => restoreApplication(a.id))))}
+              onClick={() =>
+                runBulk(chosen.map((a) => a.id), restoreApplication, "restored")
+              }
             >
               Restore
             </button>
           ) : (
             <button
               className="btn"
-              onClick={() => run(() => Promise.all(chosen.map((a) => archiveApplication(a.id))))}
+              onClick={() =>
+                runBulk(chosen.map((a) => a.id), archiveApplication, "archived")
+              }
             >
               Archive
             </button>
@@ -307,7 +337,7 @@ export default function DashboardScreen() {
                   const targets = confirming;
                   setConfirming(null);
                   setSelected(new Set());
-                  run(() => Promise.all(targets.map((a) => deleteApplication(a.id))));
+                  runBulk(targets.map((a) => a.id), deleteApplication, "deleted");
                 }}
               >
                 Delete permanently
