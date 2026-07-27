@@ -1,0 +1,9 @@
+{
+  "name": "slate",
+  "label": "Slate",
+  "description": "Neutral contemporary sans-serif that builds hierarchy from weight and whitespace rather than rules.",
+  "best_for": "General purpose, safe everywhere",
+  "structure": "experience-first",
+  "order": 2,
+  "fonts": []
+}

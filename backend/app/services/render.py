@@ -7,6 +7,8 @@ directory per template (template.html + style.css). CSS is inlined into a
 from __future__ import annotations
 
 import html
+import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import markdown as markdown_lib
@@ -14,8 +16,120 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..schemas import Contact, ResumeDoc
 
-TEMPLATES = ("meridian", "slate", "terminal", "signal")
 TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "templates"
+FONTS_DIR = TEMPLATES_DIR / "fonts"
+
+STRUCTURES = ("experience-first", "projects-forward")
+_REQUIRED_KEYS = frozenset(
+    {"name", "label", "description", "best_for", "structure", "order", "fonts"}
+)
+
+
+class TemplateManifestError(Exception):
+    """A template.json is missing, malformed, or internally inconsistent."""
+
+
+@dataclass(frozen=True)
+class FontFace:
+    """One @font-face declaration.
+
+    `weight` is a string, not an int, because a variable font covers a range and
+    declares it as "400 700". A single-weight static font declares "400".
+    """
+
+    family: str
+    file: str
+    weight: str
+    style: str
+
+
+@dataclass(frozen=True)
+class TemplateManifest:
+    name: str
+    label: str
+    description: str
+    best_for: str
+    structure: str
+    order: int
+    fonts: tuple[FontFace, ...]
+
+
+def _parse_manifest(path: Path, directory_name: str) -> TemplateManifest:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise TemplateManifestError(f"{path}: cannot read manifest: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise TemplateManifestError(f"{path}: manifest must be a JSON object")
+    missing = _REQUIRED_KEYS - set(raw)
+    if missing:
+        raise TemplateManifestError(
+            f"{path}: manifest missing required key(s): {', '.join(sorted(missing))}"
+        )
+    if raw["name"] != directory_name:
+        raise TemplateManifestError(
+            f"{path}: manifest name {raw['name']!r} does not match its "
+            f"directory {directory_name!r}"
+        )
+    if raw["structure"] not in STRUCTURES:
+        raise TemplateManifestError(
+            f"{path}: unknown structure {raw['structure']!r}; "
+            f"expected one of {STRUCTURES}"
+        )
+    if not isinstance(raw["order"], int):
+        raise TemplateManifestError(f"{path}: order must be an integer")
+    faces: list[FontFace] = []
+    for entry in raw["fonts"]:
+        try:
+            faces.append(
+                FontFace(
+                    family=entry["family"],
+                    file=entry["file"],
+                    weight=str(entry["weight"]),
+                    style=entry["style"],
+                )
+            )
+        except (TypeError, KeyError) as exc:
+            raise TemplateManifestError(
+                f"{path}: font entry {entry!r} missing key {exc}"
+            ) from exc
+    return TemplateManifest(
+        name=raw["name"],
+        label=raw["label"],
+        description=raw["description"],
+        best_for=raw["best_for"],
+        structure=raw["structure"],
+        order=raw["order"],
+        fonts=tuple(faces),
+    )
+
+
+def load_registry(templates_dir: Path) -> dict[str, TemplateManifest]:
+    """Scan a templates directory and return manifests keyed by name, order-sorted.
+
+    Directories whose name starts with "_" or "." are partials, not templates,
+    and "fonts" holds the vendored binaries. Everything else must carry a
+    manifest: a directory without one is a template that would silently vanish
+    from the UI, which is worse than a loud failure at import.
+    """
+    manifests: list[TemplateManifest] = []
+    for entry in sorted(Path(templates_dir).iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.startswith(("_", ".")) or entry.name == "fonts":
+            continue
+        manifest_path = entry / "template.json"
+        if not manifest_path.is_file():
+            raise TemplateManifestError(
+                f"{entry}: template directory has no template.json"
+            )
+        manifests.append(_parse_manifest(manifest_path, entry.name))
+    manifests.sort(key=lambda m: m.order)
+    return {m.name: m for m in manifests}
+
+
+TEMPLATE_REGISTRY: dict[str, TemplateManifest] = load_registry(TEMPLATES_DIR)
+TEMPLATES: tuple[str, ...] = tuple(TEMPLATE_REGISTRY)
 
 _env = Environment(
     loader=FileSystemLoader(str(TEMPLATES_DIR)),
@@ -25,7 +139,7 @@ _env = Environment(
 
 def _load_css(template: str) -> tuple[str, str]:
     """Return (base_css, style_css) for a template; raise on unknown template."""
-    if template not in TEMPLATES:
+    if template not in TEMPLATE_REGISTRY:
         raise ValueError(f"Unknown template {template!r}; expected one of {TEMPLATES}")
     base_css = (TEMPLATES_DIR / "base.css").read_text(encoding="utf-8")
     style_css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")

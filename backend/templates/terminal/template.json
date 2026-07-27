@@ -1,0 +1,9 @@
+{
+  "name": "terminal",
+  "label": "Terminal",
+  "description": "Technical layout with monospace metadata and projects placed forward.",
+  "best_for": "Engineering, data, infrastructure",
+  "structure": "projects-forward",
+  "order": 3,
+  "fonts": []
+}
