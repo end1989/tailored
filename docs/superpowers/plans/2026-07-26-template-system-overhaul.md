@@ -36,7 +36,7 @@
 | `backend/templates/{ledger,quarto,dossier,plainwork}/` | Four new templates: `template.json` + `template.html` + `style.css`. |
 | `backend/templates/{meridian,slate,terminal,signal}/template.json` | Manifests for the existing four. |
 | `tests/test_template_registry.py` | Manifest loading, ordering, malformed-manifest failure, font inlining. |
-| `tests/test_pdf_extraction.py` | The marquee guard: every template's PDF extracts employers, titles and dates in document order. |
+| `tests/test_pdf_extraction.py` | The marquee guard: every template's PDF extracts employers, titles and dates in document order, and in role-employer-dates order within each entry. |
 | `tests/test_json_ld.py` | JSON-LD validity, `@type` correctness, script-injection safety. |
 | `tests/test_template_switch.py` | The `PATCH /applications/{id}/template` endpoint and its MCP twin. |
 
@@ -192,6 +192,53 @@ def test_pdf_extraction_preserves_document_order(rendered_text, template):
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
+def test_pdf_extraction_preserves_field_order_within_each_item(
+    rendered_text, template
+):
+    """Inside one experience item: role, then employer, then dates.
+
+    Document order *across* items is not enough. A stylesheet that reverses the
+    fields *within* an item - `.item-head { flex-direction: row-reverse }`, or
+    an `order:` swap to push the dates to the right edge - leaves every string
+    present and every employer in sequence, so the two tests above stay green
+    while the extraction stream reads
+
+        2021-03-Present - Portland, ORCascade Analytics Senior Software Engineer
+
+    An ATS tokenising that assigns the employer to the job-title field and the
+    dates to the employer field, and the resume is silently unparseable.
+
+    The check is a greedy left-to-right subsequence walk rather than a
+    per-field `text.index`, because the fixture's second role, "Software
+    Engineer", is a substring of the first item's "Senior Software Engineer":
+    an unanchored search would resolve it to item 1 and report a false
+    failure. Advancing a cursor past each match makes every lookup unambiguous.
+    """
+    resume = _fixture_resume()
+    text = rendered_text[template]
+    expected = [
+        value
+        for section in resume.sections
+        if section.type == "experience"
+        for item in section.items
+        for value in (item.role, item.company, item.start)
+    ]
+    cursor = 0
+    matched: list[str] = []
+    for value in expected:
+        found = text.find(value, cursor)
+        assert found != -1, (
+            f"{template}: experience fields extract out of order. Expected the "
+            f"sequence {expected}; matched {matched}, then could not find "
+            f"{value!r} at or after offset {cursor}. Every item must extract as "
+            "role, then employer, then dates - a stylesheet that reorders them "
+            "hands an ATS the employer as the job title."
+        )
+        cursor = found + len(value)
+        matched.append(value)
+
+
+@pytest.mark.parametrize("template", TEMPLATES)
 def test_pdf_extraction_preserves_contact_details(rendered_text, template):
     resume = _fixture_resume()
     text = rendered_text[template]
@@ -202,26 +249,47 @@ def test_pdf_extraction_preserves_contact_details(rendered_text, template):
 - [ ] **Step 2: Run it and confirm it passes against today's four templates**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_pdf_extraction.py -v`
-Expected: 12 passed (4 templates x 3 tests). If any fails now, stop and report — today's templates already have an extraction problem and that changes the plan.
+Expected: 16 passed (4 templates x 4 tests). If any fails now, stop and report — today's templates already have an extraction problem and that changes the plan.
 
 - [ ] **Step 3: Prove the guard actually bites**
 
-Temporarily edit `backend/templates/meridian/style.css` and add at the end:
+Do this twice. The two breaks exercise the two independent order assertions, and
+a guard that only catches one of them is worth much less than it looks.
+
+**3a — field order within an item.** Temporarily add at the end of
+`backend/templates/meridian/style.css`:
 
 ```css
 .item-head { display: flex; flex-direction: row-reverse; }
 ```
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_pdf_extraction.py -k meridian -v`
-Expected: FAIL. `flex-direction: row-reverse` visually reorders the role and company while leaving the extraction stream alone, which is exactly the class of bug this test exists to catch.
+Expected: `test_pdf_extraction_preserves_field_order_within_each_item[meridian]` FAILS;
+the other three meridian tests still pass. Chromium lays the flex children out
+right-to-left and the PDF content stream follows the visual order, so the item
+extracts as dates, employer, role. Note that the two order-agnostic tests cannot
+see this — every string is still present, and every employer is still in
+sequence — which is exactly why the within-item assertion has to exist.
+`git checkout backend/templates/meridian/style.css` before continuing.
 
-If it does NOT fail, the test is not measuring what it claims. Report that rather than proceeding.
+**3b — order across items.** Temporarily add at the end of the same file:
+
+```css
+.section-experience { display: flex; flex-direction: column-reverse; }
+```
+
+Run the same command.
+Expected: `test_pdf_extraction_preserves_document_order[meridian]` FAILS with
+`got positions [900, 556]`, and the within-item test fails alongside it.
+
+If either break does NOT fail, the test is not measuring what it claims. Report
+that rather than proceeding.
 
 - [ ] **Step 4: Revert the deliberate break**
 
 Run: `git checkout backend/templates/meridian/style.css`
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_pdf_extraction.py -q`
-Expected: 12 passed.
+Expected: 16 passed.
 
 - [ ] **Step 5: Commit**
 
@@ -1013,7 +1081,7 @@ Expected: 17 passed.
 This is the moment the guard from Task 1 earns its keep. Three templates now use embedded fonts.
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_pdf_extraction.py -q`
-Expected: 12 passed. A failure here means a font subset has no usable ToUnicode mapping and the family must be replaced — do not proceed past it.
+Expected: 16 passed. A failure here means a font subset has no usable ToUnicode mapping and the family must be replaced — do not proceed past it.
 
 - [ ] **Step 8: Full suite**
 
@@ -1825,6 +1893,7 @@ Read it before starting any of them. **Tasks 8, 9 and 10 are independent and may
 - Declare `font-family` on `body`.
 - Set `--fs-name`, `--fs-section`, `--fs-body`, `--fs-meta`, `--leading` and `--measure` explicitly, even where the value matches the default. These are the template's typographic decisions and should be visible in one block at the top.
 - Not declare `break-inside`, `page-break-inside`, `column-count`, `grid-template-columns`, `position: absolute`, or any `http`/`https` URL. The contract test from Task 5 fails the build for each.
+- **Never reorder flex or grid children.** No `flex-direction: row-reverse` / `column-reverse`, no `order:`, no `flex-flow` with `-reverse`. This is the one design idiom most likely to be reached for here: "role on the left, dates flushed right" is the standard resume header, and reversing the source order to get it is a natural move. It corrupts the PDF content stream — Chromium emits text in visual order, so the item extracts as dates, employer, role and an ATS reads the employer as the job title. `test_pdf_extraction_preserves_field_order_within_each_item` from Task 1 fails the build for it. Get the same look with `margin-left: auto` on `.meta` (or `justify-content: space-between`), which moves the box without touching the order.
 
 **Every template's `template.html` is a thin shell:**
 
@@ -2441,7 +2510,7 @@ body {
 
 - [ ] **Step 7: Run the verification loop**
 
-Run the three commands from the shared brief. `TEMPLATES` now has six entries, so `test_pdf_extraction.py` reports 18 tests and `test_base_css_contract.py` grows accordingly.
+Run the three commands from the shared brief. `TEMPLATES` now has six entries, so `test_pdf_extraction.py` reports 24 tests and `test_base_css_contract.py` grows accordingly.
 Expected: 0 failures.
 
 - [ ] **Step 8: Confirm Quarto's pagination override is the sanctioned one**
@@ -2779,8 +2848,8 @@ body {
 
 - [ ] **Step 7: Run the verification loop**
 
-Run the three commands from the shared brief. `TEMPLATES` now has eight entries: `test_pdf_extraction.py` reports 24 tests.
-Expected: 0 failures. Plainwork's different markup makes it the single most likely template to trip the document-order assertion, so read that output carefully.
+Run the three commands from the shared brief. `TEMPLATES` now has eight entries: `test_pdf_extraction.py` reports 32 tests.
+Expected: 0 failures. Plainwork's different markup makes it the single most likely template to trip the order assertions, so read that output carefully.
 
 - [ ] **Step 8: Confirm Plainwork really is plain**
 
@@ -3555,7 +3624,10 @@ Two rules the test suite enforces:
   Pagination is structural and lives in `base.css`; set `--item-break` if your
   template genuinely needs breakable entries.
 - The rendered PDF must extract every employer, title and date in document
-  order. `tests/test_pdf_extraction.py` checks it.
+  order, and within one entry must extract as role, then employer, then dates.
+  `tests/test_pdf_extraction.py` checks both. In practice this means never
+  reordering flex or grid children: no `row-reverse`, no `column-reverse`, no
+  `order:`. To flush the dates right, use `margin-left: auto`.
 
 If your template needs a typeface that is not already vendored, add it to
 `SPECS` in `scripts/vendor_fonts.py`, re-run the script, and paste the printed

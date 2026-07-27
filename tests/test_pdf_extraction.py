@@ -105,6 +105,53 @@ def test_pdf_extraction_preserves_document_order(rendered_text, template):
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
+def test_pdf_extraction_preserves_field_order_within_each_item(
+    rendered_text, template
+):
+    """Inside one experience item: role, then employer, then dates.
+
+    Document order *across* items is not enough. A stylesheet that reverses the
+    fields *within* an item - `.item-head { flex-direction: row-reverse }`, or
+    an `order:` swap to push the dates to the right edge - leaves every string
+    present and every employer in sequence, so the two tests above stay green
+    while the extraction stream reads
+
+        2021-03-Present - Portland, ORCascade Analytics Senior Software Engineer
+
+    An ATS tokenising that assigns the employer to the job-title field and the
+    dates to the employer field, and the resume is silently unparseable.
+
+    The check is a greedy left-to-right subsequence walk rather than a
+    per-field `text.index`, because the fixture's second role, "Software
+    Engineer", is a substring of the first item's "Senior Software Engineer":
+    an unanchored search would resolve it to item 1 and report a false
+    failure. Advancing a cursor past each match makes every lookup unambiguous.
+    """
+    resume = _fixture_resume()
+    text = rendered_text[template]
+    expected = [
+        value
+        for section in resume.sections
+        if section.type == "experience"
+        for item in section.items
+        for value in (item.role, item.company, item.start)
+    ]
+    cursor = 0
+    matched: list[str] = []
+    for value in expected:
+        found = text.find(value, cursor)
+        assert found != -1, (
+            f"{template}: experience fields extract out of order. Expected the "
+            f"sequence {expected}; matched {matched}, then could not find "
+            f"{value!r} at or after offset {cursor}. Every item must extract as "
+            "role, then employer, then dates - a stylesheet that reorders them "
+            "hands an ATS the employer as the job title."
+        )
+        cursor = found + len(value)
+        matched.append(value)
+
+
+@pytest.mark.parametrize("template", TEMPLATES)
 def test_pdf_extraction_preserves_contact_details(rendered_text, template):
     resume = _fixture_resume()
     text = rendered_text[template]
