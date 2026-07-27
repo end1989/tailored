@@ -4,6 +4,7 @@ import {
   addEvent,
   deleteEvent,
   exportUrl,
+  generateApplication,
   getApplication,
   pasteJobText,
   patchApplication,
@@ -12,10 +13,10 @@ import {
   retryApplication,
   updateContent,
 } from "../api";
+import { TERMINAL_STATUSES } from "../statuses";
 import type {
   ApplicationDetail,
   ApplicationEvent,
-  AppStatus,
   EventKind,
   ExportKind,
   ResumeDoc,
@@ -23,7 +24,6 @@ import type {
   Stage,
 } from "../types";
 
-const TERMINAL: AppStatus[] = ["ready", "error", "needs_paste"];
 const EXPORT_KINDS: ExportKind[] = [
   "resume.pdf",
   "resume.html",
@@ -54,10 +54,12 @@ function Timeline({
   applicationId,
   events,
   onChanged,
+  onError,
 }: {
   applicationId: number;
   events: ApplicationEvent[];
   onChanged: () => void;
+  onError: (message: string) => void;
 }) {
   const [kind, setKind] = useState<EventKind>("note");
   const [body, setBody] = useState("");
@@ -67,6 +69,11 @@ function Timeline({
   async function submit() {
     setBusy(true);
     try {
+      // `when` is a plain "YYYY-MM-DD" string from <input type="date">. Date-only
+      // strings parse as UTC midnight (ECMA-262 Date Time String Format), so this
+      // stores the user's chosen calendar day as a fixed instant. The timeline
+      // below reads it back with `timeZone: "UTC"` so the same calendar day
+      // survives regardless of the viewer's local offset.
       await addEvent(applicationId, {
         kind,
         body,
@@ -75,6 +82,8 @@ function Timeline({
       setBody("");
       setWhen("");
       onChanged();
+    } catch (err) {
+      onError(String(err));
     } finally {
       setBusy(false);
     }
@@ -126,14 +135,20 @@ function Timeline({
         {events.map((e) => (
           <li key={e.id}>
             <span className={`badge badge-${e.kind}`}>{e.kind}</span>{" "}
-            <span className="muted">{new Date(e.occurred_at).toLocaleDateString()}</span>{" "}
+            <span className="muted">
+              {new Date(e.occurred_at).toLocaleDateString(undefined, { timeZone: "UTC" })}
+            </span>{" "}
             {e.body}{" "}
             <button
               className="btn btn-small"
               aria-label={`Delete timeline entry ${e.id}`}
               onClick={async () => {
-                await deleteEvent(applicationId, e.id);
-                onChanged();
+                try {
+                  await deleteEvent(applicationId, e.id);
+                  onChanged();
+                } catch (err) {
+                  onError(String(err));
+                }
               }}
             >
               Remove
@@ -174,7 +189,7 @@ export default function ApplicationScreen() {
         const d = await getApplication(appId);
         if (stopped) return;
         setDetail(d);
-        if (!TERMINAL.includes(d.status)) {
+        if (!TERMINAL_STATUSES.includes(d.status)) {
           timer = window.setTimeout(tick, 2000);
         } else {
           setIframeKey((k) => k + 1); // reload preview once the pipeline settles
@@ -352,6 +367,19 @@ export default function ApplicationScreen() {
     }
   }
 
+  async function handleGenerate() {
+    setBusy(true);
+    setError(null);
+    try {
+      await generateApplication(appId);
+      setPollNonce((n) => n + 1);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handlePaste() {
     if (pasteText.trim() === "") return;
     setBusy(true);
@@ -380,7 +408,7 @@ export default function ApplicationScreen() {
     );
   }
 
-  const working = !TERMINAL.includes(detail.status);
+  const working = !TERMINAL_STATUSES.includes(detail.status);
 
   return (
     <div>
@@ -402,12 +430,20 @@ export default function ApplicationScreen() {
           className="select"
           value={detail.stage}
           onChange={async (e) => {
-            await patchApplication(detail.id, { stage: e.target.value as Stage });
-            reload();
+            const stage = e.target.value as Stage;
+            setError(null);
+            try {
+              const d = await patchApplication(detail.id, { stage });
+              setDetail(d);
+            } catch (err) {
+              setError(String(err));
+            }
           }}
         >
           {STAGES.map((s) => (
-            <option key={s} value={s}>{s}</option>
+            <option key={s} value={s} disabled={s === "saved" && detail.status === "ready"}>
+              {s}
+            </option>
           ))}
         </select>
       </div>
@@ -428,7 +464,17 @@ export default function ApplicationScreen() {
         </div>
       )}
 
-      {detail.status === "needs_paste" ? (
+      {detail.status === "not_started" ? (
+        <div className="card">
+          <h2>Generate this application</h2>
+          <p className="muted">
+            This job hasn't been generated yet. Click Generate to run the tailoring pipeline.
+          </p>
+          <button className="btn btn-primary" onClick={handleGenerate} disabled={busy}>
+            {busy ? "Starting..." : "Generate"}
+          </button>
+        </div>
+      ) : detail.status === "needs_paste" ? (
         <div className="card">
           <h2>Paste the job posting</h2>
           <p className="muted">
@@ -765,7 +811,12 @@ export default function ApplicationScreen() {
         </>
       )}
 
-      <Timeline applicationId={detail.id} events={detail.events} onChanged={reload} />
+      <Timeline
+        applicationId={detail.id}
+        events={detail.events}
+        onChanged={reload}
+        onError={setError}
+      />
     </div>
   );
 }

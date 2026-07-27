@@ -9,9 +9,8 @@ import {
   patchApplication,
   restoreApplication,
 } from "../api";
-import type { ApplicationSummary, AppStatus, ProfileSummary, Stage } from "../types";
-
-const TERMINAL: AppStatus[] = ["not_started", "ready", "error", "needs_paste"];
+import { TERMINAL_STATUSES } from "../statuses";
+import type { ApplicationSummary, ProfileSummary, Stage } from "../types";
 
 const STAGES: Stage[] = [
   "saved", "drafted", "applied", "screening",
@@ -61,7 +60,7 @@ export function usePolling(
         const list = await listApplications(profileId, archived ? { archived: true } : undefined);
         if (stopped) return;
         setApps(list);
-        active = list.some((a) => !TERMINAL.includes(a.status));
+        active = list.some((a) => !TERMINAL_STATUSES.includes(a.status));
       } catch {
         active = false; // stop polling on fetch error; navigating back restarts it
       }
@@ -238,7 +237,13 @@ export default function DashboardScreen() {
                     }
                   >
                     {STAGES.map((s) => (
-                      <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+                      <option
+                        key={s}
+                        value={s}
+                        disabled={s === "saved" && a.status === "ready"}
+                      >
+                        {STAGE_LABELS[s]}
+                      </option>
                     ))}
                   </select>
                 </td>

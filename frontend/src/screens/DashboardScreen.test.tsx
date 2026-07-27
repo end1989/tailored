@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import DashboardScreen from "./DashboardScreen";
 import * as api from "../api";
@@ -144,6 +144,19 @@ describe("DashboardScreen", () => {
     fireEvent.change(select, { target: { value: "interview" } });
 
     expect(api.patchApplication).toHaveBeenCalledWith(7, { stage: "interview" });
+  });
+
+  it("disables the Saved stage option for a ready row", async () => {
+    // Regression for I2(a): the backend 422s on stage="saved" once status is
+    // "ready"; the dashboard's row dropdown must not offer that choice.
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 7, status: "ready", stage: "applied" },
+    ]);
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+    const select = await screen.findByLabelText(/stage for row 1/i);
+    const savedOption = within(select).getByRole("option", { name: "Saved" }) as HTMLOptionElement;
+    expect(savedOption.disabled).toBe(true);
   });
 
   it("asks for confirmation naming the role before deleting", async () => {
