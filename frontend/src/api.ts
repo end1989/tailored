@@ -126,6 +126,16 @@ export function patchApplication(id: number, patch: { stage?: Stage }): Promise<
   return request<ApplicationDetail>(`/applications/${id}`, jsonInit("PATCH", patch));
 }
 
+export function setApplicationTemplate(
+  id: number,
+  template: string
+): Promise<ApplicationDetail> {
+  return request<ApplicationDetail>(
+    `/applications/${id}/template`,
+    jsonInit("PATCH", { template })
+  );
+}
+
 export function archiveApplication(id: number): Promise<ApplicationDetail> {
   return request<ApplicationDetail>(`/applications/${id}/archive`, { method: "POST" });
 }

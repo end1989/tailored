@@ -6,11 +6,13 @@ import {
   exportUrl,
   generateApplication,
   getApplication,
+  listTemplates,
   pasteJobText,
   patchApplication,
   previewUrl,
   regenerate,
   retryApplication,
+  setApplicationTemplate,
   updateContent,
 } from "../api";
 import { TERMINAL_STATUSES } from "../statuses";
@@ -22,6 +24,7 @@ import type {
   ResumeDoc,
   SkillGroup,
   Stage,
+  TemplateInfo,
 } from "../types";
 
 const EXPORT_KINDS: ExportKind[] = [
@@ -187,6 +190,17 @@ export default function ApplicationScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pollNonce, setPollNonce] = useState(0);
+  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
+  const [switching, setSwitching] = useState(false);
+
+  // The registry is static for the life of the process, so this is a mount-only
+  // fetch rather than part of the poll effect below, which re-runs on every
+  // reload() and would refetch an unchanging list each time.
+  useEffect(() => {
+    listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
+  }, []);
 
   // Load + poll getApplication every 2000ms while status is non-terminal.
   // pollNonce restarts polling after regenerate / paste.
@@ -457,6 +471,37 @@ export default function ApplicationScreen() {
           ))}
         </select>
       </div>
+
+      <label className="field-inline">
+        <span>Template</span>
+        <select
+          className="select-inline"
+          value={detail.template}
+          disabled={switching}
+          onChange={async (e) => {
+            const next = e.target.value;
+            setSwitching(true);
+            setError(null);
+            try {
+              // The PATCH response is the full re-rendered detail, so apply it
+              // directly: no version bump, no cost, and no second GET.
+              const d = await setApplicationTemplate(detail.id, next);
+              setDetail(d);
+              setIframeKey((k) => k + 1); // the preview is now a different template
+            } catch (err) {
+              setError(err instanceof Error ? err.message : String(err));
+            } finally {
+              setSwitching(false);
+            }
+          }}
+        >
+          {templates.map((t) => (
+            <option key={t.name} value={t.name}>
+              {t.label || t.name}
+            </option>
+          ))}
+        </select>
+      </label>
 
       {error && <div className="alert alert-error">{error}</div>}
 
