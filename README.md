@@ -163,7 +163,7 @@ call from offline fixtures. Every screen is clickable end to end.
 
 Research depth is chosen per job when you add it. Approximate cost per application
 (Claude Opus 4.8; real token usage and cost are recorded per application and shown on
-the dashboard):
+each application's page):
 
 | Depth      | What it does                                                        | Approx. cost |
 |------------|---------------------------------------------------------------------|--------------|
