@@ -2,6 +2,7 @@
 export type Depth = "quick" | "standard" | "deep" | "external"; // "external" = MCP mode (agent did the research)
 export type TemplateName = "meridian" | "slate" | "terminal" | "signal";
 export type AppStatus =
+  | "not_started"
   | "queued"
   | "fetching"
   | "researching"
@@ -10,6 +11,35 @@ export type AppStatus =
   | "ready"
   | "needs_paste"
   | "error";
+
+export type Stage =
+  | "saved"
+  | "drafted"
+  | "applied"
+  | "screening"
+  | "interview"
+  | "offer"
+  | "rejected"
+  | "withdrawn";
+
+export type EventKind =
+  | "applied"
+  | "callback"
+  | "interview"
+  | "offer"
+  | "rejection"
+  | "followup"
+  | "note";
+
+export interface ApplicationEvent {
+  id: number;
+  application_id: number;
+  kind: EventKind;
+  body: string;
+  occurred_at: string;
+  created_at: string;
+}
+
 export type PageSize = "Letter" | "A4";
 export type ExportKind =
   | "resume.pdf"
@@ -226,6 +256,10 @@ export interface ApplicationSummary {
   cost_usd: number;
   created_at: string;
   error_message?: string | null;
+  stage: Stage;
+  applied_at: string | null;
+  archived_at: string | null;
+  last_activity_at: string;
 }
 
 export interface ApplicationDetail extends ApplicationSummary {
@@ -235,6 +269,7 @@ export interface ApplicationDetail extends ApplicationSummary {
   research: ResearchFindings | null;
   parsed: ParsedPosting | null;
   raw_text_present: boolean;
+  events: ApplicationEvent[];
 }
 
 export interface SettingsShape {

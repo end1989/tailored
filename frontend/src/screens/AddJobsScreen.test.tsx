@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import AddJobsScreen from "./AddJobsScreen";
 import * as api from "../api";
@@ -76,5 +76,54 @@ describe("AddJobsScreen", () => {
       "href",
       "/getting-started"
     );
+  });
+
+  it("sends generate:false when saving without generating", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "slate",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    renderScreen();
+    await screen.findByRole("option", { name: "Jordan Rivera" });
+    fireEvent.change(screen.getByPlaceholderText("https://..."), {
+      target: { value: "https://example.com/a\nhttps://example.com/b" },
+    });
+    fireEvent.click(screen.getByLabelText(/save without generating/i));
+    fireEvent.click(screen.getByRole("button", { name: /save for later/i }));
+
+    await waitFor(() =>
+      expect(api.createApplications).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.any(Array),
+        expect.any(String),
+        expect.any(String),
+        false
+      )
+    );
+  });
+
+  it("generates immediately by default", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "slate",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    renderScreen();
+    await screen.findByRole("option", { name: "Jordan Rivera" });
+    fireEvent.change(screen.getByPlaceholderText("https://..."), {
+      target: { value: "https://example.com/a" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add and generate/i }));
+
+    await waitFor(() => {
+      const calls = vi.mocked(api.createApplications).mock.calls;
+      const call = calls[calls.length - 1];
+      expect(call?.[4]).toBe(true);
+    });
   });
 });

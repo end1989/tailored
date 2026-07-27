@@ -12,9 +12,12 @@ and emphasizes* from it per job. It never invents anything
 - **Two ways to supply the intelligence, one contract.** Use the built-in Anthropic API pipeline (paste a batch of job URLs and walk away), or connect your own agent over MCP — a from-scratch MCP server (10 tools) that lets Claude Code, Codex, or any MCP-capable client do the work on its own subscription, no API key, and read login-walled postings its browser can reach. The same truthfulness guard applies to both.
 - **Your codebase becomes resume evidence.** A portfolio-scan prompt plus an MCP write tool let an agent read the repos in your workspace and write evidence-backed, skill-tagged project entries straight into your profile (additive-only, validated, never destructive).
 - **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, four print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
-- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 171 automated tests (151 backend including real headless-Chromium PDF rendering, 20 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
+- **It tracks the job hunt, not just the generation.** Stages from Saved through Offer, a dated timeline for callbacks, interviews and notes, archive and permanent delete, and saved jobs you can park for free and generate later.
+- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 244 automated tests (192 backend including real headless-Chromium PDF rendering, 52 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
 
-For each job URL it runs a four-stage pipeline:
+Job URLs can be queued for immediate generation or parked as a saved job to
+generate later at no cost. For each job URL you choose to generate, it runs a
+four-stage pipeline:
 
 1. **Fetch** — downloads the posting and extracts the text (paste fallback for
    login-walled sites).
@@ -160,7 +163,7 @@ call from offline fixtures. Every screen is clickable end to end.
 
 Research depth is chosen per job when you add it. Approximate cost per application
 (Claude Opus 4.8; real token usage and cost are recorded per application and shown on
-the dashboard):
+each application's page):
 
 | Depth      | What it does                                                        | Approx. cost |
 |------------|---------------------------------------------------------------------|--------------|

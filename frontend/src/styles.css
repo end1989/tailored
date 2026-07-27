@@ -130,6 +130,7 @@ a { color: var(--accent); }
   padding: 0.15rem 0.55rem; border-radius: 999px; white-space: nowrap;
   text-decoration: none;
 }
+.badge-not_started { background: #F5F5F4; color: #78716C; }  /* stone, dimmer than queued */
 .badge-queued      { background: #F5F5F4; color: #57534E; }  /* stone */
 .badge-fetching    { background: #DBEAFE; color: #1D4ED8; }  /* blue */
 .badge-researching { background: #EDE9FE; color: #6D28D9; }  /* violet */
@@ -141,6 +142,7 @@ a { color: var(--accent); }
 
 /* Dark surfaces: swap the pale badge fills for translucent tints of the same
    hue with light text, so every status stays legible on --surface. */
+:root[data-theme="dark"] .badge-not_started { background: rgba(168, 162, 158, 0.14); color: #A8A29E; }
 :root[data-theme="dark"] .badge-queued      { background: rgba(168, 162, 158, 0.2); color: #E7E5E4; }
 :root[data-theme="dark"] .badge-fetching    { background: rgba(59, 130, 246, 0.22); color: #93C5FD; }
 :root[data-theme="dark"] .badge-researching { background: rgba(167, 139, 250, 0.22); color: #C4B5FD; }
@@ -268,3 +270,31 @@ a { color: var(--accent); }
   .nav-inner { flex-wrap: wrap; gap: 0.75rem; }
   .row { flex-direction: column; align-items: stretch; }
 }
+
+/* ---- tracker: tab counts, bulk bar, inline controls, confirm modal ---- */
+.tab-count { opacity: 0.6; }
+.bulk-bar { align-items: center; gap: 0.75rem; margin-bottom: 0.75rem; }
+.select-inline { padding: 0.15rem 0.4rem; font-size: var(--fs-xs); width: auto; }
+.btn-small { padding: 0.15rem 0.5rem; font-size: var(--fs-xs); }
+.modal-backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.modal { max-width: 32rem; margin: 0; }
+
+/* ---- application screen: timeline panel ---- */
+.timeline { list-style: none; margin-top: 1rem; padding: 0; }
+.timeline li { padding: 0.4rem 0; border-top: 1px solid var(--border); }
+.badge-note, .badge-followup { background: #F5F5F4; color: #57534E; }
+.badge-callback, .badge-interview { background: #DBEAFE; color: #1D4ED8; }
+.badge-applied { background: #EDE9FE; color: #6D28D9; }
+.badge-offer { background: #D1FAE5; color: #047857; }
+.badge-rejection { background: #FEE2E2; color: #B91C1C; }
+
+/* Dark surfaces: swap the pale badge fills for translucent tints of the same
+   hue with light text, so every timeline badge stays legible on --surface. */
+:root[data-theme="dark"] .badge-note, :root[data-theme="dark"] .badge-followup { background: rgba(168, 162, 158, 0.2); color: #E7E5E4; }
+:root[data-theme="dark"] .badge-callback, :root[data-theme="dark"] .badge-interview { background: rgba(59, 130, 246, 0.22); color: #93C5FD; }
+:root[data-theme="dark"] .badge-applied { background: rgba(167, 139, 250, 0.22); color: #C4B5FD; }
+:root[data-theme="dark"] .badge-offer { background: rgba(16, 185, 129, 0.22); color: #6EE7B7; }
+:root[data-theme="dark"] .badge-rejection { background: rgba(248, 113, 113, 0.22); color: #FCA5A5; }

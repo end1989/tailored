@@ -20,6 +20,7 @@ export default function AddJobsScreen() {
   const [apiKeySet, setApiKeySet] = useState(true);
   const [fakeMode, setFakeMode] = useState(false);
   const [text, setText] = useState("");
+  const [generate, setGenerate] = useState(true);
   const [overrides, setOverrides] = useState<Record<number, RowOverride>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,7 +67,7 @@ export default function AddJobsScreen() {
       template: overrides[i]?.template ?? defaultTemplate,
     }));
     try {
-      await createApplications(profileId, jobs, defaultDepth, defaultTemplate);
+      await createApplications(profileId, jobs, defaultDepth, defaultTemplate, generate);
       navigate("/");
     } catch (err) {
       setError(String(err));
@@ -188,12 +189,20 @@ export default function AddJobsScreen() {
               </select>
             </div>
           ))}
+          <label className="field-label" style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+            <input
+              type="checkbox"
+              checked={!generate}
+              onChange={(e) => setGenerate(!e.target.checked)}
+            />
+            Save without generating (no AI cost)
+          </label>
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
             disabled={submitting || profileId === undefined}
           >
-            {submitting ? "Queueing..." : "Queue applications"}
+            {submitting ? "Queueing..." : generate ? "Add and generate" : "Save for later"}
           </button>
         </div>
       )}

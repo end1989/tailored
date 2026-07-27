@@ -1,29 +1,44 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
+  addEvent,
+  deleteEvent,
   exportUrl,
+  generateApplication,
   getApplication,
   pasteJobText,
+  patchApplication,
   previewUrl,
   regenerate,
   retryApplication,
   updateContent,
 } from "../api";
+import { TERMINAL_STATUSES } from "../statuses";
 import type {
   ApplicationDetail,
-  AppStatus,
+  ApplicationEvent,
+  EventKind,
   ExportKind,
   ResumeDoc,
   SkillGroup,
+  Stage,
 } from "../types";
 
-const TERMINAL: AppStatus[] = ["ready", "error", "needs_paste"];
 const EXPORT_KINDS: ExportKind[] = [
   "resume.pdf",
   "resume.html",
   "resume.txt",
   "cover_letter.pdf",
   "cover_letter.txt",
+];
+
+const EVENT_KINDS: EventKind[] = [
+  "note", "applied", "callback", "interview", "offer", "rejection", "followup",
+];
+
+const STAGES: Stage[] = [
+  "saved", "drafted", "applied", "screening",
+  "interview", "offer", "rejected", "withdrawn",
 ];
 
 type Tab = "resume" | "cover" | "research" | "exports";
@@ -33,6 +48,127 @@ function splitCsv(value: string): string[] {
     .split(",")
     .map((s) => s.trim())
     .filter((s) => s.length > 0);
+}
+
+function Timeline({
+  applicationId,
+  events,
+  onChanged,
+  onError,
+}: {
+  applicationId: number;
+  events: ApplicationEvent[];
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [kind, setKind] = useState<EventKind>("note");
+  const [body, setBody] = useState("");
+  const [when, setWhen] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    try {
+      // `when` is a plain "YYYY-MM-DD" string from <input type="date">. Parsing
+      // it directly (`new Date(when)`) treats it as UTC midnight, which is the
+      // wrong calendar day once rendered back in local time for any negative
+      // UTC offset. Build the instant from LOCAL midnight of that day instead
+      // -- `new Date(year, month - 1, day)` interprets its components in the
+      // browser's local zone -- so it round-trips through local display
+      // correctly. `occurred_at` values created without a picked date (the
+      // default path, and API/MCP-created events) are already real wall-clock
+      // instants; both kinds are read back with plain local
+      // `toLocaleDateString()` below -- one convention for every value.
+      let occurredAt: string | undefined;
+      if (when) {
+        const [year, month, day] = when.split("-").map(Number);
+        occurredAt = new Date(year, month - 1, day).toISOString();
+      }
+      await addEvent(applicationId, {
+        kind,
+        body,
+        occurred_at: occurredAt,
+      });
+      setBody("");
+      setWhen("");
+      onChanged();
+    } catch (err) {
+      onError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-title">Timeline</div>
+      <div className="row">
+        <div className="field">
+          <label className="field-label" htmlFor="event-kind">Entry type</label>
+          <select
+            id="event-kind"
+            className="select"
+            value={kind}
+            onChange={(e) => setKind(e.target.value as EventKind)}
+          >
+            {EVENT_KINDS.map((k) => (
+              <option key={k} value={k}>{k}</option>
+            ))}
+          </select>
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="event-date">Date</label>
+          <input
+            id="event-date"
+            className="input"
+            type="date"
+            value={when}
+            onChange={(e) => setWhen(e.target.value)}
+          />
+        </div>
+      </div>
+      <div className="field">
+        <label className="field-label" htmlFor="event-body">Entry note</label>
+        <textarea
+          id="event-body"
+          className="textarea"
+          rows={2}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </div>
+      <button className="btn btn-primary" disabled={busy} onClick={submit}>
+        Add to timeline
+      </button>
+
+      <ul className="timeline">
+        {events.map((e) => (
+          <li key={e.id}>
+            <span className={`badge badge-${e.kind}`}>{e.kind}</span>{" "}
+            <span className="muted">
+              {new Date(e.occurred_at).toLocaleDateString()}
+            </span>{" "}
+            {e.body}{" "}
+            <button
+              className="btn btn-small"
+              aria-label={`Delete timeline entry ${e.id}`}
+              onClick={async () => {
+                try {
+                  await deleteEvent(applicationId, e.id);
+                  onChanged();
+                } catch (err) {
+                  onError(String(err));
+                }
+              }}
+            >
+              Remove
+            </button>
+          </li>
+        ))}
+        {events.length === 0 && <li className="muted">Nothing logged yet.</li>}
+      </ul>
+    </div>
+  );
 }
 
 export default function ApplicationScreen() {
@@ -63,7 +199,7 @@ export default function ApplicationScreen() {
         const d = await getApplication(appId);
         if (stopped) return;
         setDetail(d);
-        if (!TERMINAL.includes(d.status)) {
+        if (!TERMINAL_STATUSES.includes(d.status)) {
           timer = window.setTimeout(tick, 2000);
         } else {
           setIframeKey((k) => k + 1); // reload preview once the pipeline settles
@@ -241,6 +377,19 @@ export default function ApplicationScreen() {
     }
   }
 
+  async function handleGenerate() {
+    setBusy(true);
+    setError(null);
+    try {
+      await generateApplication(appId);
+      setPollNonce((n) => n + 1);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handlePaste() {
     if (pasteText.trim() === "") return;
     setBusy(true);
@@ -256,6 +405,10 @@ export default function ApplicationScreen() {
     }
   }
 
+  function reload() {
+    setPollNonce((n) => n + 1);
+  }
+
   if (!detail) {
     return (
       <div>
@@ -265,7 +418,7 @@ export default function ApplicationScreen() {
     );
   }
 
-  const working = !TERMINAL.includes(detail.status);
+  const working = !TERMINAL_STATUSES.includes(detail.status);
 
   return (
     <div>
@@ -279,6 +432,31 @@ export default function ApplicationScreen() {
         </span>
         {working && <span className="spinner" style={{ marginLeft: "0.5rem" }} />}
       </p>
+
+      <div className="field" style={{ maxWidth: "14rem" }}>
+        <label className="field-label" htmlFor="app-stage">Stage</label>
+        <select
+          id="app-stage"
+          className="select"
+          value={detail.stage}
+          onChange={async (e) => {
+            const stage = e.target.value as Stage;
+            setError(null);
+            try {
+              const d = await patchApplication(detail.id, { stage });
+              setDetail(d);
+            } catch (err) {
+              setError(String(err));
+            }
+          }}
+        >
+          {STAGES.map((s) => (
+            <option key={s} value={s} disabled={s === "saved" && detail.status === "ready"}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
@@ -296,7 +474,17 @@ export default function ApplicationScreen() {
         </div>
       )}
 
-      {detail.status === "needs_paste" ? (
+      {detail.status === "not_started" ? (
+        <div className="card">
+          <h2>Generate this application</h2>
+          <p className="muted">
+            This job hasn't been generated yet. Click Generate to run the tailoring pipeline.
+          </p>
+          <button className="btn btn-primary" onClick={handleGenerate} disabled={busy}>
+            {busy ? "Starting..." : "Generate"}
+          </button>
+        </div>
+      ) : detail.status === "needs_paste" ? (
         <div className="card">
           <h2>Paste the job posting</h2>
           <p className="muted">
@@ -632,6 +820,13 @@ export default function ApplicationScreen() {
           )}
         </>
       )}
+
+      <Timeline
+        applicationId={detail.id}
+        events={detail.events}
+        onChanged={reload}
+        onError={setError}
+      />
     </div>
   );
 }
