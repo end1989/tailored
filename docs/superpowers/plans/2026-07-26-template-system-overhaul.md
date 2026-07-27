@@ -4125,9 +4125,21 @@ it("offers every registered template in the switcher", async () => {
   expect(within(select).getByRole("option", { name: "Ledger" })).toBeInTheDocument();
 });
 
+it("selects the application's own template, not just the first registered one", async () => {
+  vi.mocked(api.listTemplates).mockResolvedValue([
+    { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+    { name: "slate", label: "Slate", description: "d", best_for: "b" },
+  ]);
+  renderScreen();
+  const select = (await screen.findByLabelText(/template/i)) as HTMLSelectElement;
+  await screen.findByRole("option", { name: "Slate" });
+  expect(select.value).toBe("slate");
+});
+
 it("switches template and shows the new one", async () => {
   vi.mocked(api.listTemplates).mockResolvedValue([
     { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+    { name: "slate", label: "Slate", description: "d", best_for: "b" },
     { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
   ]);
   vi.mocked(api.setApplicationTemplate).mockResolvedValue({
@@ -4136,12 +4148,14 @@ it("switches template and shows the new one", async () => {
     template: "ledger",
   });
   renderScreen();
-  const select = await screen.findByLabelText(/template/i);
+  const select = (await screen.findByLabelText(/template/i)) as HTMLSelectElement;
+  await screen.findByRole("option", { name: "Ledger" });
+  expect(select.value).toBe("slate");
   fireEvent.change(select, { target: { value: "ledger" } });
   await waitFor(() =>
     expect(api.setApplicationTemplate).toHaveBeenCalledWith(base.id, "ledger"),
   );
-  await waitFor(() => expect((select as HTMLSelectElement).value).toBe("ledger"));
+  await waitFor(() => expect(select.value).toBe("ledger"));
 });
 
 it("surfaces a failed template switch instead of silently reverting", async () => {
@@ -4158,6 +4172,13 @@ it("surfaces a failed template switch instead of silently reverting", async () =
 ```
 
 Use the file's existing `renderScreen()` helper, which already seeds `getApplication`. The `switches template` test asserts the call arguments rather than a mock call count, because Vitest is configured without `resetMocks` and counts accumulate across tests in a file.
+
+**Two traps in these tests, both about the fixture's template.** `base.template` is `"slate"`, so:
+
+1. **Seed `slate` into the mocked registry.** When a controlled `<select>`'s `value` matches no option, React does not render a blank select — it falls back to selecting the first non-disabled option. If the registry mock omits `slate`, a correct `value={detail.template}` and a `<select>` with no `value` prop at all *both* display "Meridian", and every assertion about the switcher passes either way. Deleting `value={detail.template}` from the component must turn these tests red; if it does not, they are not testing the binding. Seeding `slate` second in the list is what makes the two cases distinguishable (`"slate"` vs `"meridian"`).
+2. **Assert the pre-change value, not only the post-change one.** Checking only the value after `fireEvent.change` cannot tell a select bound to `detail.template` from one that ignores it.
+
+Also `await screen.findByRole("option", ...)` before `fireEvent.change`. The `<select>` renders as soon as `detail` arrives, but its options come from a separate `listTemplates()` promise, so resolving the select does not imply the options exist. Firing `change` for an option that is not in the DOM yet leaves `e.target.value === ""` and sends that empty string to the API. With both mocks resolving immediately the effect order happens to make this safe today, but that is a coincidence of the two `useEffect`s' declaration order, not a guarantee — waiting for the option removes the coupling.
 
 - [ ] **Step 2: Run and confirm they fail**
 
