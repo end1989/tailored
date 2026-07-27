@@ -40,6 +40,9 @@
 | `tests/test_pdf_extraction.py` | The marquee guard: every template's PDF extracts employers, titles and dates in document order, and in role-employer-dates order within each entry. |
 | `tests/test_json_ld.py` | JSON-LD validity, `@type` correctness, script-injection safety. |
 | `tests/test_template_switch.py` | The `PATCH /applications/{id}/template` endpoint and its MCP twin. |
+| `frontend/scripts/stamp-build.mjs` | Run by `npm run build` after Vite: hashes every file the bundle was built from into `frontend/dist/build-inputs.sha256`. |
+| `frontend/dist/build-inputs.sha256` | Committed build-input manifest. What makes bundle staleness detectable. |
+| `tests/test_frontend_bundle.py` | Recomputes that manifest and fails when `frontend/src` has moved on without a rebuild. |
 
 **Modified**
 
@@ -56,6 +59,7 @@
 | `frontend/src/api.ts` | `setApplicationTemplate`. |
 | `frontend/src/screens/{AddJobsScreen,SettingsScreen,ApplicationScreen}.tsx` | Read the registry; add the switcher. |
 | `frontend/dist/` | Rebuilt bundle. |
+| `frontend/package.json` | `build` script gains the stamping step. |
 | `README.md`, `docs/EXTENDING.md` | Eight templates, how to add a ninth. |
 
 **Dependency order.** Tasks 1-7 are strictly sequential; each builds on the previous one's changes to `render.py`.
@@ -4269,21 +4273,52 @@ git commit -m "feat: switch an application's template from the application scree
 ### Task 14: Bundle, docs, and end-to-end verification
 
 **Files:**
-- Modify: `frontend/dist/` (rebuilt)
+- Create: `frontend/scripts/stamp-build.mjs`, `frontend/dist/build-inputs.sha256`, `tests/test_frontend_bundle.py`
+- Modify: `frontend/dist/` (rebuilt), `frontend/package.json`
 - Modify: `README.md:14,28,31,233`
 - Modify: `docs/EXTENDING.md:21`
 
-- [ ] **Step 1: Rebuild the committed bundle**
+- [ ] **Step 1: Make bundle staleness a test failure**
+
+The first draft of this task said only "rebuild the bundle" and left correctness
+to a human remembering. That is not a control, and it failed four times on this
+branch before anyone noticed: commits 61f01c9, 8509609, 4642276 and d956901 each
+changed `frontend/src` while `frontend/dist` stayed at the pre-registry build.
+`backend/app/main.py:18` serves that directory, so every one of those commits
+shipped a UI offering four templates and no switcher, with the full suite green.
+Nothing in either suite reads the built asset: pytest exercises the backend,
+vitest imports `frontend/src`.
+
+Write `frontend/scripts/stamp-build.mjs`: hash every file the bundle is built
+from (`src/**` minus `*.test.*` and `test-setup.ts`, plus `index.html`,
+`vite.config.ts`, `tsconfig.json`, `package.json`, `package-lock.json`) into
+`frontend/dist/build-inputs.sha256` as `sha256␠␠path` lines. Normalize CRLF to
+LF before hashing: `core.autocrlf` is true and `.gitattributes` says nothing
+about `.ts`/`.tsx`, so raw-byte hashes differ between a Windows and a Linux
+checkout of the same commit. Chain it onto the build:
+`"build": "tsc && vite build && node scripts/stamp-build.mjs"`.
+
+Then write `tests/test_frontend_bundle.py`, which recomputes the same manifest
+and diffs the whole path set, so a file one side collects and the other does not
+surfaces as a named entry rather than silently weakening the hash. Prove it by
+mutation: append a comment to a `frontend/src` file, confirm the test fails
+naming that file, revert.
+
+Residual gap to state rather than paper over: rebuilding and then committing
+without `git add frontend/dist` still passes, because the test reads the working
+tree. It leaves `git status` dirty, which is that one's signal.
+
+- [ ] **Step 2: Rebuild the committed bundle**
 
 The dist bundle is committed and currently contains the four hardcoded template names.
 
 Run: `cd frontend && npm run build`
-Expected: a successful build. The asset filenames change, which is expected.
+Expected: a successful build, ending in `stamp-build: recorded N build inputs`. The asset filenames change, which is expected.
 
 Run: `grep -c "meridian" frontend/dist/assets/*.js || echo "no hardcoded names in the bundle"`
 Expected: `no hardcoded names in the bundle`, or a count that reflects only `"slate"` appearing as a default value.
 
-- [ ] **Step 2: Update the README**
+- [ ] **Step 3: Update the README**
 
 Replace every reference to four templates with eight, and replace the template list with all eight names, labels and `best_for` values from the manifests. Lines 14, 28, 31 and 233 are the known sites; search for "four" and "Meridian" to catch any others.
 
@@ -4296,7 +4331,7 @@ existing application to a different template from its page at any time: it
 re-renders the resume you already have, with no model call and no cost.
 ```
 
-- [ ] **Step 3: Update docs/EXTENDING.md**
+- [ ] **Step 4: Update docs/EXTENDING.md**
 
 Replace the "adding a template" instructions at line 21 with the three-file recipe:
 
@@ -4334,7 +4369,7 @@ If your template needs a typeface that is not already vendored, add it to
 font entries into your manifest. The font must be SIL Open Font License.
 ```
 
-- [ ] **Step 4: Run everything**
+- [ ] **Step 5: Run everything**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/ -q`
 Expected: 0 failures.
@@ -4342,12 +4377,12 @@ Expected: 0 failures.
 Run: `cd frontend && npx vitest run && npx tsc --noEmit`
 Expected: 0 failures, no type errors.
 
-- [ ] **Step 5: Verify the repo size did not blow up**
+- [ ] **Step 6: Verify the repo size did not blow up**
 
 Run: `./.venv/Scripts/python.exe -c "from pathlib import Path; print(round(sum(p.stat().st_size for p in Path('backend/templates/fonts').glob('*.woff2'))/1024), 'KB of fonts')"`
 Expected: between 300 and 600.
 
-- [ ] **Step 6: Manual end-to-end check**
+- [ ] **Step 7: Manual end-to-end check**
 
 Start the app. Then, by hand:
 
@@ -4359,10 +4394,10 @@ Start the app. Then, by hand:
 
 Report anything that does not match, with a screenshot if it is visual.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add frontend/dist README.md docs/EXTENDING.md
+git add frontend/dist frontend/scripts frontend/package.json tests/test_frontend_bundle.py README.md docs/EXTENDING.md
 git commit -m "docs: eight templates, and rebuild the bundle"
 ```
 
@@ -4382,6 +4417,7 @@ git commit -m "docs: eight templates, and rebuild the bundle"
 | §4.2 frontend reads the registry | 12 |
 | §4.2 `TemplateName` becomes `string` | 12 |
 | §4.2 dist rebuilt | 14 |
+| dist staleness is a test failure, not a memory exercise | 14 |
 | §4.3 `base.css` type scale, measure, pagination hoist, hanging indents, `orphans`/`widows` on `li`, print links | 5 |
 | §4.4 fonts vendored, base64-inlined, `lru_cache`, LICENSES.md | 3, 4 |
 | §4.5 all eight templates | 8, 9, 10 |

@@ -222,11 +222,17 @@ npm run dev        # Vite dev server; proxies /api to http://127.0.0.1:8547
 
 Run the backend (`python run.py`) alongside `npm run dev`. **Before committing UI
 changes, rebuild the bundle** — `frontend/dist/` is committed so end users don't
-need Node:
+need Node, which makes it the UI people actually run:
 
 ```
 npm run build
 ```
+
+This is enforced, not left to memory. The build records a hash of every file it
+was built from into `frontend/dist/build-inputs.sha256`, and
+`tests/test_frontend_bundle.py` recomputes it: editing `frontend/src` without
+rebuilding fails the Python suite, naming the files that moved on. Commit
+`frontend/dist` along with your source change.
 
 ### Tests
 
