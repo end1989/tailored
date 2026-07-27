@@ -283,12 +283,44 @@ def render_ats_text(resume: ResumeDoc) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _dated_role(role_type: str, item, **linked: dict) -> dict:
+    """One schema.org Role wrapping `linked`, qualified by the item's dates.
+
+    `linked` is the single repeated property, e.g. `worksFor={...Organization}`
+    for an OrganizationRole. `endDate` is omitted when the item has no end date,
+    which is how schema.org expresses an ongoing role - emitting a placeholder
+    such as "Present" would be a string where a Date is expected.
+
+    Dates are passed through verbatim. The resume schema types them as free text
+    and the tailoring contract requires them to be copied from the master
+    profile unchanged, so this is deliberately not the place that reformats or
+    validates them.
+    """
+    role: dict = {"@type": role_type, "roleName": item.role, "startDate": item.start}
+    if item.end:
+        role["endDate"] = item.end
+    role.update(linked)
+    return role
+
+
 def resume_json_ld(resume: ResumeDoc) -> dict:
     """A schema.org Person describing this resume.
 
     Additive machine readability for the HTML export. Keys with no value are
     omitted rather than emitted empty, because an empty schema.org property is
     worse than an absent one: it asserts the absence of a fact.
+
+    Employment history goes through the schema.org **Role pattern**: the Role is
+    inserted between the Person and the value, and the property is repeated on
+    the Role, which carries `startDate`/`endDate`. schema.org requires this -
+    `worksFor` is defined as "Organizations that the person works for", present
+    tense, and `hasOccupation` says outright "For past professions, use Role for
+    expressing dates". A bare `{"@type": "Organization", "name": ...}` per
+    employer would assert that every job on the resume is held right now, and
+    that is the false fact the paragraph above forbids. The Role also carries
+    `roleName`, which is what lets a consumer join an occupation to the employer
+    it was held at - as parallel undated arrays, the graph could not say who did
+    what, where, or when.
     """
     contact = resume.contact
     data: dict = {
@@ -329,8 +361,16 @@ def resume_json_ld(resume: ResumeDoc) -> dict:
                         "@type": "Place",
                         "name": item.location,
                     }
-                occupations.append(occupation)
-                organizations.append({"@type": "Organization", "name": item.company})
+                occupations.append(
+                    _dated_role("Role", item, hasOccupation=occupation)
+                )
+                organizations.append(
+                    _dated_role(
+                        "OrganizationRole",
+                        item,
+                        worksFor={"@type": "Organization", "name": item.company},
+                    )
+                )
         elif section.type == "education":
             for item in section.items:
                 alumni.append(

@@ -1727,6 +1727,8 @@ git commit -m "feat: base.css owns the type scale, measure and pagination"
 
 **Why `<` is escaped rather than just `</`.** Emitting JSON inside a `<script>` element is the one place autoescaping is bypassed. Escaping only `</` still leaves `<!--`, which legally opens a comment inside a script element and can swallow the rest of the document. Replacing every `<` with the JSON escape `<` is exhaustive, costs nothing, and stays valid JSON.
 
+**Why employment history goes through the schema.org Role pattern.** schema.org defines `worksFor` as "Organizations that the person works for" - present tense - and the definition of `hasOccupation` says outright: *"For past professions, use Role for expressing dates."* Emitting a bare `{"@type": "Organization", "name": ...}` per experience item therefore tells Google Rich Results, an ATS, or an LLM parser that the candidate holds every job on the resume simultaneously, right now. It also leaves the role, the employer and the dates in parallel unlinked arrays, so the machine-readable block cannot answer who did what, where, or when - the exact facts Task 1's PDF guard exists to protect. Both properties therefore wrap their value in a Role that repeats the property and carries `roleName`, `startDate`, and `endDate` only when the job actually ended. That is schema.org's own documented pattern, per the `alumniOf`/`OrganizationRole` example on schema.org/Role.
+
 - [ ] **Step 1: Write the failing tests**
 
 Create `tests/test_json_ld.py`:
@@ -1765,6 +1767,15 @@ def _embedded(html: str) -> dict:
     return json.loads(match.group(1))
 
 
+def _items(resume: ResumeDoc, section_type: str) -> list:
+    return [
+        item
+        for section in resume.sections
+        if section.type == section_type
+        for item in section.items
+    ]
+
+
 def test_json_ld_describes_a_person():
     data = resume_json_ld(_resume())
     assert data["@context"] == "https://schema.org"
@@ -1782,24 +1793,111 @@ def test_json_ld_carries_contact_details():
 
 def test_json_ld_maps_experience_to_occupation_and_organization():
     resume = _resume()
+    items = _items(resume, "experience")
+    assert items, "the fixture has no experience items; this test would assert nothing"
     data = resume_json_ld(resume)
-    roles = [item.role for s in resume.sections if s.type == "experience" for item in s.items]
-    companies = [
-        item.company for s in resume.sections if s.type == "experience" for item in s.items
+
+    # Both properties go through the schema.org Role pattern: the property is
+    # repeated on the Role, which carries the dates. See the docstring of
+    # test_json_ld_dates_every_role_and_only_ends_the_ones_that_ended.
+    assert [o["@type"] for o in data["hasOccupation"]] == ["Role"] * len(items)
+    assert [o["hasOccupation"]["@type"] for o in data["hasOccupation"]] == [
+        "Occupation"
+    ] * len(items)
+    assert [o["hasOccupation"]["name"] for o in data["hasOccupation"]] == [
+        item.role for item in items
     ]
-    assert [o["@type"] for o in data["hasOccupation"]] == ["Occupation"] * len(roles)
-    assert [o["name"] for o in data["hasOccupation"]] == roles
-    assert [o["@type"] for o in data["worksFor"]] == ["Organization"] * len(companies)
-    assert [o["name"] for o in data["worksFor"]] == companies
+
+    assert [o["@type"] for o in data["worksFor"]] == ["OrganizationRole"] * len(items)
+    assert [o["worksFor"]["@type"] for o in data["worksFor"]] == ["Organization"] * len(
+        items
+    )
+    assert [o["worksFor"]["name"] for o in data["worksFor"]] == [
+        item.company for item in items
+    ]
+
+    for item, entry in zip(items, data["hasOccupation"], strict=True):
+        if item.location:
+            assert entry["hasOccupation"]["occupationLocation"] == {
+                "@type": "Place",
+                "name": item.location,
+            }
+        else:
+            assert "occupationLocation" not in entry["hasOccupation"]
+
+
+def test_json_ld_dates_every_role_and_only_ends_the_ones_that_ended():
+    """A past employer must not be asserted as a present one.
+
+    schema.org defines worksFor as "Organizations that the person works for",
+    and hasOccupation's definition says outright: "For past professions, use
+    Role for expressing dates." Emitting a bare Organization per employer told
+    every consumer - Google Rich Results, an ATS, an LLM parser - that the
+    candidate holds all of those jobs simultaneously, right now. It also left
+    the role, the employer and the dates in three places with nothing joining
+    them, so the machine-readable block could not answer "who did what, when"
+    at all.
+
+    Each entry now carries roleName and startDate, and endDate only when the
+    job actually ended, which is also what makes the two arrays joinable.
+    """
+    resume = _resume()
+    items = _items(resume, "experience")
+    assert any(item.end for item in items) and any(item.end is None for item in items), (
+        "the fixture needs one ended role and one ongoing role, or this test "
+        "cannot tell a date-qualified graph from an undated one"
+    )
+    data = resume_json_ld(resume)
+    for item, occupation, employer in zip(
+        items, data["hasOccupation"], data["worksFor"], strict=True
+    ):
+        for entry in (occupation, employer):
+            assert entry["roleName"] == item.role
+            assert entry["startDate"] == item.start
+            if item.end:
+                assert entry["endDate"] == item.end
+            else:
+                assert "endDate" not in entry
 
 
 def test_json_ld_maps_education_and_certifications():
+    """Non-vacuous by construction: it indexes the keys rather than .get()ing them.
+
+    An earlier version iterated `data.get("alumniOf", [])` and asserted only on
+    whatever entries it found, so deleting the entire education branch from
+    resume_json_ld left the whole suite green while every HTML export silently
+    lost its education structured data.
+    """
     resume = _resume()
+    education = _items(resume, "education")
+    certifications = _items(resume, "certifications")
+    assert education and certifications, (
+        "the fixture must carry both an education and a certification item, or "
+        "this test asserts nothing"
+    )
     data = resume_json_ld(resume)
-    for entry in data.get("alumniOf", []):
-        assert entry["@type"] == "EducationalOrganization"
-    for entry in data.get("hasCredential", []):
+
+    assert [e["@type"] for e in data["alumniOf"]] == ["EducationalOrganization"] * len(
+        education
+    )
+    assert [e["name"] for e in data["alumniOf"]] == [i.institution for i in education]
+
+    expected_credentials = [
+        (i.credential, i.institution, "EducationalOrganization") for i in education
+    ] + [(i.name, i.issuer, "Organization") for i in certifications]
+    assert len(data["hasCredential"]) == len(expected_credentials)
+    for entry, (name, recognizer, recognizer_type) in zip(
+        data["hasCredential"], expected_credentials, strict=True
+    ):
         assert entry["@type"] == "EducationalOccupationalCredential"
+        assert entry["name"] == name
+        if recognizer:
+            assert entry["recognizedBy"] == {
+                "@type": recognizer_type,
+                "name": recognizer,
+            }
+        else:
+            assert "recognizedBy" not in entry
 
 
 def test_json_ld_lists_skills_under_knows_about():
@@ -1808,8 +1906,8 @@ def test_json_ld_lists_skills_under_knows_about():
     expected = [
         item for s in resume.sections if s.type == "skills" for g in s.groups for item in g.items
     ]
-    if expected:
-        assert data["knowsAbout"] == expected
+    assert expected, "the fixture has no skills; this test would assert nothing"
+    assert data["knowsAbout"] == expected
 
 
 def test_json_ld_omits_keys_with_no_value():
@@ -1871,12 +1969,44 @@ Expected: `ImportError: cannot import name 'resume_json_ld'`.
 Add to `backend/app/services/render.py`, after `render_ats_text`:
 
 ```python
+def _dated_role(role_type: str, item, **linked: dict) -> dict:
+    """One schema.org Role wrapping `linked`, qualified by the item's dates.
+
+    `linked` is the single repeated property, e.g. `worksFor={...Organization}`
+    for an OrganizationRole. `endDate` is omitted when the item has no end date,
+    which is how schema.org expresses an ongoing role - emitting a placeholder
+    such as "Present" would be a string where a Date is expected.
+
+    Dates are passed through verbatim. The resume schema types them as free text
+    and the tailoring contract requires them to be copied from the master
+    profile unchanged, so this is deliberately not the place that reformats or
+    validates them.
+    """
+    role: dict = {"@type": role_type, "roleName": item.role, "startDate": item.start}
+    if item.end:
+        role["endDate"] = item.end
+    role.update(linked)
+    return role
+
+
 def resume_json_ld(resume: ResumeDoc) -> dict:
     """A schema.org Person describing this resume.
 
     Additive machine readability for the HTML export. Keys with no value are
     omitted rather than emitted empty, because an empty schema.org property is
     worse than an absent one: it asserts the absence of a fact.
+
+    Employment history goes through the schema.org **Role pattern**: the Role is
+    inserted between the Person and the value, and the property is repeated on
+    the Role, which carries `startDate`/`endDate`. schema.org requires this -
+    `worksFor` is defined as "Organizations that the person works for", present
+    tense, and `hasOccupation` says outright "For past professions, use Role for
+    expressing dates". A bare `{"@type": "Organization", "name": ...}` per
+    employer would assert that every job on the resume is held right now, and
+    that is the false fact the paragraph above forbids. The Role also carries
+    `roleName`, which is what lets a consumer join an occupation to the employer
+    it was held at - as parallel undated arrays, the graph could not say who did
+    what, where, or when.
     """
     contact = resume.contact
     data: dict = {
@@ -1917,8 +2047,16 @@ def resume_json_ld(resume: ResumeDoc) -> dict:
                         "@type": "Place",
                         "name": item.location,
                     }
-                occupations.append(occupation)
-                organizations.append({"@type": "Organization", "name": item.company})
+                occupations.append(
+                    _dated_role("Role", item, hasOccupation=occupation)
+                )
+                organizations.append(
+                    _dated_role(
+                        "OrganizationRole",
+                        item,
+                        worksFor={"@type": "Organization", "name": item.company},
+                    )
+                )
         elif section.type == "education":
             for item in section.items:
                 alumni.append(
@@ -2011,7 +2149,7 @@ In each of `backend/templates/{meridian,slate,terminal,signal}/template.html`, i
 - [ ] **Step 6: Run the tests**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_json_ld.py -q`
-Expected: 13 passed.
+Expected: 14 passed.
 
 - [ ] **Step 7: Full suite**
 
