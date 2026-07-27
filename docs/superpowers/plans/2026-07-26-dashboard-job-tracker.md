@@ -1998,6 +1998,10 @@ git commit -m "feat: rebuild the dashboard as a job tracker table"
 
 Append to `frontend/src/screens/ApplicationScreen.test.tsx`:
 
+Use `fireEvent`, not `userEvent` — `@testing-library/user-event` is **not** a
+dependency of this project and adding it would violate the no-new-dependencies
+constraint. `fireEvent` is what the rest of the suite already uses.
+
 ```tsx
 it("logs a timeline entry", async () => {
   vi.mocked(api.addEvent).mockResolvedValue({
@@ -2007,20 +2011,40 @@ it("logs a timeline entry", async () => {
   });
   renderScreen();
 
-  await userEvent.selectOptions(await screen.findByLabelText(/entry type/i), "callback");
-  await userEvent.type(screen.getByLabelText(/entry note/i), "Recruiter called");
-  await userEvent.click(screen.getByRole("button", { name: /add to timeline/i }));
+  fireEvent.change(await screen.findByLabelText(/entry type/i), {
+    target: { value: "callback" },
+  });
+  fireEvent.change(screen.getByLabelText(/entry note/i), {
+    target: { value: "Recruiter called" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /add to timeline/i }));
 
-  expect(api.addEvent).toHaveBeenCalledWith(
-    1,
-    expect.objectContaining({ kind: "callback", body: "Recruiter called" })
+  await waitFor(() =>
+    expect(api.addEvent).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ kind: "callback", body: "Recruiter called" })
+    )
   );
 });
 
 it("changes stage from the application screen", async () => {
   renderScreen();
-  await userEvent.selectOptions(await screen.findByLabelText(/stage/i), "offer");
-  expect(api.patchApplication).toHaveBeenCalledWith(1, { stage: "offer" });
+
+  fireEvent.change(await screen.findByLabelText(/^stage$/i), {
+    target: { value: "offer" },
+  });
+
+  await waitFor(() =>
+    expect(api.patchApplication).toHaveBeenCalledWith(1, { stage: "offer" })
+  );
+});
+
+it("renders the application's cost", async () => {
+  // The dashboard redesign removed the Cost column, taking with it the only
+  // assertion in the suite that a cost value reaches the DOM. This restores it
+  // on the screen that still displays cost.
+  renderScreen();
+  expect(await screen.findByText(/0\.4321/)).toBeInTheDocument();
 });
 ```
 
