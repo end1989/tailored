@@ -6,6 +6,9 @@ import CopyButton from "./CopyButton";
 const AGENT_PROMPT =
   "Read Tailored's workflow guide (the get_workflow_guide tool), then tailor my profile for <job url>.";
 
+const BATCH_PROMPT =
+  "Read Tailored's workflow guide (the get_workflow_guide tool), then queue these jobs for my profile and work through them one at a time:\n<paste your job URLs, one per line>";
+
 const MANUAL_COMMAND =
   'claude mcp add tailored -- "<path to your Python>" "<path to>/backend/mcp_server.py"';
 
@@ -47,6 +50,17 @@ export default function McpSetup() {
         <label className="field-label">2. Ask your agent</label>
         <pre className="code-block mono">{AGENT_PROMPT}</pre>
         <CopyButton text={AGENT_PROMPT} label="Copy prompt" />
+      </div>
+      <div className="field">
+        <label className="field-label">Or hand it a whole list</label>
+        <pre className="code-block mono">{BATCH_PROMPT}</pre>
+        <CopyButton text={BATCH_PROMPT} label="Copy batch prompt" />
+        <p className="muted">
+          Queueing is free and instant: every URL appears on your dashboard as a
+          saved job right away, and the agent works through them one at a time. The
+          queue lives in the database, so if the agent restarts it resumes where it
+          stopped instead of starting over.
+        </p>
       </div>
     </div>
   );
