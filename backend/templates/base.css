@@ -1,8 +1,17 @@
 /* ============================================================
-   base.css — shared structural system for ALL resume templates.
-   Templates layer visual identity (fonts, color, rules) in their
-   own style.css; this file owns reset, page setup, spacing scale,
-   section grammar, and print/pagination behavior.
+   base.css — the shared structural and typographic system for
+   ALL resume templates.
+
+   The contract: base.css owns structure — reset, page setup,
+   the type scale, vertical rhythm, measure, section grammar and
+   pagination. A template's style.css owns identity — which
+   typeface, which weights, which rules, which colour — and
+   changes structure only by overriding the custom properties
+   declared here with different VALUES.
+
+   A style.css that declares break-inside, column-count or an
+   absolute position is a bug, and tests/test_base_css_contract.py
+   fails the build for it.
    ============================================================ */
 
 /* --- Reset --- */
@@ -12,6 +21,42 @@
   margin: 0;
   padding: 0;
   box-sizing: border-box;
+}
+
+/* --- The system --- */
+:root {
+  /* Type scale. Templates override the values, never the names. */
+  --fs-name: 20pt;
+  --fs-headline: 10.5pt;
+  --fs-section: 10pt;
+  --fs-body: 10pt;
+  --fs-meta: 9pt;
+
+  /* Vertical rhythm */
+  --leading: 1.4;
+
+  /* Maximum line length for prose. Around 65 to 75 characters reads best;
+     a template that wants full-bleed text sets this to 100%. */
+  --measure: 34em;
+
+  /* Rules */
+  --rule-weight: 0.5pt;
+  --rule-color: #8a8a8a;
+
+  /* Ink */
+  --ink: #161616;
+  --ink-soft: #3a3a3a;
+  --ink-faint: #555555;
+
+  /* Pagination. "avoid" keeps an entry whole; a template with lists longer
+     than a page (an academic CV) sets "auto". */
+  --item-break: avoid;
+
+  /* Spacing scale */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.85rem;
+  --space-4: 1.4rem;
 }
 
 /* --- Page setup --- */
@@ -25,9 +70,12 @@ html {
 }
 
 body {
-  line-height: 1.35;
-  color: #111111;
+  font-size: var(--fs-body);
+  line-height: var(--leading);
+  color: var(--ink);
   background: #ffffff;
+  /* Tabular figures keep date columns aligned in every family that has them. */
+  font-variant-numeric: tabular-nums;
 }
 
 a {
@@ -39,14 +87,6 @@ img {
   max-width: 100%;
 }
 
-/* --- Spacing scale --- */
-:root {
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.85rem;
-  --space-4: 1.4rem;
-}
-
 /* --- Section grammar --- */
 .resume-header {
   margin-bottom: var(--space-4);
@@ -56,7 +96,12 @@ img {
   margin-bottom: var(--space-4);
 }
 
+.section:last-child {
+  margin-bottom: 0;
+}
+
 .section-title {
+  font-size: var(--fs-section);
   margin-bottom: var(--space-2);
   break-after: avoid;
   page-break-after: avoid;
@@ -64,8 +109,8 @@ img {
 
 .item {
   margin-bottom: var(--space-3);
-  break-inside: avoid;
-  page-break-inside: avoid;
+  break-inside: var(--item-break);
+  page-break-inside: var(--item-break);
 }
 
 .item:last-child {
@@ -76,16 +121,42 @@ img {
   margin-bottom: var(--space-1);
 }
 
+.name {
+  font-size: var(--fs-name);
+}
+
+.headline {
+  font-size: var(--fs-headline);
+}
+
+.contact-line,
+.meta {
+  font-size: var(--fs-meta);
+}
+
+/* --- Measure: prose is capped, tables of facts are not --- */
+.summary,
+.detail {
+  max-width: var(--measure);
+}
+
 .bullets {
+  max-width: var(--measure);
   margin-left: 1.1em;
   list-style: disc outside;
 }
 
 .bullets li {
   margin-bottom: var(--space-1);
+  /* Hanging indent: a wrapped line aligns to the text, not under the marker. */
+  padding-left: 0.15em;
 }
 
-/* --- Widow/orphan control --- */
+.bullets li::marker {
+  font-size: 0.9em;
+}
+
+/* --- Widow and orphan control --- */
 h1,
 h2,
 h3 {
@@ -93,7 +164,8 @@ h3 {
   page-break-after: avoid;
 }
 
-p {
+p,
+li {
   orphans: 2;
   widows: 2;
 }
@@ -103,5 +175,11 @@ p {
   body {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
+  }
+
+  /* Links are already plain text in the contact line and project metadata;
+     never append href in parentheses, which corrupts ATS extraction. */
+  a::after {
+    content: none;
   }
 }

@@ -50,11 +50,6 @@ body {
   color: #2d3748;
 }
 
-.item {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
 .item-head {
   display: flex;
   flex-wrap: wrap;

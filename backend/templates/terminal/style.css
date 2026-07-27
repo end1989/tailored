@@ -50,11 +50,6 @@ body {
   padding-left: var(--space-2);
 }
 
-.item {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
 .item-head {
   display: flex;
   flex-wrap: wrap;

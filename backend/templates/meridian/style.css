@@ -54,11 +54,6 @@ body {
   padding-bottom: 2px;
 }
 
-.item {
-  break-inside: avoid;
-  page-break-inside: avoid;
-}
-
 .item-head {
   display: flex;
   flex-wrap: wrap;
