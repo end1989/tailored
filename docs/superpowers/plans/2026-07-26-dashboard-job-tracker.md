@@ -2272,6 +2272,120 @@ git commit -m "chore: rebuild frontend bundle and document the job tracker"
 
 ---
 
+### Task 11: Wire saved-job creation into the Add Jobs screen
+
+Added during execution. Task 10's end-to-end verification found that the
+`generate` flag is unreachable from the UI: `api.ts::createApplications` has no
+`generate` parameter and `AddJobsScreen.tsx` never sends one, so a user cannot
+create a saved job — only a direct API or MCP caller can. Task 6 built the
+backend flag and Task 8 built the *consuming* UI (the Generate button on saved
+rows), but no task built the *producing* UI. Spec §5 promises the capability and
+the README bullet added in Task 10 advertises it, so without this the feature is
+both undelivered and misdocumented.
+
+**Files:**
+- Modify: `frontend/src/api.ts` (`createApplications`)
+- Modify: `frontend/src/screens/AddJobsScreen.tsx`
+- Test: `frontend/src/screens/AddJobsScreen.test.tsx`
+
+**Interfaces:**
+- Consumes: `POST /api/applications/batch` with `generate: bool` (Task 6)
+- Produces: `createApplications(profileId, jobs, defaultDepth?, defaultTemplate?, generate?)`
+
+- [ ] **Step 1: Write the failing tests**
+
+```tsx
+it("sends generate:false when saving without generating", async () => {
+  renderScreen();
+  fireEvent.change(screen.getByLabelText(/job urls/i), {
+    target: { value: "https://example.com/a\nhttps://example.com/b" },
+  });
+  fireEvent.click(screen.getByLabelText(/save without generating/i));
+  fireEvent.click(screen.getByRole("button", { name: /add/i }));
+
+  await waitFor(() =>
+    expect(api.createApplications).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.any(Array),
+      expect.any(String),
+      expect.any(String),
+      false
+    )
+  );
+});
+
+it("generates immediately by default", async () => {
+  renderScreen();
+  fireEvent.change(screen.getByLabelText(/job urls/i), {
+    target: { value: "https://example.com/a" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: /add/i }));
+
+  await waitFor(() => {
+    const call = vi.mocked(api.createApplications).mock.calls.at(-1);
+    expect(call?.[4]).toBe(true);
+  });
+});
+```
+
+Adapt the label queries to the screen's actual markup — read it first. Use
+`fireEvent`, never `userEvent` (not a dependency).
+
+- [ ] **Step 2: Run the tests and confirm they fail**
+
+Run (from `frontend/`): `npm test -- --run AddJobsScreen`
+Expected: FAIL — no such checkbox, and `createApplications` takes four arguments.
+
+- [ ] **Step 3: Add the parameter to the client**
+
+```ts
+export function createApplications(
+  profileId: number,
+  jobs: JobRequest[],
+  defaultDepth?: Depth,
+  defaultTemplate?: TemplateName,
+  generate: boolean = true
+): Promise<ApplicationDetail[]> {
+  return request<ApplicationDetail[]>(
+    "/applications/batch",
+    jsonInit("POST", {
+      profile_id: profileId,
+      jobs,
+      default_depth: defaultDepth,
+      default_template: defaultTemplate,
+      generate,
+    })
+  );
+}
+```
+
+`generate` defaults to `true`, matching the backend default, so any other
+caller keeps its current behaviour.
+
+- [ ] **Step 4: Add the control to the Add Jobs screen**
+
+Add a `generate` boolean state defaulting to `true`, a labelled checkbox
+reading **"Save without generating (no AI cost)"** whose checked state is
+`!generate`, and pass `generate` as the fifth argument to
+`createApplications`. Make the primary button's text reflect the mode — "Add
+and generate" vs "Save for later" — so the cost implication is visible before
+the click, not after.
+
+- [ ] **Step 5: Run the tests and the type-check**
+
+Run (from `frontend/`): `npm test -- --run && npx tsc --noEmit`
+Expected: PASS, tsc clean.
+
+- [ ] **Step 6: Rebuild the bundle and commit**
+
+```bash
+cd frontend && npm run build
+git add frontend/src frontend/dist
+git commit -m "feat: let the Add Jobs screen save jobs without generating"
+```
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
