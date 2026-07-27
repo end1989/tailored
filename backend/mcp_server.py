@@ -132,9 +132,9 @@ async def add_profile_evidence(
 
 @mcp.tool()
 async def list_templates() -> list[dict]:
-    """List the four resume templates (name, label, description, best_for).
-    Call before create_application to choose deliberately: 'slate' is the safe
-    default; 'terminal' is projects-forward for technical roles."""
+    """List every available resume template (name, label, description, best_for).
+    Call before create_application to choose deliberately: match best_for to the
+    role. 'slate' is the safe general-purpose default."""
     return await _run(mcp_ops.list_templates)
 
 

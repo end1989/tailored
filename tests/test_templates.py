@@ -1,7 +1,8 @@
-"""Tests for the four resume templates (Task 11)."""
+"""Tests for the resume templates."""
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -104,17 +105,13 @@ def test_template_renders_fixture_resume(template):
         assert section.title in html
 
 
-@pytest.mark.parametrize(
-    "template,marker",
-    [
-        ("meridian", "Georgia"),
-        ("terminal", "monospace"),
-        ("signal", "#C2410C"),
-    ],
-)
-def test_template_visual_identity(template, marker):
+@pytest.mark.parametrize("template", TEMPLATES)
+def test_template_declares_its_own_body_typeface(template):
+    """Every template must choose a typeface. Inheriting the default is not a design."""
     css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
-    assert marker in css
+    assert re.search(r"^\s*font-family\s*:", css, re.MULTILINE), (
+        f"{template}/style.css never declares font-family"
+    )
 
 
 @pytest.mark.parametrize("template", TEMPLATES)

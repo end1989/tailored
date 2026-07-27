@@ -121,10 +121,10 @@ RESUME:
 - headline: one line positioning the candidate for this specific role.
 - summary: two to four sentences specific to this candidate and this posting -
   no generic filler.
-- Template structural hint: the "terminal" template is projects-forward (a
-  Projects section leads, before Experience); every other template
-  (meridian, slate, signal) is experience-first (Experience leads). Include
-  Skills and Education sections whenever the master profile has content for them.
+- Templates differ in section order: call list_templates and match best_for to
+  the role. Most templates lead with Experience; Terminal leads with Projects.
+  Include Skills and Education sections whenever the master profile has content
+  for them.
 
 COVER LETTER (markdown, 3-5 short paragraphs):
 - Open specific. If you saved research, the first paragraph must reference a

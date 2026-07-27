@@ -89,7 +89,10 @@ def test_workflow_guide_contents():
     assert "NEVER invent" in guide
     assert '"additionalProperties"' in guide  # embedded strict schemas
     assert "save_tailored_resume" in guide
-    assert "projects-forward" in guide
+    # The guide must still tell the agent that templates differ in how they
+    # order sections; it no longer names a specific structure literal, because
+    # the structures now come from the on-disk manifests.
+    assert "section order" in guide
     assert "get_master_profile" in guide
 
 

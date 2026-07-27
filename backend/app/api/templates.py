@@ -1,51 +1,30 @@
-"""Template gallery routes: metadata for all four templates plus a live HTML
-preview of each, rendered from the shared sample resume fixture."""
+"""Template gallery routes: metadata for every registered template plus a live
+HTML preview of each, rendered from the shared sample resume fixture."""
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 
 from ..schemas import TailorResult
-from ..services.render import TEMPLATES, render_resume_html
+from ..services.render import TEMPLATE_REGISTRY, TEMPLATES, render_resume_html
 
 router = APIRouter()
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "fixtures"
 
-_METADATA: dict[str, dict[str, str]] = {
-    "meridian": {
-        "label": "Meridian",
-        "description": (
-            "Classic serif with small caps and hairline rules - understated and traditional."
-        ),
-        "best_for": "Corporate, finance, healthcare, government",
-    },
-    "slate": {
-        "label": "Slate",
-        "description": "Clean contemporary sans-serif with strong hierarchy - the default.",
-        "best_for": "General purpose - safe everywhere",
-    },
-    "terminal": {
-        "label": "Terminal",
-        "description": (
-            "Technical layout with monospace accents and projects placed forward."
-        ),
-        "best_for": "Engineering, data, technical roles",
-    },
-    "signal": {
-        "label": "Signal",
-        "description": "Bold headline treatment with a single warm accent color.",
-        "best_for": "Design, marketing, creative roles",
-    },
-}
-
-# Ordered to match render.TEMPLATES exactly.
+# Built from the on-disk manifests, already ordered by their `order` field.
+# `structure` and `order` stay internal: the UI has no use for either.
 TEMPLATE_META: list[dict[str, str]] = [
-    {"name": name, **_METADATA[name]} for name in TEMPLATES
+    {
+        "name": manifest.name,
+        "label": manifest.label,
+        "description": manifest.description,
+        "best_for": manifest.best_for,
+    }
+    for manifest in TEMPLATE_REGISTRY.values()
 ]
 
 
