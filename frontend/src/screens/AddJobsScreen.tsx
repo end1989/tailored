@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createApplications, getSettings, listProfiles } from "../api";
-import type { Depth, JobRequest, ProfileSummary, TemplateName } from "../types";
+import { createApplications, getSettings, listProfiles, listTemplates } from "../api";
+import type {
+  Depth,
+  JobRequest,
+  ProfileSummary,
+  TemplateInfo,
+  TemplateName,
+} from "../types";
 
 const DEPTHS: Depth[] = ["quick", "standard", "deep"];
-const TEMPLATES: TemplateName[] = ["meridian", "slate", "terminal", "signal"];
 
 interface RowOverride {
   depth?: Depth;
@@ -17,6 +22,7 @@ export default function AddJobsScreen() {
   const [profileId, setProfileId] = useState<number | undefined>(undefined);
   const [defaultDepth, setDefaultDepth] = useState<Depth>("standard");
   const [defaultTemplate, setDefaultTemplate] = useState<TemplateName>("slate");
+  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [apiKeySet, setApiKeySet] = useState(true);
   const [fakeMode, setFakeMode] = useState(false);
   const [text, setText] = useState("");
@@ -42,6 +48,9 @@ export default function AddJobsScreen() {
         setFakeMode(s.fake_mode);
       })
       .catch(() => undefined);
+    listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
   }, []);
 
   const urls = useMemo(
@@ -111,15 +120,18 @@ export default function AddJobsScreen() {
             </select>
           </div>
           <div className="field">
-            <label className="field-label">Default template</label>
+            <label className="field-label" htmlFor="default-template">
+              Default template
+            </label>
             <select
+              id="default-template"
               className="select"
               value={defaultTemplate}
               onChange={(e) => setDefaultTemplate(e.target.value as TemplateName)}
             >
-              {TEMPLATES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
+              {templates.map((t) => (
+                <option key={t.name} value={t.name}>
+                  {t.label || t.name}
                 </option>
               ))}
             </select>
@@ -181,9 +193,9 @@ export default function AddJobsScreen() {
                 value={overrides[i]?.template ?? defaultTemplate}
                 onChange={(e) => setOverride(i, { template: e.target.value as TemplateName })}
               >
-                {TEMPLATES.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
+                {templates.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.label || t.name}
                   </option>
                 ))}
               </select>

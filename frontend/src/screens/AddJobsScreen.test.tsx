@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import AddJobsScreen from "./AddJobsScreen";
 import * as api from "../api";
@@ -9,6 +9,7 @@ vi.mock("../api", () => ({
   listProfiles: vi.fn(),
   getSettings: vi.fn(),
   createApplications: vi.fn(),
+  listTemplates: vi.fn(),
 }));
 
 function renderScreen() {
@@ -25,6 +26,10 @@ describe("AddJobsScreen", () => {
       { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
     ]);
     vi.mocked(api.createApplications).mockResolvedValue([]);
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "slate", label: "Slate", description: "d", best_for: "b" },
+    ]);
   });
 
   it("parses three URL lines into three preview rows", async () => {
@@ -125,5 +130,64 @@ describe("AddJobsScreen", () => {
       const call = calls[calls.length - 1];
       expect(call?.[4]).toBe(true);
     });
+  });
+
+  it("renders template options from the API, not a hardcoded list", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "meridian",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+      { name: "plainwork", label: "Plainwork", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    const select = await screen.findByLabelText(/default template/i);
+    expect(within(select).getByRole("option", { name: "Ledger" })).toBeInTheDocument();
+    expect(within(select).getByRole("option", { name: "Plainwork" })).toBeInTheDocument();
+  });
+
+  it("shows template labels rather than raw ids in the default select", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "meridian",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    const select = await screen.findByLabelText(/default template/i);
+    expect(within(select).getByRole("option", { name: "Meridian" })).toBeInTheDocument();
+    expect(within(select).queryByRole("option", { name: "meridian" })).toBeNull();
+  });
+
+  it("renders per-row template options from the API", async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      api_key_set: true,
+      fake_mode: false,
+      default_template: "meridian",
+      default_depth: "standard",
+      page_size: "Letter",
+    });
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    await screen.findByRole("option", { name: "Jordan Rivera" });
+    fireEvent.change(screen.getByPlaceholderText("https://..."), {
+      target: { value: "https://a.example/j1" },
+    });
+    const row = await screen.findByLabelText("Template for row 1");
+    expect(within(row).getByRole("option", { name: "Ledger" })).toBeInTheDocument();
+    expect(within(row).getByRole("option", { name: "Meridian" })).toBeInTheDocument();
+    expect(within(row).queryByRole("option", { name: "meridian" })).toBeNull();
   });
 });

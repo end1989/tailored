@@ -1,13 +1,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getSettings, updateSettings } from "../api";
+import { getSettings, listTemplates, updateSettings } from "../api";
 import McpSetup from "../components/McpSetup";
 import { getThemePref, setThemePref, subscribeTheme } from "../theme";
 import type { ThemePref } from "../theme";
-import type { Depth, PageSize, SettingsShape, TemplateName } from "../types";
+import type { Depth, PageSize, SettingsShape, TemplateInfo, TemplateName } from "../types";
 
 const DEPTHS: Depth[] = ["quick", "standard", "deep"];
-const TEMPLATES: TemplateName[] = ["meridian", "slate", "terminal", "signal"];
 const PAGE_SIZES: PageSize[] = ["Letter", "A4"];
 const THEME_PREFS: ThemePref[] = ["system", "light", "dark"];
 const THEME_LABELS: Record<ThemePref, string> = {
@@ -18,6 +17,7 @@ const THEME_LABELS: Record<ThemePref, string> = {
 
 export default function SettingsScreen() {
   const [settings, setSettings] = useState<SettingsShape | null>(null);
+  const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [themePref, setThemePrefState] = useState<ThemePref>(() => getThemePref());
   const [error, setError] = useState<string | null>(null);
 
@@ -25,6 +25,12 @@ export default function SettingsScreen() {
     getSettings()
       .then(setSettings)
       .catch((e) => setError(String(e)));
+  }, []);
+
+  useEffect(() => {
+    listTemplates()
+      .then(setTemplates)
+      .catch(() => setTemplates([]));
   }, []);
 
   useEffect(() => subscribeTheme((pref) => setThemePrefState(pref)), []);
@@ -130,15 +136,18 @@ export default function SettingsScreen() {
       <div className="card">
         <div className="card-title">Defaults</div>
         <div className="field" style={{ maxWidth: "20rem" }}>
-          <label className="field-label">Default template</label>
+          <label className="field-label" htmlFor="default-template">
+            Default template
+          </label>
           <select
+            id="default-template"
             className="select"
             value={settings.default_template}
             onChange={(e) => patch({ default_template: e.target.value as TemplateName })}
           >
-            {TEMPLATES.map((t) => (
-              <option key={t} value={t}>
-                {t}
+            {templates.map((t) => (
+              <option key={t.name} value={t.name}>
+                {t.label || t.name}
               </option>
             ))}
           </select>
