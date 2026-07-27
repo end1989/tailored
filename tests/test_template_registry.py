@@ -121,7 +121,12 @@ def test_unknown_structure_value_raises(tmp_path):
 import base64
 import re
 
-from backend.app.services.render import _font_css, _load_css, render_resume_html
+from backend.app.services.render import (
+    FontFace,
+    _font_css,
+    _load_css,
+    render_resume_html,
+)
 
 
 def test_font_css_is_empty_for_a_template_with_no_fonts():
@@ -382,3 +387,194 @@ def test_every_vendored_family_a_stylesheet_asks_for_is_embedded():
                     f"but {name}/template.json does not embed it. Chromium "
                     "cannot resolve it and falls back without an error."
                 )
+
+
+# --- The manifest and the stylesheet must agree on the WEIGHTS too ----------
+#
+# The family checks above pair the two on the name and stop there. The weight is
+# just as capable of disagreeing, and fails just as quietly. Every family here is
+# a latin subset cut to the weight range `scripts/vendor_fonts.py` asked Google
+# for, and four of the seven stop at 600. `font-weight: 700` against a face
+# declared `400 600` raises nothing: the matching algorithm picks the only face
+# there is, clamps the variation axis to its maximum, and Chromium may smear the
+# rest on synthetically. The page looks near enough right that no render test can
+# see it, and the weight the stylesheet wrote down is not the weight that prints.
+#
+# The parse is deliberately shallow, and these are its assumptions:
+#   * rules are flat - a nested at-rule raises rather than being mis-read;
+#   * the family in effect for a block is the one that block names, else the one
+#     `body` names, which is how all of these stylesheets are written;
+#   * a block that sets font-style without a weight inherits `body`'s weight.
+# It is a guard against a stylesheet asking for a weight nobody vendored, not a
+# cascade implementation.
+
+_RULE_RE = re.compile(r"(?P<selector>[^{}]*)\{(?P<body>[^{}]*)\}")
+_KEYWORD_WEIGHTS = {"normal": 400, "bold": 700}
+
+
+def _rules(css: str) -> list[tuple[str, str]]:
+    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+    for at_rule in ("@media", "@supports"):
+        assert at_rule not in stripped, (
+            f"{at_rule} nests rules inside rules and this parse is flat; it "
+            "would read the at-rule's prelude as a declaration block. Rewrite "
+            "_rules before a stylesheet uses one."
+        )
+    return [
+        (match.group("selector").strip(), match.group("body"))
+        for match in _RULE_RE.finditer(stripped)
+    ]
+
+
+def _last_value(body: str, prop: str) -> str | None:
+    """The winning value of one property in one block: later declarations win."""
+    values = re.findall(rf"(?<![\w-]){prop}\s*:([^;]*)", body)
+    return values[-1].strip() if values else None
+
+
+def _first_family(value: str) -> str:
+    return " ".join(value.split(",")[0].strip().strip("\"'").split())
+
+
+def _weight_number(value: str) -> int:
+    if value in _KEYWORD_WEIGHTS:
+        return _KEYWORD_WEIGHTS[value]
+    assert value.isdigit(), (
+        f"unreadable font-weight {value!r}: this check can only compare numeric "
+        "weights against the range a manifest declares"
+    )
+    return int(value)
+
+
+def _covers(face, weight: int) -> bool:
+    """A face's `weight` is "400" or a range "400 600"; both are inclusive."""
+    bounds = [int(part) for part in face.weight.split()]
+    return bounds[0] <= weight <= bounds[-1]
+
+
+def _uncovered_weights(css: str, faces) -> list[str]:
+    """Every (family, style, weight) the stylesheet asks for that no face serves.
+
+    Families the manifest does not embed are skipped: a system stack carries
+    whatever the machine has, and a *vendored* family named without being
+    embedded already fails test_every_vendored_family_a_stylesheet_asks_for_is_embedded.
+    """
+    rules = _rules(css)
+    embedded = {face.family for face in faces}
+    body_family = ""
+    body_weight = 400
+    for selector, body in rules:
+        if not any(part.strip() == "body" for part in selector.split(",")):
+            continue
+        family = _last_value(body, "font-family")
+        if family:
+            body_family = _first_family(family)
+        weight = _last_value(body, "font-weight")
+        if weight:
+            body_weight = _weight_number(weight)
+
+    missing: list[str] = []
+    for selector, body in rules:
+        family_value = _last_value(body, "font-family")
+        weight_value = _last_value(body, "font-weight")
+        style_value = _last_value(body, "font-style")
+        if family_value is None and weight_value is None and style_value is None:
+            continue
+        family = _first_family(family_value) if family_value else body_family
+        if family not in embedded:
+            continue
+        style = "italic" if style_value in ("italic", "oblique") else "normal"
+        weight = _weight_number(weight_value) if weight_value else body_weight
+        if not any(
+            face.family == family and face.style == style and _covers(face, weight)
+            for face in faces
+        ):
+            missing.append(f"{selector or 'body'} asks for {family} {style} {weight}")
+    return missing
+
+
+@pytest.mark.parametrize("template", TEMPLATES)
+def test_every_weight_a_stylesheet_asks_for_is_covered_by_an_embedded_face(template):
+    manifest = TEMPLATE_REGISTRY[template]
+    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+    uncovered = _uncovered_weights(css, manifest.fonts)
+    assert not uncovered, (
+        f"{template}/style.css asks for weights no embedded face covers: "
+        f"{uncovered}. The declared faces are "
+        f"{[(f.family, f.style, f.weight) for f in manifest.fonts]}. Vendor the "
+        "missing weight or move the stylesheet inside the range - Chromium "
+        "clamps to the nearest available weight without reporting anything."
+    )
+
+
+# The two headings are <h1 class="name"> and <h2 class="section-title">, and the
+# UA stylesheet sets both to `bold`, i.e. 700. A template that leaves either at
+# the default is asking a 400-600 face for a weight it does not have, without a
+# single font-weight declaration in its stylesheet for the check above to read.
+
+
+@pytest.mark.parametrize("template", TEMPLATES)
+@pytest.mark.parametrize("heading", (".name", ".section-title"))
+def test_the_heading_classes_declare_their_weight_explicitly(template, heading):
+    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+    declared = any(
+        any(part.strip() == heading for part in selector.split(","))
+        and _last_value(body, "font-weight")
+        for selector, body in _rules(css)
+    )
+    assert declared, (
+        f"{template}/style.css never sets font-weight on {heading}, which is a "
+        "heading element: it inherits the UA stylesheet's bold (700) rather "
+        "than a weight this template chose, and 700 is outside the range of "
+        "several of the vendored faces."
+    )
+
+
+# The weight guard has to actually catch what it claims to. Without these it can
+# be reduced to a no-op - or quietly parse nothing at all - and the suite stays
+# green, because no template on disk contains the thing it rejects.
+
+_FAKE_FACES = (
+    FontFace(family="Fake Serif", file="fake-normal.woff2", weight="400 600", style="normal"),
+    FontFace(family="Fake Serif", file="fake-italic.woff2", weight="400", style="italic"),
+)
+_FAKE_BODY = 'body { font-family: "Fake Serif", Georgia, serif; }\n'
+
+
+@pytest.mark.parametrize(
+    "css",
+    (
+        ".name { font-weight: 700; }",
+        ".name { font-weight: bold; }",
+        ".name { font-weight: 400; font-weight: 900; }",
+        ".headline { font-style: italic; font-weight: 600; }",
+        ".rule { font-family: 'Fake Serif'; font-weight: 300; }",
+    ),
+)
+def test_the_weight_guard_rejects(css):
+    assert _uncovered_weights(_FAKE_BODY + css, _FAKE_FACES), (
+        f"the weight guard does not catch {css!r}"
+    )
+
+
+@pytest.mark.parametrize(
+    "css",
+    (
+        ".name { font-weight: 600; }",
+        ".name { font-weight: normal; }",
+        ".headline { font-style: italic; }",
+        ".headline { font-style: italic; font-weight: 400; }",
+        ".skills { font-family: 'Not Vendored', monospace; font-weight: 900; }",
+        ".meta { color: #555; margin-left: auto; }",
+        "/* .name { font-weight: 900; } */",
+    ),
+)
+def test_the_weight_guard_accepts_what_the_faces_serve(css):
+    found = _uncovered_weights(_FAKE_BODY + css, _FAKE_FACES)
+    assert not found, f"the weight guard is too strict: {css!r} flagged as {found}"
+
+
+def test_the_weight_guard_refuses_to_parse_a_nested_at_rule():
+    """Silently mis-reading @media would turn this whole check into noise."""
+    with pytest.raises(AssertionError, match="@media"):
+        _uncovered_weights("@media print { body { font-weight: 900; } }", _FAKE_FACES)
