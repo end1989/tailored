@@ -456,6 +456,32 @@ def queue_jobs(engine, profile_id: int, urls: list[str]) -> list[dict]:
         return results
 
 
+def next_pending_job(engine, profile_id: int) -> dict | None:
+    """The oldest queued job for this profile, or None when the queue is empty.
+
+    Returns None rather than raising on an empty queue: it makes your loop
+    terminate on a plain condition rather than on an error.
+
+    Does not lock or reserve the row. Tailored is a local, single-user
+    application, so a claim protocol would guard a scenario that does not
+    exist. If the user deletes a saved job mid-run, it simply stops being
+    returned, which is correct.
+    """
+    with Session(engine) as session:
+        row = session.exec(
+            select(Application, Job)
+            .where(Application.job_id == Job.id)
+            .where(Application.profile_id == profile_id)
+            .where(Application.status == "not_started")
+            .where(Application.archived_at.is_(None))
+            .order_by(Application.id)
+        ).first()
+        if row is None:
+            return None
+        app_row, job_row = row
+        return {"application_id": app_row.id, "url": job_row.url}
+
+
 def set_application_template(
     engine, data_dir: Path, application_id: int, template: str
 ) -> dict:

@@ -709,3 +709,88 @@ def test_an_archived_application_does_not_block_requeueing(engine, profile_id):
     second = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
     assert second[0]["status"] == "not_started"
     assert second[0]["application_id"] != first[0]["application_id"]
+
+
+# --- next_pending_job (MCP queue consumption) ---
+
+
+def test_next_pending_job_returns_the_oldest_first(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    nxt = mcp_ops.next_pending_job(engine, profile_id)
+    assert nxt["application_id"] == queued[0]["application_id"]
+    assert nxt["url"] == QUEUE_URLS[0]
+
+
+def test_next_pending_job_returns_none_on_an_empty_queue(engine, profile_id):
+    assert mcp_ops.next_pending_job(engine, profile_id) is None
+
+
+def test_next_pending_job_ignores_applications_already_started(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        app = session.get(Application, queued[0]["application_id"])
+        app.status = "ready"
+        session.add(app)
+        session.commit()
+
+    assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
+        queued[1]["application_id"]
+    )
+
+
+def test_next_pending_job_ignores_other_profiles(engine, profile_id):
+    with Session(engine) as session:
+        other = Profile(name="Someone Else")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+        other_id = other.id
+
+    mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    assert mcp_ops.next_pending_job(engine, other_id) is None
+
+
+def test_next_pending_job_ignores_archived_applications(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        app = session.get(Application, queued[0]["application_id"])
+        app.archived_at = _utcnow()
+        session.add(app)
+        session.commit()
+
+    assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
+        queued[1]["application_id"]
+    )
+
+
+def test_the_queue_resumes_after_a_context_loss(engine, profile_id, tmp_path, pdf_faked):
+    """The property this whole design exists for.
+
+    Queue five, complete two, and the third is what comes back - with no
+    memory of the run carried anywhere but the database.
+    """
+    urls = [f"https://jobs.example.com/{i}" for i in range(5)]
+    queued = mcp_ops.queue_jobs(engine, profile_id, urls)
+
+    for entry in queued[:2]:
+        with Session(engine) as session:
+            app = session.get(Application, entry["application_id"])
+            app.status = "ready"
+            session.add(app)
+            session.commit()
+
+    nxt = mcp_ops.next_pending_job(engine, profile_id)
+    assert nxt["application_id"] == queued[2]["application_id"]
+    assert nxt["url"] == urls[2]
+
+
+def test_a_user_deleting_a_saved_job_mid_run_simply_removes_it(engine, profile_id):
+    """Correct behaviour, not an error: the agent just never receives it."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        session.delete(session.get(Application, queued[0]["application_id"]))
+        session.commit()
+
+    assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
+        queued[1]["application_id"]
+    )

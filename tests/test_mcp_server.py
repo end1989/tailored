@@ -36,6 +36,7 @@ EXPECTED_TOOLS = {
     "list_templates",
     "create_application",
     "queue_jobs",
+    "next_pending_job",
     "save_parsed_posting",
     "save_research",
     "save_tailored_resume",

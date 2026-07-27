@@ -165,6 +165,16 @@ async def queue_jobs(profile_id: int, urls: list[str]) -> list[dict]:
 
 
 @mcp.tool()
+async def next_pending_job(profile_id: int) -> dict | None:
+    """The next queued job to work on, as {application_id, url}, or null when
+    the queue is empty. Loop on this after queue_jobs: process one job all the
+    way to save_tailored_resume before asking for the next, so losing context
+    costs one job rather than twenty. Safe to call after a restart - the queue
+    lives in the database, so you resume exactly where you stopped."""
+    return await _run(mcp_ops.next_pending_job, _engine, profile_id)
+
+
+@mcp.tool()
 async def save_parsed_posting(application_id: int, parsed: dict) -> dict:
     """Save your structured analysis of the posting as ParsedPosting JSON
     (title, company, company_domain, must_haves, nice_to_haves, keywords,
