@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import DashboardScreen from "./DashboardScreen";
 import * as api from "../api";
@@ -47,6 +47,10 @@ vi.mock("../api", () => {
         last_activity_at: "2026-07-22T11:00:00+00:00",
       },
     ]),
+    patchApplication: vi.fn().mockResolvedValue(undefined),
+    archiveApplication: vi.fn().mockResolvedValue(undefined),
+    deleteApplication: vi.fn().mockResolvedValue(undefined),
+    generateApplication: vi.fn().mockResolvedValue(undefined),
   };
 });
 
@@ -80,7 +84,7 @@ describe("DashboardScreen", () => {
     expect(screen.getByText("Globex")).toBeInTheDocument();
     expect(screen.getByText("ready")).toHaveClass("badge", "badge-ready");
     expect(screen.getByText("tailoring")).toHaveClass("badge", "badge-tailoring");
-    expect(screen.getByText("$0.4321")).toBeInTheDocument();
+    expect(screen.getByLabelText(/stage for row 1/i)).toHaveValue("applied");
     expect(screen.getAllByText("Open")).toHaveLength(2);
   });
 
@@ -116,5 +120,43 @@ describe("DashboardScreen", () => {
 
     expect(vi.mocked(api.listApplications).mock.calls.length).toBe(callsAfterFirstTick);
     vi.useRealTimers();
+  });
+
+  it("filters to archived applications when the tab is selected", async () => {
+    vi.mocked(api.listApplications).mockResolvedValue([{ ...BASE_APP, id: 1 }]);
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByRole("button", { name: /archived/i }));
+
+    await waitFor(() =>
+      expect(api.listApplications).toHaveBeenCalledWith(1, { archived: true })
+    );
+  });
+
+  it("changes stage from the row without opening the application", async () => {
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 7, stage: "applied" },
+    ]);
+    vi.mocked(api.patchApplication).mockResolvedValue({ ...BASE_APP, id: 7, stage: "interview" } as never);
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+    const select = await screen.findByLabelText(/stage for row 1/i);
+    fireEvent.change(select, { target: { value: "interview" } });
+
+    expect(api.patchApplication).toHaveBeenCalledWith(7, { stage: "interview" });
+  });
+
+  it("asks for confirmation naming the role before deleting", async () => {
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 3, company: "Initech", title: "Staff Engineer" },
+    ]);
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+    fireEvent.click(await screen.findByLabelText(/select row 1/i));
+    fireEvent.click(screen.getByRole("button", { name: /delete permanently/i }));
+
+    expect(screen.getByRole("dialog")).toHaveTextContent("Initech");
+    expect(screen.getByRole("dialog")).toHaveTextContent("Staff Engineer");
+    expect(api.deleteApplication).not.toHaveBeenCalled();
   });
 });
