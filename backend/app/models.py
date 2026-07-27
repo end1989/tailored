@@ -13,6 +13,30 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
+STAGES = (
+    "saved",      # parked; no documents generated, nothing spent
+    "drafted",    # resume and cover letter generated, not sent
+    "applied",    # submitted
+    "screening",  # recruiter contact, phone screen
+    "interview",  # any round
+    "offer",
+    "rejected",   # terminal
+    "withdrawn",  # terminal
+)
+
+TERMINAL_STAGES = ("rejected", "withdrawn")
+
+EVENT_KINDS = (
+    "applied",
+    "callback",
+    "interview",
+    "offer",
+    "rejection",
+    "followup",
+    "note",
+)
+
+
 class Profile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str
@@ -58,6 +82,9 @@ class Application(SQLModel, table=True):
     job_id: int = Field(foreign_key="job.id")
     template: str = "slate"
     status: str = "queued"
+    stage: str = "saved"
+    applied_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
     error_message: Optional[str] = None
     version: int = 1
     resume_json: Optional[str] = None       # ResumeDoc
@@ -78,6 +105,17 @@ class ApplicationVersion(SQLModel, table=True):
     resume_json: str
     cover_letter_md: str
     tailoring_notes: str = ""
+    created_at: datetime = Field(default_factory=_utcnow)
+
+
+class ApplicationEvent(SQLModel, table=True):
+    """One dated entry on an application's timeline. A note is an event with
+    kind='note' -- same shape, so notes and events share one code path."""
+    id: Optional[int] = Field(default=None, primary_key=True)
+    application_id: int = Field(foreign_key="application.id")
+    kind: str                                   # one of EVENT_KINDS
+    occurred_at: datetime = Field(default_factory=_utcnow)
+    body: str = ""
     created_at: datetime = Field(default_factory=_utcnow)
 
 
