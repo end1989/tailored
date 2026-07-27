@@ -2,22 +2,27 @@
 HTML preview, and export downloads."""
 from __future__ import annotations
 
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import func
 from sqlmodel import Session, select
 
 from ..config import load_user_settings
 from ..db import get_session
 from ..models import (
     Application,
+    ApplicationEvent,
+    ApplicationVersion,
+    EVENT_KINDS,
     Job,
     Profile,
     ResearchBrief,
+    STAGES,
     _utcnow,
     get_contact,
     get_findings,
@@ -46,7 +51,9 @@ EXPORT_KINDS = (
 # --- Serializers -----------------------------------------------------------
 
 
-def application_summary(app_row: Application, job: Job) -> dict[str, Any]:
+def application_summary(
+    app_row: Application, job: Job, last_activity_at: datetime | None = None
+) -> dict[str, Any]:
     parsed = get_parsed(job)
     return {
         "id": app_row.id,
@@ -60,6 +67,8 @@ def application_summary(app_row: Application, job: Job) -> dict[str, Any]:
         "title": parsed.title if parsed is not None else None,
         "cost_usd": app_row.cost_usd,
         "created_at": app_row.created_at.replace(tzinfo=timezone.utc).isoformat(),
+        "last_activity_at": (last_activity_at or app_row.created_at)
+            .replace(tzinfo=timezone.utc).isoformat(),
         "error_message": app_row.error_message,
     }
 
@@ -67,7 +76,10 @@ def application_summary(app_row: Application, job: Job) -> dict[str, Any]:
 def application_detail(
     session: Session, app_row: Application, job: Job
 ) -> dict[str, Any]:
-    detail = application_summary(app_row, job)
+    events = _events_for(session, app_row.id)
+    detail = application_summary(
+        app_row, job, events[0].occurred_at if events else None
+    )
     resume = get_resume(app_row)
     parsed = get_parsed(job)
     brief = session.exec(
@@ -83,6 +95,7 @@ def application_detail(
             "research": get_findings(brief).model_dump() if brief is not None else None,
             "parsed": parsed.model_dump() if parsed is not None else None,
             "raw_text_present": bool(job.raw_text),
+            "events": [event_payload(e) for e in events],
         }
     )
     return detail
@@ -96,6 +109,32 @@ def _get_app_and_job(session: Session, application_id: int) -> tuple[Application
     if job is None:
         raise HTTPException(status_code=404, detail="job not found for application")
     return app_row, job
+
+
+def _naive_utc(dt: datetime) -> datetime:
+    """Project convention: datetimes are stored naive, in UTC."""
+    if dt.tzinfo is None:
+        return dt
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
+
+def event_payload(ev: ApplicationEvent) -> dict[str, Any]:
+    return {
+        "id": ev.id,
+        "application_id": ev.application_id,
+        "kind": ev.kind,
+        "body": ev.body,
+        "occurred_at": ev.occurred_at.replace(tzinfo=timezone.utc).isoformat(),
+        "created_at": ev.created_at.replace(tzinfo=timezone.utc).isoformat(),
+    }
+
+
+def _events_for(session: Session, application_id: int) -> list[ApplicationEvent]:
+    return list(session.exec(
+        select(ApplicationEvent)
+        .where(ApplicationEvent.application_id == application_id)
+        .order_by(ApplicationEvent.occurred_at.desc(), ApplicationEvent.id.desc())
+    ).all())
 
 
 # --- Request bodies --------------------------------------------------------
@@ -125,6 +164,12 @@ class RegenerateRequest(BaseModel):
 class ContentUpdate(BaseModel):
     resume: Optional[dict] = None
     cover_letter_md: Optional[str] = None
+
+
+class EventIn(BaseModel):
+    kind: str
+    body: str = ""
+    occurred_at: Optional[datetime] = None
 
 
 # --- Routes ----------------------------------------------------------------
@@ -192,11 +237,16 @@ def list_applications(
     if profile_id is not None:
         stmt = stmt.where(Application.profile_id == profile_id)
     rows = session.exec(stmt.order_by(Application.id.desc())).all()
+    latest = dict(session.exec(
+        select(ApplicationEvent.application_id,
+               func.max(ApplicationEvent.occurred_at))
+        .group_by(ApplicationEvent.application_id)
+    ).all())
     out: list[dict[str, Any]] = []
     for app_row in rows:
         job = session.get(Job, app_row.job_id)
         if job is not None:
-            out.append(application_summary(app_row, job))
+            out.append(application_summary(app_row, job, latest.get(app_row.id)))
     return out
 
 
@@ -348,3 +398,45 @@ def download_export(
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"export {kind!r} not generated yet")
     return FileResponse(path, filename=kind)
+
+
+@router.get("/applications/{application_id}/events")
+def list_events(
+    application_id: int, session: Session = Depends(get_session)
+) -> list[dict[str, Any]]:
+    _get_app_and_job(session, application_id)
+    return [event_payload(e) for e in _events_for(session, application_id)]
+
+
+@router.post("/applications/{application_id}/events")
+def add_event(
+    application_id: int, body: EventIn, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    _get_app_and_job(session, application_id)
+    if body.kind not in EVENT_KINDS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"invalid kind {body.kind!r}; must be one of {list(EVENT_KINDS)}",
+        )
+    event = ApplicationEvent(
+        application_id=application_id,
+        kind=body.kind,
+        body=body.body,
+        occurred_at=_naive_utc(body.occurred_at) if body.occurred_at else _utcnow(),
+    )
+    session.add(event)
+    session.commit()
+    session.refresh(event)
+    return event_payload(event)
+
+
+@router.delete("/applications/{application_id}/events/{event_id}")
+def delete_event(
+    application_id: int, event_id: int, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    event = session.get(ApplicationEvent, event_id)
+    if event is None or event.application_id != application_id:
+        raise HTTPException(status_code=404, detail="event not found")
+    session.delete(event)
+    session.commit()
+    return {"deleted": event_id}
