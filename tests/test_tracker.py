@@ -392,3 +392,62 @@ def test_remove_export_dir_missing_directory_raises_nothing(client):
 
     # No exports directory exists at all yet.
     assert _remove_export_dir(client.data_dir, 999) is True
+
+
+# --- saved jobs ------------------------------------------------------------
+
+
+def test_generate_false_creates_saved_job_without_running_anything(client):
+    pid = make_profile(client)
+    resp = client.post("/api/applications/batch", json={
+        "profile_id": pid,
+        "jobs": [{"url": "https://example.com/a"}, {"url": "https://example.com/b"}],
+        "generate": False,
+    })
+    assert resp.status_code == 200, resp.text
+
+    rows = resp.json()
+    assert [r["status"] for r in rows] == ["not_started", "not_started"]
+    assert [r["stage"] for r in rows] == ["saved", "saved"]
+    assert client.calls["process"] == []  # nothing queued, nothing spent
+
+
+def test_generate_defaults_to_true(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    assert client.calls["process"] == [aid]
+
+
+def test_generate_endpoint_starts_a_saved_job(client):
+    pid = make_profile(client)
+    aid = client.post("/api/applications/batch", json={
+        "profile_id": pid,
+        "jobs": [{"url": "https://example.com/a"}],
+        "generate": False,
+    }).json()[0]["id"]
+
+    resp = client.post(f"/api/applications/{aid}/generate")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "queued"
+    assert client.calls["process"] == [aid]
+
+
+def test_generate_endpoint_refuses_an_already_started_job(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)  # status 'queued'
+
+    resp = client.post(f"/api/applications/{aid}/generate")
+    assert resp.status_code == 409
+    assert "not_started" in resp.json()["detail"]
+
+
+def test_not_started_jobs_are_deletable_and_archivable(client):
+    pid = make_profile(client)
+    aid = client.post("/api/applications/batch", json={
+        "profile_id": pid,
+        "jobs": [{"url": "https://example.com/a"}],
+        "generate": False,
+    }).json()[0]["id"]
+
+    assert client.post(f"/api/applications/{aid}/archive").status_code == 200
+    assert client.delete(f"/api/applications/{aid}").status_code == 200

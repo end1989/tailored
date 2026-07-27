@@ -191,6 +191,7 @@ class BatchRequest(BaseModel):
     jobs: list[BatchJobIn]
     default_depth: Optional[str] = None
     default_template: Optional[str] = None
+    generate: bool = True
 
 
 class PasteRequest(BaseModel):
@@ -262,13 +263,17 @@ def create_batch(
         session.commit()
         session.refresh(job)
         app_row = Application(
-            profile_id=body.profile_id, job_id=job.id, template=template, status="queued"
+            profile_id=body.profile_id,
+            job_id=job.id,
+            template=template,
+            status="queued" if body.generate else "not_started",
         )
         session.add(app_row)
         session.commit()
         session.refresh(app_row)
-        # Schedule through the module attribute so tests can monkeypatch pipeline.
-        background_tasks.add_task(pipeline.process_application, app_row.id)
+        if body.generate:
+            # Schedule through the module attribute so tests can monkeypatch pipeline.
+            background_tasks.add_task(pipeline.process_application, app_row.id)
         results.append(application_detail(session, app_row, job))
     return results
 
@@ -428,6 +433,30 @@ def retry(
         raise HTTPException(
             status_code=409,
             detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
+    app_row.status = "queued"
+    app_row.error_message = None
+    app_row.updated_at = _utcnow()
+    session.add(app_row)
+    session.commit()
+    session.refresh(app_row)
+    background_tasks.add_task(pipeline.process_application, app_row.id)
+    return application_detail(session, app_row, job)
+
+
+@router.post("/applications/{application_id}/generate")
+def generate(
+    application_id: int,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Start the pipeline for a saved job. /retry covers every other state."""
+    app_row, job = _get_app_and_job(session, application_id)
+    if app_row.status != "not_started":
+        raise HTTPException(
+            status_code=409,
+            detail=f"application is {app_row.status!r}, not 'not_started'; "
+                   "use /retry to re-run it",
         )
     app_row.status = "queued"
     app_row.error_message = None

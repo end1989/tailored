@@ -137,6 +137,13 @@ def _tailor_and_render(session: Session, app: Application,
     session.add(app)
     session.commit()
 
+    # The one place status drives stage: finishing generation moves a parked
+    # job to drafted. Any other stage is the user's and is left alone.
+    if app.stage == "saved":
+        app.stage = "drafted"
+        session.add(app)
+        session.commit()
+
     _set_status(session, app, "ready")
 
 

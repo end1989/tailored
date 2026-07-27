@@ -505,6 +505,16 @@ def save_tailored_resume(
             app.export_dir = str(export_dir)
             session.add(app)
             session.commit()
+
+            # The one place status drives stage: finishing generation moves a
+            # parked job to drafted. Any other stage is the user's and is
+            # left alone. Without this, every MCP-generated application
+            # would sit in "saved" forever.
+            if app.stage == "saved":
+                app.stage = "drafted"
+                session.add(app)
+                session.commit()
+
             _set_status(session, app, "ready")
         except Exception as exc:  # noqa: BLE001 - every failure is visible state
             _mark_error(session, app, str(exc))
