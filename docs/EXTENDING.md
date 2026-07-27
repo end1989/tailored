@@ -21,6 +21,9 @@ workflow. The truthfulness guard runs server-side inside
 | `add_profile_evidence(profile_id, projects?, skill_groups?, summary_note?)` | Import portfolio-scan findings into the master profile (`MPProject` + `SkillGroup` shapes). Additive and verified-evidence-only: never overwrites — new projects are appended (duplicate names skipped), same-label skill groups are merged, `summary_note` is appended; safe to call repeatedly. |
 | `list_templates()` | Every template in the registry (currently eight) with label/description/best_for metadata, read straight from the manifests. |
 | `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |
+| `queue_jobs` | Register many job URLs at once. Free; creates saved jobs. |
+| `next_pending_job` | The next queued job, or null when the queue is empty. |
+| `report_fetch_blocked` | Record that a posting could not be read, and why. |
 | `save_parsed_posting(application_id, parsed)` | Store the agent's `ParsedPosting` analysis (dashboard shows company/title from it). |
 | `save_research(application_id, findings)` | Optionally store agent-performed research as a `ResearchFindings` brief (tokens/cost 0). |
 | `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
@@ -46,6 +49,23 @@ use last-writer-wins on the whole profile record, so don't hand-edit a
 profile in the web UI while an agent is writing to it (and vice-versa) -
 this is a single-user local app and simultaneous edits to the same profile
 are unsupported.
+
+### Why Tailored does not fetch blocked postings itself
+
+Playwright is in this project to render PDFs and will not be repurposed to
+fetch job postings. A headless browser with no user session is exactly what a
+job board's defences are built to refuse, so it would fail at the one job it
+was added for while adding a whole category of maintenance.
+
+Blocked postings are read by the client agent, in the user's own browser, with
+the user's own session, on a posting the user is entitled to read. That is a
+person's browser loading a page, which is what those defences are designed to
+permit. Tailored's part is the instruction and the record: the escalation ladder
+in `get_workflow_guide`, and `report_fetch_blocked` so giving up is visible
+rather than silent.
+
+Bot-detection evasion, CAPTCHA solving, proxying and user-agent spoofing are out
+of scope and will not be added.
 
 ## 2. The pipeline's provider seam (any model)
 
