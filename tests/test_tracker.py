@@ -287,7 +287,7 @@ def test_delete_removes_rows_and_exports(client):
 
     resp = client.delete(f"/api/applications/{aid}")
     assert resp.status_code == 200, resp.text
-    assert resp.json() == {"deleted": aid}
+    assert resp.json() == {"deleted": aid, "exports_removed": True}
 
     assert client.get(f"/api/applications/{aid}").status_code == 404
     assert not export_dir.exists()
@@ -340,3 +340,55 @@ def test_delete_removes_timeline_rows(client):
             select(ApplicationEvent).where(ApplicationEvent.application_id == aid)
         ).all()
     assert remaining == []
+
+
+def test_delete_survives_a_locked_export_directory(client, monkeypatch):
+    """rmtree failure (e.g. WinError 32 on a PDF held open in a viewer) must
+    not escape as an unhandled 500 after the rows are already committed as
+    deleted -- that would tell the caller the delete failed when the
+    application has in fact vanished, and a retry would just 404."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    export_dir = client.data_dir / "exports" / str(aid)
+    export_dir.mkdir(parents=True)
+    (export_dir / "resume.pdf").write_bytes(b"%PDF-1.4")
+
+    from backend.app.api import applications as applications_module
+
+    def boom(path):
+        raise OSError("WinError 32: file in use by another process")
+
+    monkeypatch.setattr(applications_module.shutil, "rmtree", boom)
+
+    resp = client.delete(f"/api/applications/{aid}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"deleted": aid, "exports_removed": False}
+    assert client.get(f"/api/applications/{aid}").status_code == 404
+
+
+def test_remove_export_dir_refuses_a_path_outside_exports(client):
+    """Drives the containment refusal directly, bypassing the route's int
+    typing. An empty-string id collapses data_dir/exports/"" back to
+    data_dir/exports itself, which must be refused -- not wiped."""
+    from fastapi import HTTPException
+
+    from backend.app.api.applications import _remove_export_dir
+
+    exports_dir = client.data_dir / "exports"
+    exports_dir.mkdir(parents=True)
+    (exports_dir / "1").mkdir()
+
+    with pytest.raises(HTTPException) as exc_info:
+        _remove_export_dir(client.data_dir, "")
+    assert exc_info.value.status_code == 500
+
+    assert exports_dir.exists()
+    assert (exports_dir / "1").exists()
+
+
+def test_remove_export_dir_missing_directory_raises_nothing(client):
+    from backend.app.api.applications import _remove_export_dir
+
+    # No exports directory exists at all yet.
+    assert _remove_export_dir(client.data_dir, 999) is True
