@@ -207,6 +207,34 @@ def test_switching_template_does_not_reorder_sections(client, seeded):
     assert after == before
 
 
+def test_a_failed_re_render_commits_nothing(client, seeded, engine, monkeypatch):
+    """The switch is template + exports together, or neither.
+
+    Committing the template before rendering means a Playwright crash or a full
+    disk leaves the row claiming a template its exports were never rendered in:
+    GET /exports/resume.pdf would serve slate bytes under a ledger label.
+    """
+    with Session(engine) as session:
+        row = session.get(Application, seeded["application_id"])
+        row.export_dir = "old-exports"
+        session.add(row)
+        session.commit()
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("chromium died mid-render")
+
+    monkeypatch.setattr(render, "export_application", explode)
+    with pytest.raises(RuntimeError):
+        client.patch(
+            f"/api/applications/{seeded['application_id']}/template",
+            json={"template": "ledger"},
+        )
+    with Session(engine) as session:
+        row = session.get(Application, seeded["application_id"])
+        assert row.template == "slate"
+        assert row.export_dir == "old-exports"
+
+
 def test_mcp_set_application_template(engine, seeded, tmp_path):
     result = mcp_ops.set_application_template(
         engine, seeded["data_dir"], seeded["application_id"], "ledger"
@@ -256,6 +284,31 @@ def test_mcp_set_application_template_rejects_mid_pipeline(engine, seeded):
         mcp_ops.set_application_template(
             engine, seeded["data_dir"], seeded["application_id"], "ledger"
         )
+
+
+def test_mcp_set_application_template_commits_nothing_when_the_render_fails(
+    engine, seeded, monkeypatch
+):
+    """Same atomicity as the HTTP route: the row must not claim a template its
+    exports were never rendered in."""
+    with Session(engine) as session:
+        row = session.get(Application, seeded["application_id"])
+        row.export_dir = "old-exports"
+        session.add(row)
+        session.commit()
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("chromium died mid-render")
+
+    monkeypatch.setattr(render, "export_application", explode)
+    with pytest.raises(RuntimeError):
+        mcp_ops.set_application_template(
+            engine, seeded["data_dir"], seeded["application_id"], "ledger"
+        )
+    with Session(engine) as session:
+        row = session.get(Application, seeded["application_id"])
+        assert row.template == "slate"
+        assert row.export_dir == "old-exports"
 
 
 def test_mcp_set_application_template_allows_the_mcp_parking_state(engine, seeded):

@@ -382,12 +382,10 @@ def set_application_template(
         profile = session.get(Profile, app.profile_id)
         contact = get_contact(profile)
 
-        app.template = template
-        session.add(app)
-        session.commit()
-        session.refresh(app)
-
         user_settings = load_user_settings(Path(data_dir))
+        # Render before committing anything: a row claiming a template its
+        # exports were never rendered in would hand the agent the old PDF
+        # under the new label.
         export_dir = render.export_application(
             app.id,
             resume_doc,
@@ -397,6 +395,7 @@ def set_application_template(
             Path(data_dir),
             page_size=user_settings.get("page_size", "Letter"),
         )
+        app.template = template
         app.export_dir = str(export_dir)
         session.add(app)
         session.commit()

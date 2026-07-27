@@ -118,6 +118,37 @@ def test_unknown_structure_value_raises(tmp_path):
         load_registry(tmp_path)
 
 
+@pytest.mark.parametrize("fonts", (None, 12, True, "Inter", {"family": "Inter"}))
+def test_a_non_list_fonts_value_raises_with_the_offending_path(tmp_path, fonts):
+    """`"fonts": null` must fail the same way every other manifest defect does.
+
+    The font loop used to iterate raw["fonts"] directly, so a null escaped as a
+    bare TypeError with no path in it, and a string or object was iterated
+    element-wise into a nonsense "missing key" message. Either way the one job
+    of TemplateManifestError - name the file to fix - went undone.
+    """
+    bad = tmp_path / "nolist"
+    bad.mkdir()
+    (bad / "template.json").write_text(
+        json.dumps(
+            {
+                "name": "nolist",
+                "label": "No List",
+                "description": "d",
+                "best_for": "b",
+                "structure": "experience-first",
+                "order": 1,
+                "fonts": fonts,
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(TemplateManifestError) as exc:
+        load_registry(tmp_path)
+    assert "nolist" in str(exc.value)
+    assert "array" in str(exc.value)
+
+
 import base64
 import re
 

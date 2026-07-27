@@ -467,25 +467,23 @@ def set_template(
             detail="this application has no tailored resume yet; nothing to re-render",
         )
 
-    app_row.template = body.template
-    app_row.updated_at = _utcnow()
-    session.add(app_row)
-    session.commit()
-    session.refresh(app_row)
-
     profile = session.get(Profile, app_row.profile_id)
     settings = request.app.state.settings
     user_settings = load_user_settings(settings.data_dir)
+    # Render before committing anything: a row claiming a template its exports
+    # were never rendered in would serve the old PDF under the new label.
     export_dir = render.export_application(
         app_row.id,
         resume_now,
         app_row.cover_letter_md or "",
         get_contact(profile),
-        app_row.template,
+        body.template,
         settings.data_dir,
         page_size=user_settings.get("page_size", "Letter"),
     )
+    app_row.template = body.template
     app_row.export_dir = str(export_dir)
+    app_row.updated_at = _utcnow()
     session.add(app_row)
     session.commit()
     session.refresh(app_row)

@@ -80,6 +80,11 @@ def _parse_manifest(path: Path, directory_name: str) -> TemplateManifest:
         )
     if not isinstance(raw["order"], int):
         raise TemplateManifestError(f"{path}: order must be an integer")
+    if not isinstance(raw["fonts"], list):
+        raise TemplateManifestError(
+            f"{path}: fonts must be an array of font entries, "
+            f"got {type(raw['fonts']).__name__}"
+        )
     faces: list[FontFace] = []
     for entry in raw["fonts"]:
         try:
