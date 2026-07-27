@@ -128,7 +128,12 @@ def _top_level_rules(css: str) -> list[tuple[str, str]]:
     Comments are stripped first so a family named only in a header comment does
     not count. Nested rules are skipped deliberately: a body font-family that
     only applies inside `@media print` leaves the on-screen preview on the
-    default, and one inside `@supports` may never apply at all.
+    default, and one inside `@supports` may never apply at all. (`_all_rules`
+    descends into them, for the guards that do need to see them.)
+
+    A prelude starts after the preceding `;`, so a statement at-rule -- `@charset
+    "utf-8";`, `@import url(...);` -- is not read as part of the selector list of
+    the rule that follows it.
     """
     stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     rules: list[tuple[str, str]] = []
@@ -139,6 +144,7 @@ def _top_level_rules(css: str) -> list[tuple[str, str]]:
         if char == "{":
             if depth == 0:
                 prelude = stripped[prelude_start:index]
+                prelude = prelude[prelude.rfind(";") + 1 :]
                 block_start = index + 1
             depth += 1
         elif char == "}":
@@ -149,21 +155,74 @@ def _top_level_rules(css: str) -> list[tuple[str, str]]:
     return rules
 
 
+def _own_declarations(block: str) -> str:
+    """`block` with any rules nested inside it removed, prelude and all.
+
+    Only the declarations the block makes for its *own* selector are left, so a
+    nested rule cannot smuggle its declarations up into the parent's.
+    """
+    kept: list[str] = []
+    depth = 0
+    for char in block:
+        if char == "{":
+            if depth == 0:
+                # Drop the nested rule's prelude, back to the previous `;`.
+                text = "".join(kept)
+                kept = list(text[: text.rfind(";") + 1])
+            depth += 1
+        elif char == "}":
+            depth -= 1
+        elif depth == 0:
+            kept.append(char)
+    return "".join(kept)
+
+
+def _all_rules(css: str) -> list[tuple[str, str]]:
+    """(selector prelude, own declarations) for every rule at every nesting depth.
+
+    Unlike `_top_level_rules` this descends into at-rules. `@media print` is the
+    medium `render_pdf` prints through -- Playwright's `page.pdf()` emulates
+    print -- so a declaration in there restyles every exported PDF and has to be
+    seen by any guard that claims a stylesheet still renders a given way.
+    """
+    rules: list[tuple[str, str]] = []
+    for prelude, block in _top_level_rules(css):
+        rules.append((prelude, _own_declarations(block)))
+        if "{" in block:
+            rules.extend(_all_rules(block))
+    return rules
+
+
+def _values(block: str, prop: str) -> list[str]:
+    """Every value `prop` is given in `block`, in source order.
+
+    All of them, not the first: a block may declare the same property twice and
+    the later declaration is the one that renders.
+    """
+    matches = re.finditer(rf"(?<![\w-]){re.escape(prop)}\s*:\s*([^;}}]+)", block)
+    return [value for value in (m.group(1).strip() for m in matches) if value]
+
+
 def _body_font_family(css: str) -> str | None:
     """The family the document body ends up with, or None if it inherits the UA default.
 
     `html` and `:root` count alongside `body`: body inherits from them, so a
     family declared there is genuinely the document's typeface. A descendant
     selector such as `body .name` does not count -- it styles the descendant.
+
+    The *last* such declaration is returned, not the first: these rules all have
+    the same specificity, so CSS resolves them by source order. (Source order is
+    as far as this goes -- it does not model specificity, which is why the
+    Meridian guard below checks every declaration rather than trusting this to
+    pick the winner.)
     """
-    for prelude, block in _top_level_rules(css):
-        selectors = {part.strip() for part in prelude.split(",")}
-        if not selectors & _DOCUMENT_SELECTORS:
-            continue
-        match = re.search(r"(?<![\w-])font-family\s*:\s*([^;}]+)", block)
-        if match and match.group(1).strip():
-            return match.group(1).strip()
-    return None
+    families = [
+        value
+        for prelude, block in _top_level_rules(css)
+        if {part.strip() for part in prelude.split(",")} & _DOCUMENT_SELECTORS
+        for value in _values(block, "font-family")
+    ]
+    return families[-1] if families else None
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
@@ -191,6 +250,11 @@ def test_the_body_typeface_guard_rejects_a_family_declared_elsewhere():
     assert _body_font_family("@media print { body { font-family: Inter; } }") is None
     assert _body_font_family("body { font-family: Inter, sans-serif; }") == "Inter, sans-serif"
     assert _body_font_family("html,\nbody {\n  font-family: Georgia, serif;\n}") == "Georgia, serif"
+    # Equal specificity, so the later rule is the one that renders.
+    assert _body_font_family("body { font-family: Inter; }\nbody { font-family: Georgia; }") == "Georgia"
+    assert _body_font_family("body { font-family: Inter; font-family: Georgia; }") == "Georgia"
+    # A statement at-rule ends in `;`; the next rule's prelude starts after it.
+    assert _body_font_family('@charset "utf-8";\nbody { font-family: Georgia; }') == "Georgia"
 
 
 # --- Meridian's visual identity is frozen ------------------------------------
@@ -205,43 +269,73 @@ def test_the_body_typeface_guard_rejects_a_family_declared_elsewhere():
 # single-template guard on purpose; the other templates are free to change.
 
 
-def _declaration(css: str, selector: str, prop: str) -> str | None:
-    """`prop`'s value in the top-level rule whose selector list contains `selector`.
+def _declarations(css: str, selectors: str | frozenset[str], prop: str) -> list[str]:
+    """Every value `prop` takes for `selectors`, in source order, at any depth.
 
-    Top-level only, and exact selector match, for the same reasons as
-    `_body_font_family`: a declaration nested in `@media print` does not style
-    the preview, and `.section-title em` is not `.section-title`.
+    Every one, because a stylesheet is normally restyled by *adding* rules, not
+    by editing declarations in place -- and reading only the first declaration
+    reports the value that lost. Appending `.section-title { font-variant:
+    normal; }` is an equal-specificity rule later in source order, so it wins the
+    cascade; the same block inside `@media print` wins in every exported PDF.
+    Both leave the first declaration untouched and both must be seen.
+
+    Exact selector match: `.section-title em` is not `.section-title`.
     """
-    for prelude, block in _top_level_rules(css):
-        if selector not in {part.strip() for part in prelude.split(",")}:
-            continue
-        match = re.search(rf"(?<![\w-]){re.escape(prop)}\s*:\s*([^;}}]+)", block)
-        if match and match.group(1).strip():
-            return match.group(1).strip()
-    return None
+    wanted = frozenset({selectors}) if isinstance(selectors, str) else selectors
+    return [
+        value
+        for prelude, block in _all_rules(css)
+        if {part.strip() for part in prelude.split(",")} & wanted
+        for value in _values(block, prop)
+    ]
+
+
+def _assert_meridian_identity(css: str) -> None:
+    """Spec 3.1's Global Constraint, as assertions over a stylesheet.
+
+    Factored out of the test so the mutation proof below can assert that the
+    *whole guard* rejects a redrawn Meridian, not merely that a helper reports
+    the override.
+    """
+    families = _declarations(css, _DOCUMENT_SELECTORS, "font-family")
+    assert families, "meridian/style.css never sets a body typeface at all."
+    for family in families:
+        assert family.split(",")[0].strip() == "Georgia", (
+            f"meridian's body typeface is {family!r}. Spec 3.1 fixes it as the "
+            "Georgia stack; changing it changes every resume already exported "
+            "with Meridian."
+        )
+
+    variants = _declarations(css, ".section-title", "font-variant")
+    assert variants and all(value == "small-caps" for value in variants), (
+        f"meridian's section titles are small caps by spec (found {variants!r}), "
+        "not uppercase and not sentence case."
+    )
+    # `text-transform: uppercase` beats small caps to the glyphs, so an absent
+    # declaration and an explicit `none` are the only ways to keep the spec'd look.
+    transforms = _declarations(css, ".section-title", "text-transform")
+    assert all(value == "none" for value in transforms), (
+        f"meridian's section titles declare text-transform {transforms!r}, which "
+        "overrides the small caps spec 3.1 fixes."
+    )
+
+    aligns = _declarations(css, ".resume-header", "text-align")
+    assert aligns and all(value == "center" for value in aligns), (
+        f"meridian's header is centered by spec (found {aligns!r})."
+    )
+
+    for selector in (".resume-header", ".section-title"):
+        rules = _declarations(css, selector, "border-bottom")
+        assert rules and all(rule.startswith("0.5pt solid") for rule in rules), (
+            f"meridian's {selector} lost its 0.5pt hairline rule (found {rules!r}). "
+            "The hairlines are named in spec 3.1."
+        )
 
 
 def test_meridian_keeps_its_visual_identity():
-    css = (TEMPLATES_DIR / "meridian" / "style.css").read_text(encoding="utf-8")
-
-    body = _body_font_family(css)
-    assert body and body.split(",")[0].strip() == "Georgia", (
-        f"meridian's body typeface is {body!r}. Spec 3.1 fixes it as the Georgia "
-        "stack; changing it changes every resume already exported with Meridian."
+    _assert_meridian_identity(
+        (TEMPLATES_DIR / "meridian" / "style.css").read_text(encoding="utf-8")
     )
-    assert _declaration(css, ".section-title", "font-variant") == "small-caps", (
-        "meridian's section titles are small caps by spec, not uppercase and not "
-        "sentence case."
-    )
-    assert _declaration(css, ".resume-header", "text-align") == "center", (
-        "meridian's header is centered by spec."
-    )
-    for selector in (".resume-header", ".section-title"):
-        rule = _declaration(css, selector, "border-bottom")
-        assert rule and rule.startswith("0.5pt solid"), (
-            f"meridian's {selector} lost its 0.5pt hairline rule (found {rule!r}). "
-            "The hairlines are named in spec 3.1."
-        )
 
 
 def test_meridian_vendors_no_font():
@@ -253,15 +347,63 @@ def test_meridian_vendors_no_font():
     )
 
 
-def test_the_meridian_identity_guard_reads_the_declaration_it_claims_to():
-    """Without this, `_declaration` could be weakened to a whole-file search and
-    the guard above would stay green, since Meridian satisfies it today."""
-    assert _declaration(".section-title { font-variant: small-caps; }", ".section-title", "font-variant") == "small-caps"
-    assert _declaration(".section-title em { font-variant: small-caps; }", ".section-title", "font-variant") is None
-    assert _declaration("@media print { .a { text-align: center; } }", ".a", "text-align") is None
-    assert _declaration("/* .a { text-align: center; } */", ".a", "text-align") is None
-    assert _declaration(".a, .b { text-align: center; }", ".b", "text-align") == "center"
-    assert _declaration(".a { color: red; }", ".a", "text-align") is None
+_MERIDIAN_REDRAW = (
+    "body { font-family: Helvetica, Arial, sans-serif; }\n"
+    ".section-title { font-variant: normal; text-transform: uppercase;\n"
+    "                 border-bottom: 3pt double #000000; }\n"
+    ".resume-header { text-align: left; border-bottom: 3pt double #000000; }\n"
+)
+
+
+@pytest.mark.parametrize("wrap", [
+    pytest.param("{block}", id="appended-rule"),
+    pytest.param("@media print {{\n{block}\n}}", id="print-only-override"),
+])
+def test_the_meridian_identity_guard_catches_an_appended_override(wrap):
+    """The mutation the guard exists to catch, and the one it used to miss.
+
+    A stylesheet is normally restyled by appending rules, not by editing the
+    declaration on line 9. Both mutants below leave every original declaration
+    intact and still redraw Meridian in Helvetica with uppercase headings, a
+    left-aligned header and 3pt double rules -- the plain one everywhere, the
+    `@media print` one in every exported PDF.
+    """
+    css = (TEMPLATES_DIR / "meridian" / "style.css").read_text(encoding="utf-8")
+    mutant = css + wrap.format(block=_MERIDIAN_REDRAW)
+
+    assert "Helvetica, Arial, sans-serif" in _declarations(
+        mutant, _DOCUMENT_SELECTORS, "font-family"
+    )
+    assert "normal" in _declarations(mutant, ".section-title", "font-variant")
+    assert "uppercase" in _declarations(mutant, ".section-title", "text-transform")
+    assert "left" in _declarations(mutant, ".resume-header", "text-align")
+    for selector in (".resume-header", ".section-title"):
+        assert "3pt double #000000" in _declarations(mutant, selector, "border-bottom")
+
+    with pytest.raises(AssertionError):
+        _assert_meridian_identity(mutant)
+
+
+def test_the_meridian_identity_guard_reads_the_declarations_it_claims_to():
+    """Without this, `_declarations` could be weakened to a whole-file search, or
+    back to first-match-wins, and the guard above would stay green, since
+    Meridian satisfies it today."""
+    assert _declarations(".section-title { font-variant: small-caps; }", ".section-title", "font-variant") == ["small-caps"]
+    assert _declarations(".section-title em { font-variant: small-caps; }", ".section-title", "font-variant") == []
+    assert _declarations("/* .a { text-align: center; } */", ".a", "text-align") == []
+    assert _declarations(".a, .b { text-align: center; }", ".b", "text-align") == ["center"]
+    assert _declarations(".a { color: red; }", ".a", "text-align") == []
+    assert _declarations(".a { -webkit-text-align: left; }", ".a", "text-align") == []
+    # A later rule of equal specificity wins the cascade; both must be reported.
+    assert _declarations(".a { text-align: center; } .a { text-align: left; }", ".a", "text-align") == ["center", "left"]
+    # So does a second declaration inside the same block.
+    assert _declarations(".a { text-align: center; text-align: left; }", ".a", "text-align") == ["center", "left"]
+    # At-rules are descended into, at any depth: `page.pdf()` emulates print.
+    assert _declarations("@media print { .a { text-align: left; } }", ".a", "text-align") == ["left"]
+    assert _declarations("@supports (color: red) { @media print { .a { text-align: left; } } }", ".a", "text-align") == ["left"]
+    # ...but a nested rule's declarations stay its own.
+    assert _declarations(".a { text-align: center; .b { text-align: left; } }", ".a", "text-align") == ["center"]
+    assert _declarations(".a { text-align: center; .b { text-align: left; } }", ".b", "text-align") == ["left"]
 
 
 @pytest.mark.parametrize("template", TEMPLATES)

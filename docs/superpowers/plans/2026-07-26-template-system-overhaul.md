@@ -2231,6 +2231,10 @@ def _top_level_rules(css: str) -> list[tuple[str, str]]:
     not count. Nested rules are skipped deliberately: a body font-family that
     only applies inside `@media print` leaves the on-screen preview on the
     default, and one inside `@supports` may never apply at all.
+
+    A prelude starts after the preceding `;`, so a statement at-rule -- `@charset
+    "utf-8";`, `@import url(...);` -- is not read as part of the selector list of
+    the rule that follows it.
     """
     stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     rules: list[tuple[str, str]] = []
@@ -2241,6 +2245,7 @@ def _top_level_rules(css: str) -> list[tuple[str, str]]:
         if char == "{":
             if depth == 0:
                 prelude = stripped[prelude_start:index]
+                prelude = prelude[prelude.rfind(";") + 1 :]
                 block_start = index + 1
             depth += 1
         elif char == "}":
@@ -2251,21 +2256,35 @@ def _top_level_rules(css: str) -> list[tuple[str, str]]:
     return rules
 
 
+def _values(block: str, prop: str) -> list[str]:
+    """Every value `prop` is given in `block`, in source order.
+
+    All of them, not the first: a block may declare the same property twice and
+    the later declaration is the one that renders.
+    """
+    matches = re.finditer(rf"(?<![\w-]){re.escape(prop)}\s*:\s*([^;}}]+)", block)
+    return [value for value in (m.group(1).strip() for m in matches) if value]
+
+
 def _body_font_family(css: str) -> str | None:
     """The family the document body ends up with, or None if it inherits the UA default.
 
     `html` and `:root` count alongside `body`: body inherits from them, so a
     family declared there is genuinely the document's typeface. A descendant
     selector such as `body .name` does not count -- it styles the descendant.
+
+    The *last* such declaration is returned, not the first: these rules all have
+    the same specificity, so CSS resolves them by source order, and a stylesheet
+    is normally restyled by appending a rule rather than by editing the original
+    declaration. Reading the first one reports the value that lost.
     """
-    for prelude, block in _top_level_rules(css):
-        selectors = {part.strip() for part in prelude.split(",")}
-        if not selectors & _DOCUMENT_SELECTORS:
-            continue
-        match = re.search(r"(?<![\w-])font-family\s*:\s*([^;}]+)", block)
-        if match and match.group(1).strip():
-            return match.group(1).strip()
-    return None
+    families = [
+        value
+        for prelude, block in _top_level_rules(css)
+        if {part.strip() for part in prelude.split(",")} & _DOCUMENT_SELECTORS
+        for value in _values(block, "font-family")
+    ]
+    return families[-1] if families else None
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
@@ -2293,9 +2312,26 @@ def test_the_body_typeface_guard_rejects_a_family_declared_elsewhere():
     assert _body_font_family("@media print { body { font-family: Inter; } }") is None
     assert _body_font_family("body { font-family: Inter, sans-serif; }") == "Inter, sans-serif"
     assert _body_font_family("html,\nbody {\n  font-family: Georgia, serif;\n}") == "Georgia, serif"
+    # Equal specificity, so the later rule is the one that renders.
+    assert _body_font_family("body { font-family: Inter; }\nbody { font-family: Georgia; }") == "Georgia"
+    assert _body_font_family("body { font-family: Inter; font-family: Georgia; }") == "Georgia"
+    # A statement at-rule ends in `;`; the next rule's prelude starts after it.
+    assert _body_font_family('@charset "utf-8";\nbody { font-family: Georgia; }') == "Georgia"
 ```
 
 Add `import re` to that file's imports if it is not already present.
+
+**Any later guard that asserts a stylesheet still renders a particular way must
+read every declaration, not the first.** A stylesheet is normally restyled by
+*appending* a rule, not by editing the original declaration: an appended
+equal-specificity rule wins on source order, and one inside `@media print` wins
+in every exported PDF (`render_pdf` calls `page.pdf()`, which emulates print
+media -- verified). A first-match helper reports the value that lost and stays
+green against a fully redrawn template. `_declarations` in
+`tests/test_templates.py` is the helper to reuse; positive guards written with
+`re.search`-and-return are the shape to avoid. (`tests/test_base_css_contract.py`
+is fine as written: it searches for *banned* patterns with `re.finditer`, and
+that polarity cannot be defeated by adding a rule.)
 
 This is the gate for the seven templates Tasks 8-10 write, which is why the
 brief for those tasks says "Declare `font-family` on `body`" rather than "name a
