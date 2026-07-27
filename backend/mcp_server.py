@@ -147,8 +147,10 @@ async def create_application(
     bot check, a login wall, or a body under about 400 characters), open the
     URL in the user's own browser and read it there - that uses their session,
     so postings behind a login they already hold are readable. Never try to
-    disguise automated traffic or defeat a CAPTCHA. If both fail, call
-    report_fetch_blocked and ask the user to paste.
+    disguise automated traffic or defeat a CAPTCHA. If both fail you have no
+    posting text and cannot call this tool: call queue_jobs(profile_id, [url])
+    to create the saved job, then report_fetch_blocked with the application_id
+    it returns, and ask the user to paste the posting text.
     For more than one job, call queue_jobs instead. Returns the application_id
     used by every later call. Next: save_parsed_posting, save_tailored_resume."""
     return await _run(
@@ -184,8 +186,13 @@ async def report_fetch_blocked(application_id: int, reason: str) -> dict:
     """Record that you could not read a posting, and why, so the user sees it
     on the dashboard instead of finding a job that never moved. Call this only
     after BOTH a direct fetch and opening the URL in the user's own browser
-    failed. Say what refused you: a 403, a bot check, a login wall. Then move
-    on to the next job - do not stall the batch on one posting."""
+    failed. Say what refused you: a 403, a bot check, a login wall. The
+    application moves to needs_paste and out of the queue, and the dashboard
+    offers the user a paste box for it, so move on to the next job - do not
+    stall the batch on one posting. If you have no application_id yet (the
+    single-job flow, where nothing was created), call
+    queue_jobs(profile_id, [url]) first and use the id it returns - never
+    guess an id or reuse one from another application."""
     return await _run(mcp_ops.report_fetch_blocked, _engine, application_id, reason)
 
 

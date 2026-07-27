@@ -105,10 +105,18 @@ WORKFLOW (call the tools in this order):
        If the user is not logged in and the posting requires it, that is 2c.
 
    2c. ASK FOR A PASTE - only when both of the above failed.
-       Call report_fetch_blocked(application_id, reason) so the user sees on
-       their dashboard why this posting stalled, then tell them which URL needs
-       pasting and why. Move on to the next job. Do not stall the batch on one
-       posting.
+       Working from the queue (next_pending_job gave you an application_id):
+       call report_fetch_blocked(application_id, reason). The job moves to
+       needs_paste and leaves the queue, and the reason lands on its timeline,
+       so the user sees why this posting stalled and gets a paste box for it.
+       Then move on to the next job. Do not stall the batch on one posting.
+
+       Single job, no application yet (step 3 has not run, so you have no
+       application_id): call queue_jobs(profile_id, [url]) first to create the
+       saved job, then call report_fetch_blocked with the application_id it
+       returns. Never guess an id or reuse one from another job - the report
+       would land on the wrong application. Finally tell the user which URL
+       needs pasting and why.
 3. create_application(profile_id, url, posting_text) - register the job with the
    posting text you gathered. Returns the application_id for every later call.
    Optionally call list_templates first and pass template= to pick a visual
@@ -147,6 +155,10 @@ not finished, so you resume exactly where you stopped. Do not start over.
 If the user deletes a saved job while you are working, next_pending_job simply
 stops returning it. That is correct - it is the user changing their mind, not an
 error.
+
+A job you report with report_fetch_blocked also leaves the queue: it moves to
+needs_paste, the dashboard offers the user a paste box for it, and
+next_pending_job hands you the next job instead of the blocked one.
 
 TRUTHFULNESS CONTRACT (absolute, non-negotiable, enforced server-side):
 - You may SELECT which experiences, projects, and bullets to include.
@@ -480,7 +492,14 @@ def queue_jobs(engine, profile_id: int, urls: list[str]) -> list[dict]:
                     }
                 )
                 continue
-            job = Job(url=url, depth="external")
+            # No explicit depth: the model default ("standard") applies.
+            # These rows are generate-able from the dashboard (status
+            # not_started is exactly what POST /generate accepts), and the
+            # built-in pipeline can only dispatch quick/standard/deep -
+            # "external" (create_application's marker for agent-gathered
+            # text) would make research_company raise after the parse call
+            # had already been paid for.
+            job = Job(url=url)
             session.add(job)
             session.commit()
             session.refresh(job)
@@ -534,9 +553,16 @@ def report_fetch_blocked(engine, application_id: int, reason: str) -> dict:
     """Record that a posting could not be read, and why.
 
     Call this when a direct fetch was refused AND opening the URL in the user's
-    own browser also did not work. It marks the job blocked and writes a note
-    on the application's timeline, so the user sees on the dashboard why this
-    posting stalled instead of finding a row that never moved.
+    own browser also did not work. It marks the job blocked, moves a queued
+    ("not_started") application to "needs_paste" so next_pending_job stops
+    handing it back, and writes a note on the application's timeline - the
+    user sees on the dashboard why this posting stalled and gets a paste box
+    for exactly that posting.
+
+    Without the status move, a blocked job would stay in the pending set and
+    next_pending_job would return it forever: the batch loop would live-lock
+    on the first refusal, which is the exact failure this tool exists to
+    handle.
 
     Then move on to the next job. Do not stall the batch on one posting.
     """
@@ -547,6 +573,7 @@ def report_fetch_blocked(engine, application_id: int, reason: str) -> dict:
         )
     with Session(engine) as session:
         app, job = _get_app_and_job(session, application_id)
+        _reject_if_pipeline_active(app, application_id)
         job.fetch_status = "blocked"
         session.add(job)
         event = ApplicationEvent(
@@ -557,8 +584,11 @@ def report_fetch_blocked(engine, application_id: int, reason: str) -> dict:
         session.add(event)
         session.commit()
         session.refresh(event)
+        if app.status == "not_started":
+            _set_status(session, app, "needs_paste")
         return {
             "application_id": app.id,
+            "status": app.status,
             "fetch_status": job.fetch_status,
             "event_id": event.id,
         }
