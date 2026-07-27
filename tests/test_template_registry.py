@@ -116,3 +116,65 @@ def test_unknown_structure_value_raises(tmp_path):
     )
     with pytest.raises(TemplateManifestError):
         load_registry(tmp_path)
+
+
+import base64
+import re
+
+from backend.app.services.render import _font_css, _load_css, render_resume_html
+
+
+def test_font_css_is_empty_for_a_template_with_no_fonts():
+    assert _font_css("meridian") == ""
+
+
+def test_font_css_emits_one_face_per_declared_font():
+    css = _font_css("slate")
+    assert css.count("@font-face") == len(TEMPLATE_REGISTRY["slate"].fonts)
+
+
+def test_font_css_inlines_the_bytes_as_a_data_uri():
+    css = _font_css("slate")
+    face = TEMPLATE_REGISTRY["slate"].fonts[0]
+    raw = (TEMPLATES_DIR / "fonts" / face.file).read_bytes()
+    assert base64.b64encode(raw).decode("ascii") in css
+    assert "data:font/woff2;base64," in css
+    assert "https://" not in css, "a render-time network reference would drop silently"
+
+
+def test_font_css_never_inlines_the_same_file_twice():
+    """A variable font covers several weights with one file. Emitting it once per
+    weight would multiply the size of every exported HTML document."""
+    for name in TEMPLATES:
+        css = _font_css(name)
+        payloads = re.findall(r"base64,([A-Za-z0-9+/=]+)\)", css)
+        assert len(payloads) == len(set(payloads)), f"{name} inlines a font twice"
+
+
+def test_font_css_is_cached_per_template():
+    _font_css.cache_clear()
+    _font_css("slate")
+    _font_css("slate")
+    assert _font_css.cache_info().hits >= 1
+
+
+def test_load_css_puts_font_faces_ahead_of_the_template_style():
+    _base, style = _load_css("slate")
+    assert style.index("@font-face") < style.index("body")
+
+
+def test_rendered_html_carries_the_font_faces():
+    resume = _registry_fixture_resume()
+    html = render_resume_html(resume, "slate")
+    assert "data:font/woff2;base64," in html
+
+
+def _registry_fixture_resume():
+    import json as _json
+    from pathlib import Path as _Path
+
+    from backend.app.schemas import TailorResult
+
+    fixtures = _Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
+    data = _json.loads((fixtures / "tailor.json").read_text(encoding="utf-8"))
+    return TailorResult.model_validate(data).resume

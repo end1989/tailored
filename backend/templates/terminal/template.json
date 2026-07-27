@@ -5,5 +5,10 @@
   "best_for": "Engineering, data, infrastructure",
   "structure": "projects-forward",
   "order": 3,
-  "fonts": []
+  "fonts": [
+    {"family": "IBM Plex Sans", "file": "IBMPlexSans-italic.woff2", "weight": "400", "style": "italic"},
+    {"family": "IBM Plex Sans", "file": "IBMPlexSans-normal.woff2", "weight": "400 600", "style": "normal"},
+    {"family": "IBM Plex Mono", "file": "IBMPlexMono-400-normal.woff2", "weight": "400", "style": "normal"},
+    {"family": "IBM Plex Mono", "file": "IBMPlexMono-500-normal.woff2", "weight": "500", "style": "normal"}
+  ]
 }

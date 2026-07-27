@@ -5,5 +5,8 @@
   "best_for": "General purpose, safe everywhere",
   "structure": "experience-first",
   "order": 2,
-  "fonts": []
+  "fonts": [
+    {"family": "Inter", "file": "Inter-italic.woff2", "weight": "400 700", "style": "italic"},
+    {"family": "Inter", "file": "Inter-normal.woff2", "weight": "400 700", "style": "normal"}
+  ]
 }

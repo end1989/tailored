@@ -6,6 +6,8 @@ directory per template (template.html + style.css). CSS is inlined into a
 """
 from __future__ import annotations
 
+import base64
+import functools
 import html
 import json
 from dataclasses import dataclass
@@ -137,12 +139,47 @@ _env = Environment(
 )
 
 
+@functools.lru_cache(maxsize=None)
+def _font_css(template: str) -> str:
+    """@font-face declarations with base64-inlined woff2 for one template.
+
+    Cached per process, so a font is base64-encoded once per template per run.
+    Inlining matters: render_pdf calls page.set_content(html) with no base URL,
+    so an externally referenced font would be silently dropped and the PDF would
+    render in a fallback face without any error.
+    """
+    manifest = TEMPLATE_REGISTRY.get(template)
+    if manifest is None:
+        raise ValueError(f"Unknown template {template!r}; expected one of {TEMPLATES}")
+    blocks: list[str] = []
+    for face in manifest.fonts:
+        path = FONTS_DIR / face.file
+        payload = base64.b64encode(path.read_bytes()).decode("ascii")
+        blocks.append(
+            "@font-face {\n"
+            f"  font-family: '{face.family}';\n"
+            f"  font-style: {face.style};\n"
+            f"  font-weight: {face.weight};\n"
+            "  font-display: block;\n"
+            f"  src: url(data:font/woff2;base64,{payload}) format('woff2');\n"
+            "}"
+        )
+    return "\n".join(blocks)
+
+
 def _load_css(template: str) -> tuple[str, str]:
-    """Return (base_css, style_css) for a template; raise on unknown template."""
+    """Return (base_css, style_css) for a template; raise on unknown template.
+
+    style_css carries the template's @font-face declarations ahead of its own
+    rules, so the single {{ style_css }} slot in template.html stays sufficient.
+    """
     if template not in TEMPLATE_REGISTRY:
         raise ValueError(f"Unknown template {template!r}; expected one of {TEMPLATES}")
     base_css = (TEMPLATES_DIR / "base.css").read_text(encoding="utf-8")
     style_css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+    font_css = _font_css(template)
+    if font_css:
+        style_css = f"{font_css}\n\n{style_css}"
     return base_css, style_css
 
 
