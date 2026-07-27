@@ -27,6 +27,7 @@ from .app.models import (
     get_contact,
     get_master_profile as _master_profile_of,
     get_parsed,
+    get_resume,
     set_master_profile,
     set_parsed,
 )
@@ -121,10 +122,10 @@ RESUME:
 - headline: one line positioning the candidate for this specific role.
 - summary: two to four sentences specific to this candidate and this posting -
   no generic filler.
-- Template structural hint: the "terminal" template is projects-forward (a
-  Projects section leads, before Experience); every other template
-  (meridian, slate, signal) is experience-first (Experience leads). Include
-  Skills and Education sections whenever the master profile has content for them.
+- Templates differ in section order: call list_templates and match best_for to
+  the role. Most templates lead with Experience; Terminal leads with Projects.
+  Include Skills and Education sections whenever the master profile has content
+  for them.
 
 COVER LETTER (markdown, 3-5 short paragraphs):
 - Open specific. If you saved research, the first paragraph must reference a
@@ -352,6 +353,63 @@ def create_application(
             "application_id": app.id,
             "status": app.status,
             "next": "save_parsed_posting, then save_tailored_resume",
+        }
+
+
+def set_application_template(
+    engine, data_dir: Path, application_id: int, template: str
+) -> dict:
+    """Re-render an existing application in a different template.
+
+    No Claude call and no cost: the stored resume and cover letter are unchanged.
+    Section order is not revisited, because that was decided at tailoring time
+    from the original template's structural hint.
+    """
+    if template not in render.TEMPLATES:
+        raise McpOpsError(
+            f"Unknown template {template!r}; expected one of "
+            f"{list(render.TEMPLATES)}. Call list_templates for descriptions."
+        )
+    with Session(engine) as session:
+        app, _job = _get_app_and_job(session, application_id)
+        _reject_if_pipeline_active(app, application_id)
+        resume_doc = get_resume(app)
+        if resume_doc is None:
+            raise McpOpsError(
+                f"Application {application_id} has no tailored resume yet; "
+                "nothing to re-render. Call save_tailored_resume first."
+            )
+        profile = session.get(Profile, app.profile_id)
+        contact = get_contact(profile)
+
+        user_settings = load_user_settings(Path(data_dir))
+        # Render before committing anything: a row claiming a template its
+        # exports were never rendered in would hand the agent the old PDF
+        # under the new label.
+        export_dir = render.export_application(
+            app.id,
+            resume_doc,
+            app.cover_letter_md or "",
+            contact,
+            template,
+            Path(data_dir),
+            page_size=user_settings.get("page_size", "Letter"),
+        )
+        app.template = template
+        app.export_dir = str(export_dir)
+        session.add(app)
+        session.commit()
+        session.refresh(app)
+
+        return {
+            "application_id": app.id,
+            "status": app.status,
+            "version": app.version,
+            "template": app.template,
+            "export_dir": app.export_dir,
+            "files": sorted(
+                p.name for p in Path(export_dir).iterdir() if p.is_file()
+            ),
         }
 
 

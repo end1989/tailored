@@ -1,0 +1,89 @@
+/* ============================================================
+   Dossier — density without crowding.
+   Source Sans 3 at a 9pt floor, tightened rhythm, full-width
+   measure. Every reduction here is deliberate; 9pt is the
+   smallest body size that still prints and scans reliably.
+   ============================================================ */
+
+:root {
+  --fs-name: 17pt;
+  --fs-headline: 9.5pt;
+  --fs-section: 8.5pt;
+  --fs-body: 9pt;
+  --fs-meta: 8pt;
+  --leading: 1.3;
+  --measure: 100%;
+  --rule-color: #bcbcbc;
+  --space-1: 0.15rem;
+  --space-2: 0.35rem;
+  --space-3: 0.55rem;
+  --space-4: 0.95rem;
+}
+
+body {
+  font-family: "Source Sans 3", "Segoe UI", system-ui, sans-serif;
+}
+
+.resume-header {
+  padding-bottom: var(--space-2);
+  border-bottom: var(--rule-weight) solid var(--rule-color);
+}
+
+.name {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.headline {
+  color: var(--ink-soft);
+}
+
+.contact-line {
+  color: var(--ink-faint);
+  margin-top: var(--space-1);
+}
+
+.summary {
+  margin-top: var(--space-2);
+}
+
+.section-title {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--ink);
+  padding-bottom: 1px;
+  border-bottom: var(--rule-weight) solid var(--rule-color);
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.item-head .primary {
+  font-weight: 600;
+}
+
+.item-head .secondary {
+  color: var(--ink-soft);
+}
+
+.item-head .meta {
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+
+.bullets {
+  margin-left: 0.95em;
+}
+
+.bullets li {
+  margin-bottom: 1px;
+}
+
+.skill-label {
+  font-weight: 600;
+}

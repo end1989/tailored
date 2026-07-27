@@ -1,0 +1,3 @@
+{# schema.org Person for the HTML export. Escaping is done in render.py's
+   _json_ld_payload, which is why this passes through | safe. #}
+<script type="application/ld+json">{{ json_ld | safe }}</script>

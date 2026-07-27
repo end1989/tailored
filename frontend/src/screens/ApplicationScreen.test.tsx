@@ -15,6 +15,8 @@ vi.mock("../api", () => ({
   deleteEvent: vi.fn(),
   listEvents: vi.fn(),
   patchApplication: vi.fn(),
+  listTemplates: vi.fn(),
+  setApplicationTemplate: vi.fn(),
   previewUrl: (id: number) => `/api/applications/${id}/preview`,
   exportUrl: (id: number, kind: string) => `/api/applications/${id}/exports/${kind}`,
 }));
@@ -63,6 +65,14 @@ function renderScreen() {
 }
 
 describe("ApplicationScreen", () => {
+  // The screen fetches the template registry on mount. A bare vi.fn() returns
+  // undefined, which throws inside the effect, so every test needs this seeded
+  // whether or not it cares about templates. The tests that do care override it
+  // in their own body. Same convention as AddJobsScreen/SettingsScreen.
+  beforeEach(() => {
+    vi.mocked(api.listTemplates).mockResolvedValue([]);
+  });
+
   it("shows the paste panel when status is needs_paste", async () => {
     vi.mocked(api.getApplication).mockResolvedValue({ ...base, status: "needs_paste" });
     renderAt();
@@ -292,5 +302,77 @@ describe("ApplicationScreen", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("offers every registered template in the switcher", async () => {
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    const select = await screen.findByLabelText(/template/i);
+    expect(within(select).getByRole("option", { name: "Ledger" })).toBeInTheDocument();
+  });
+
+  it("selects the application's own template, not just the first registered one", async () => {
+    // Regression: nothing pinned the switcher's *displayed* value, so deleting
+    // value={detail.template} from the <select> left the whole suite green.
+    // The blind spot was the fixture: base.template is "slate", which no test
+    // seeded into the mocked registry, and React selects the first option when
+    // a controlled value matches none -- so the correct render and the broken
+    // one both showed "Meridian". Seeding slate *second* makes them differ:
+    // controlled -> "slate", uncontrolled -> "meridian".
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "slate", label: "Slate", description: "d", best_for: "b" },
+    ]);
+    renderScreen();
+    const select = (await screen.findByLabelText(/template/i)) as HTMLSelectElement;
+    // The select renders as soon as `detail` arrives; its options arrive from a
+    // separate listTemplates() promise. Wait for an option before reading the
+    // value so this asserts the rendered selection rather than the empty-select
+    // placeholder.
+    await screen.findByRole("option", { name: "Slate" });
+    expect(select.value).toBe("slate");
+  });
+
+  it("switches template and shows the new one", async () => {
+    // slate (the fixture's own template) is seeded here too, so the pre-change
+    // assertion below distinguishes a select bound to detail.template from one
+    // that ignores it and defaults to the first option.
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "slate", label: "Slate", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+    ]);
+    vi.mocked(api.setApplicationTemplate).mockResolvedValue({
+      ...base,
+      status: "ready",
+      template: "ledger",
+    });
+    renderScreen();
+    const select = (await screen.findByLabelText(/template/i)) as HTMLSelectElement;
+    // fireEvent.change cannot select an option that does not exist yet: it
+    // would leave e.target.value === "" and send that to the API. Wait for the
+    // option, and confirm the starting value, before firing.
+    await screen.findByRole("option", { name: "Ledger" });
+    expect(select.value).toBe("slate");
+    fireEvent.change(select, { target: { value: "ledger" } });
+    await waitFor(() =>
+      expect(api.setApplicationTemplate).toHaveBeenCalledWith(base.id, "ledger"),
+    );
+    await waitFor(() => expect(select.value).toBe("ledger"));
+  });
+
+  it("surfaces a failed template switch instead of silently reverting", async () => {
+    vi.mocked(api.listTemplates).mockResolvedValue([
+      { name: "meridian", label: "Meridian", description: "d", best_for: "b" },
+      { name: "ledger", label: "Ledger", description: "d", best_for: "b" },
+    ]);
+    vi.mocked(api.setApplicationTemplate).mockRejectedValue(new Error("boom"));
+    renderScreen();
+    const select = await screen.findByLabelText(/template/i);
+    fireEvent.change(select, { target: { value: "ledger" } });
+    expect(await screen.findByText(/boom/i)).toBeInTheDocument();
   });
 });

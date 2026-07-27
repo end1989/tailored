@@ -1,0 +1,16 @@
+{# Quarto — academic CV. Academia, research, grants. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ resume.contact.name }} — Resume</title>
+<style>
+{{ base_css | safe }}
+{{ style_css | safe }}
+</style>
+{% include "_structured_data.html" %}
+</head>
+<body>
+{% include "_resume_body.html" %}
+</body>
+</html>

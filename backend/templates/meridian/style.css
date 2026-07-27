@@ -40,7 +40,11 @@ body {
 
 .summary {
   font-size: 10pt;
-  margin-top: var(--space-3);
+  /* Auto side margins, not just margin-top: base.css caps .summary at
+     --measure, and an uncentred block under this centred header would sit
+     flush left with a third of the column empty beside it. The text stays
+     left-aligned; only the block is centred. */
+  margin: var(--space-3) auto 0;
   text-align: left;
 }
 
@@ -52,11 +56,6 @@ body {
   color: #161616;
   border-bottom: 0.5pt solid #8a8a8a;
   padding-bottom: 2px;
-}
-
-.item {
-  break-inside: avoid;
-  page-break-inside: avoid;
 }
 
 .item-head {

@@ -1,0 +1,9 @@
+{
+  "name": "plainwork",
+  "label": "Plainwork",
+  "description": "Deliberately unstyled: no rules, no colour, no letterspacing, system fonts only.",
+  "best_for": "Workday and government portals, maximum ATS compatibility",
+  "structure": "experience-first",
+  "order": 8,
+  "fonts": []
+}

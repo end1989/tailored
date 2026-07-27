@@ -132,9 +132,9 @@ async def add_profile_evidence(
 
 @mcp.tool()
 async def list_templates() -> list[dict]:
-    """List the four resume templates (name, label, description, best_for).
-    Call before create_application to choose deliberately: 'slate' is the safe
-    default; 'terminal' is projects-forward for technical roles."""
+    """List every available resume template (name, label, description, best_for).
+    Call before create_application to choose deliberately: match best_for to the
+    role. 'slate' is the safe general-purpose default."""
     return await _run(mcp_ops.list_templates)
 
 
@@ -193,6 +193,20 @@ async def save_tailored_resume(
         resume,
         cover_letter_md,
         tailoring_notes,
+    )
+
+
+@mcp.tool()
+async def set_application_template(application_id: int, template: str) -> dict:
+    """Re-render an existing application in a different template.
+    Free and instant: no model call, no cost, no new version. Only presentation
+    changes; section order is not revisited. Call list_templates for options."""
+    return await _run(
+        mcp_ops.set_application_template,
+        _engine,
+        _settings.data_dir,
+        application_id,
+        template,
     )
 
 

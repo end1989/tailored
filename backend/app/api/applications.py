@@ -221,6 +221,10 @@ class ApplicationPatch(BaseModel):
     stage: Optional[str] = None
 
 
+class TemplateChange(BaseModel):
+    template: str
+
+
 class EventIn(BaseModel):
     kind: str
     body: str = ""
@@ -424,6 +428,65 @@ def regenerate(
     if not body.feedback.strip():
         raise HTTPException(status_code=422, detail="feedback must not be empty")
     background_tasks.add_task(pipeline.regenerate_application, app_row.id, body.feedback)
+    return application_detail(session, app_row, job)
+
+
+@router.patch("/applications/{application_id}/template")
+def set_template(
+    application_id: int,
+    body: TemplateChange,
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Re-render an existing application in a different template.
+
+    No Claude call, no cost, no version bump: the stored resume and cover letter
+    are unchanged and only their presentation differs.
+
+    Known limitation, by design: section ORDER was chosen at tailoring time from
+    the original template's structural hint, so switching between a
+    projects-forward and an experience-first template does not reorder sections.
+    Reordering would require re-running the LLM, which is exactly what this
+    endpoint exists to avoid. Use regenerate for that.
+    """
+    app_row, job = _get_app_and_job(session, application_id)
+    if app_row.status in PROCESSING_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
+    if body.template not in TEMPLATES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown template {body.template!r}; expected one of {list(TEMPLATES)}",
+        )
+    resume_now = get_resume(app_row)
+    if resume_now is None:
+        raise HTTPException(
+            status_code=422,
+            detail="this application has no tailored resume yet; nothing to re-render",
+        )
+
+    profile = session.get(Profile, app_row.profile_id)
+    settings = request.app.state.settings
+    user_settings = load_user_settings(settings.data_dir)
+    # Render before committing anything: a row claiming a template its exports
+    # were never rendered in would serve the old PDF under the new label.
+    export_dir = render.export_application(
+        app_row.id,
+        resume_now,
+        app_row.cover_letter_md or "",
+        get_contact(profile),
+        body.template,
+        settings.data_dir,
+        page_size=user_settings.get("page_size", "Letter"),
+    )
+    app_row.template = body.template
+    app_row.export_dir = str(export_dir)
+    app_row.updated_at = _utcnow()
+    session.add(app_row)
+    session.commit()
+    session.refresh(app_row)
     return application_detail(session, app_row, job)
 
 

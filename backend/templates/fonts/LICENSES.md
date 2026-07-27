@@ -1,0 +1,153 @@
+# Vendored font licences
+
+Every font in this directory is licensed under the SIL Open Font License 1.1, which permits embedding and redistribution. Condition 2 requires each copy to travel with the copyright notice and the licence itself, so both are reproduced below rather than linked.
+
+These are latin-subset `.woff2` files fetched from the Google Fonts `css2` endpoint by `scripts/vendor_fonts.py` and committed as binaries. There is no build step: the app base64-inlines them at render time so every exported HTML document is standalone. That script also generates this file; do not edit it by hand.
+
+| Family | Upstream project |
+|---|---|
+| Inter | https://github.com/rsms/inter |
+| IBM Plex Sans | https://github.com/IBM/plex |
+| IBM Plex Mono | https://github.com/IBM/plex |
+| Public Sans | https://github.com/uswds/public-sans |
+| Source Serif 4 | https://github.com/adobe-fonts/source-serif |
+| EB Garamond | https://github.com/octaviopardo/EBGaramond12 |
+| Source Sans 3 | https://github.com/adobe-fonts/source-sans |
+
+## Copyright notices
+
+### Inter
+
+Copyright (c) 2016 The Inter Project Authors (https://github.com/rsms/inter)
+
+Notice taken from https://raw.githubusercontent.com/rsms/inter/master/LICENSE.txt
+
+### IBM Plex Sans
+
+Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
+
+Notice taken from https://raw.githubusercontent.com/IBM/plex/master/LICENSE.txt
+
+### IBM Plex Mono
+
+Copyright © 2017 IBM Corp. with Reserved Font Name "Plex"
+
+Notice taken from https://raw.githubusercontent.com/IBM/plex/master/LICENSE.txt
+
+### Public Sans
+
+Copyright 2015 The Public Sans Project Authors (https://github.com/uswds/public-sans)
+
+Notice taken from https://raw.githubusercontent.com/uswds/public-sans/develop/LICENSE.md
+
+### Source Serif 4
+
+Copyright 2014 - 2023 Adobe (http://www.adobe.com/), with Reserved Font Name ‘Source’. All Rights Reserved. Source is a trademark of Adobe in the United States and/or other countries.
+
+Notice taken from https://raw.githubusercontent.com/adobe-fonts/source-serif/release/LICENSE.md
+
+### EB Garamond
+
+Copyright 2017 The EB Garamond Project Authors (https://github.com/octaviopardo/EBGaramond12)
+Copyright 2025 Deborah Khodanovich (RCS citation glyphs)
+
+Notice taken from https://raw.githubusercontent.com/octaviopardo/EBGaramond12/master/OFL.txt
+
+### Source Sans 3
+
+Copyright 2010-2024 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. All Rights Reserved. Source is a trademark of Adobe in the United States and/or other countries.
+
+Notice taken from https://raw.githubusercontent.com/adobe-fonts/source-sans/release/LICENSE.md
+
+## SIL Open Font License, Version 1.1
+
+Every family above ships under this licence, and their upstream files carry the same text, so it appears once here rather than seven times. Reproduced verbatim from https://raw.githubusercontent.com/adobe-fonts/source-serif/release/LICENSE.md
+
+```
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+```

@@ -247,12 +247,22 @@ included by all eight templates:
 Person
   name, email, telephone, address, url / sameAs (from contact.links)
   description                        (summary)
-  hasOccupation    -> Occupation     (each experience item)
-  worksFor         -> Organization
+  hasOccupation    -> Role             -> Occupation    (each experience item)
+  worksFor         -> OrganizationRole -> Organization  (each experience item)
   alumniOf         -> EducationalOrganization
   hasCredential    -> EducationalOccupationalCredential
-  knowsAbout                         (skill group items)
+  knowsAbout                           (skill group items)
 ```
+
+Employment history uses the schema.org Role pattern: the Role repeats the
+property it is inserted into and carries `roleName`, `startDate`, and `endDate`
+(omitted while the role is ongoing). This is not decoration. `worksFor` is
+defined as "Organizations that the person works for" and `hasOccupation` says
+"For past professions, use Role for expressing dates", so a bare `Organization`
+per employer asserts that every job on the resume is held right now. The
+`roleName` is also what joins an occupation to the employer it was held at;
+without it the two arrays are parallel and unlinked, and the block cannot say
+who did what, where, or when.
 
 Serialized by `render.py::resume_json_ld(resume: ResumeDoc) -> dict`, dumped
 with `json.dumps` and emitted through `| safe`, with `</` escaped as `<\/` so a

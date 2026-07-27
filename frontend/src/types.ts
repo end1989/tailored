@@ -1,6 +1,9 @@
 // ---- enums / literals (verbatim from the backend contract) ----
 export type Depth = "quick" | "standard" | "deep" | "external"; // "external" = MCP mode (agent did the research)
-export type TemplateName = "meridian" | "slate" | "terminal" | "signal";
+// Template ids come from the backend registry (backend/templates/*/template.json),
+// so the frontend cannot honestly enumerate them. Validation is server-side, in
+// api/settings.py, api/applications.py and PATCH /applications/{id}/template.
+export type TemplateName = string;
 export type AppStatus =
   | "not_started"
   | "queued"

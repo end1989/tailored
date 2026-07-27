@@ -1,0 +1,12 @@
+{
+  "name": "quarto",
+  "label": "Quarto",
+  "description": "Academic CV that carries long publication lists gracefully across pages.",
+  "best_for": "Academia, research, grants",
+  "structure": "experience-first",
+  "order": 6,
+  "fonts": [
+    {"family": "EB Garamond", "file": "EBGaramond-italic.woff2", "weight": "400", "style": "italic"},
+    {"family": "EB Garamond", "file": "EBGaramond-normal.woff2", "weight": "400 600", "style": "normal"}
+  ]
+}

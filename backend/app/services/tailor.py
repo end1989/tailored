@@ -10,6 +10,7 @@ from ..schemas import (
     UsageInfo,
 )
 from .claude import ClaudeService
+from .render import TEMPLATE_REGISTRY
 
 TAILOR_SYSTEM = """You are an expert resume writer producing a tailored resume and cover letter for one specific job application.
 
@@ -24,7 +25,7 @@ RESUME:
 - Select the experiences, projects, and bullets most relevant to the parsed posting; trim what does not serve this application.
 - headline: one line positioning the candidate for this specific role.
 - summary: two to four sentences specific to this candidate and this posting - no generic filler.
-- Respect the template structural hint given in the input: the "terminal" template is projects-forward (a Projects section leads, before Experience); every other template is experience-first (Experience leads). Include Skills and Education sections whenever the master profile has content for them.
+- Respect the template structural hint given in the input: when the hint is "projects-forward", a Projects section leads, before Experience; when it is "experience-first", Experience leads. Include Skills and Education sections whenever the master profile has content for them.
 
 COVER LETTER (markdown, 3-5 short paragraphs):
 - Open specific. When research findings are provided, the first paragraph must reference a concrete finding (mission, product, news item, or culture language). When no research is provided, the first paragraph must reference specific language from the posting itself.
@@ -38,7 +39,9 @@ If a REGENERATION FEEDBACK block is present in the input, treat it as the highes
 
 
 def _structural_hint(template: str) -> str:
-    return "projects-forward" if template == "terminal" else "experience-first"
+    """The section order this template is designed around, from its manifest."""
+    manifest = TEMPLATE_REGISTRY.get(template)
+    return manifest.structure if manifest is not None else "experience-first"
 
 
 def tailor_application(

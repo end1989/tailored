@@ -1,0 +1,80 @@
+{# Plainwork's markup: block flow only. No flex, no inline layout, no
+   decoration. Every fact sits on its own line in reading order, which is the
+   most conservative thing a resume can hand to an unknown parser. #}
+<header class="resume-header">
+  <h1 class="name">{{ resume.contact.name }}</h1>
+  <p class="headline">{{ resume.headline }}</p>
+  <p class="contact-line">
+    {{ [resume.contact.email, resume.contact.phone, resume.contact.location] | select | join(" | ") }}
+  </p>
+  {%- for link in resume.contact.links %}
+  <p class="contact-line">{{ link.label }}: {{ link.url }}</p>
+  {%- endfor %}
+  {% if resume.summary %}<p class="summary">{{ resume.summary }}</p>{% endif %}
+</header>
+
+{% for section in resume.sections %}
+<section class="section section-{{ section.type }}">
+  <h2 class="section-title">{{ section.title }}</h2>
+
+  {% if section.type == "experience" %}
+    {% for item in section.items %}
+    <div class="item">
+      <p class="primary">{{ item.role }}</p>
+      <p class="secondary">{{ item.company }}</p>
+      <p class="meta">{{ item.start }}–{{ item.end or "Present" }}{% if item.location %} | {{ item.location }}{% endif %}</p>
+      {% if item.bullets %}
+      <ul class="bullets">
+        {% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+  {% elif section.type == "projects" %}
+    {% for item in section.items %}
+    <div class="item">
+      <p class="primary">{{ item.name }}</p>
+      {% if item.description %}<p class="secondary">{{ item.description }}</p>{% endif %}
+      {% if item.url %}<p class="meta">{{ item.url }}</p>{% endif %}
+      {% if item.bullets %}
+      <ul class="bullets">
+        {% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+    </div>
+    {% endfor %}
+
+  {% elif section.type == "skills" %}
+    {% for group in section.groups %}
+    <div class="item skill-group">
+      <p><span class="skill-label">{{ group.label }}:</span> <span class="skill-items">{{ group.items | join(", ") }}</span></p>
+    </div>
+    {% endfor %}
+
+  {% elif section.type == "education" %}
+    {% for item in section.items %}
+    <div class="item">
+      <p class="primary">{{ item.credential }}</p>
+      <p class="secondary">{{ item.institution }}</p>
+      {% if item.year %}<p class="meta">{{ item.year }}</p>{% endif %}
+      {% if item.detail %}<p class="detail">{{ item.detail }}</p>{% endif %}
+    </div>
+    {% endfor %}
+
+  {% elif section.type == "certifications" %}
+    {% for item in section.items %}
+    <div class="item">
+      <p class="primary">{{ item.name }}</p>
+      {% if item.issuer %}<p class="secondary">{{ item.issuer }}</p>{% endif %}
+      {% if item.year %}<p class="meta">{{ item.year }}</p>{% endif %}
+    </div>
+    {% endfor %}
+
+  {% elif section.type == "extras" %}
+    <ul class="bullets extras">
+      {% for item in section.items %}<li>{{ item }}</li>{% endfor %}
+    </ul>
+  {% endif %}
+</section>
+{% endfor %}

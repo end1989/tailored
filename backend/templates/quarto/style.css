@@ -1,0 +1,86 @@
+/* ============================================================
+   Quarto — academic CV.
+   EB Garamond, set a little larger because Garamond runs small.
+   Built to run to several pages: entries may break across a
+   page boundary rather than leaving one half empty.
+   ============================================================ */
+
+:root {
+  --fs-name: 21pt;
+  --fs-headline: 11pt;
+  --fs-section: 11pt;
+  --fs-body: 11pt;
+  --fs-meta: 9.5pt;
+  --leading: 1.45;
+  --measure: 36em;
+  --rule-color: #9c9c9c;
+  --item-break: auto;
+  --space-3: 0.7rem;
+  --space-4: 1.5rem;
+}
+
+body {
+  font-family: "EB Garamond", Garamond, Georgia, serif;
+}
+
+.resume-header {
+  text-align: center;
+}
+
+.name {
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+.headline {
+  font-style: italic;
+  color: var(--ink-soft);
+  margin-top: var(--space-1);
+}
+
+.contact-line {
+  color: var(--ink-faint);
+  margin-top: var(--space-2);
+}
+
+.summary {
+  margin: var(--space-3) auto 0;
+  text-align: left;
+}
+
+.section-title {
+  font-style: italic;
+  font-weight: 400;
+  color: var(--ink);
+  padding-bottom: 2px;
+  border-bottom: var(--rule-weight) solid var(--rule-color);
+}
+
+.item-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--space-2);
+}
+
+.item-head .primary {
+  font-weight: 600;
+}
+
+.item-head .secondary {
+  font-style: italic;
+  color: var(--ink-soft);
+}
+
+.item-head .meta {
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+
+.bullets li {
+  margin-bottom: 2px;
+}
+
+.skill-label {
+  font-weight: 600;
+}
