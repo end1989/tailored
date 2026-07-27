@@ -1265,7 +1265,19 @@ git commit -m "feat: base64-inline vendored fonts per template at render time"
 Create `tests/test_base_css_contract.py`:
 
 ```python
-"""base.css owns structure; style.css owns identity. This test keeps them apart."""
+"""base.css owns structure; style.css owns identity. This test keeps them apart.
+
+The banned-construct guards below match on the CSS *property*, with optional
+whitespace and vendor prefixes, and they cover the shorthand spellings as well
+as the longhands. An earlier version of this file tested three literal
+substrings ("column-count", "grid-template-columns", "position: absolute"),
+which let `columns: 2`, `grid-template: auto / 1fr 1fr` and `position:absolute`
+through untouched - all three render exactly the two-column sidebar the
+single-column constraint exists to forbid. `test_the_layout_guard_rejects`
+and `test_the_network_guard_rejects` pin that class of gap shut: they feed
+known-bad declarations through the same helpers the per-template tests use, so
+a guard that stops catching something fails here first.
+"""
 from __future__ import annotations
 
 import re
@@ -1293,6 +1305,60 @@ REQUIRED_PROPERTIES = (
     "--space-4",
 )
 
+# Every pattern is anchored on the property name: `(?<![\w-])` stops
+# `grid-template-columns` from being read as the `columns` shorthand, and the
+# optional `-[a-z]+-` accepts vendor prefixes.
+PAGINATION_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("break-inside", r"(?<![\w-])break-inside\s*:"),
+    ("page-break-inside", r"(?<![\w-])page-break-inside\s*:"),
+)
+
+BANNED_LAYOUT_PATTERNS: tuple[tuple[str, str], ...] = (
+    # CSS multi-column. Any one of column-count / column-width / the `columns`
+    # shorthand alone turns a block into columns; column-gap is shared with
+    # flexbox and is legitimate.
+    ("multi-column flow", r"(?<![\w-])(?:-[a-z]+-)?column-(?!gap\b)[a-z-]+\s*:"),
+    ("multi-column flow", r"(?<![\w-])(?:-[a-z]+-)?columns\s*:"),
+    # Grid track definition, longhand and both shorthands. `display: grid` and
+    # `grid-gap` are not matched: a single-column grid preserves source order.
+    ("grid track definition", r"(?<![\w-])grid(?:-template|-auto)?(?:-columns|-rows|-areas)?\s*:"),
+    ("grid placement", r"(?<![\w-])grid-(?:column|row|area)(?:-start|-end)?\s*:"),
+    ("grid-auto-flow", r"(?<![\w-])grid-auto-flow\s*:"),
+    # Out-of-flow boxes: Chromium emits the PDF content stream in visual order,
+    # so anything lifted out of normal flow can extract out of source order.
+    ("out-of-flow positioning", r"(?<![\w-])position\s*:\s*(?:absolute|fixed)(?![\w-])"),
+    ("float", r"(?<![\w-])float\s*:\s*(?!none\b)[a-z-]+"),
+)
+
+# render_pdf calls page.set_content(html) with no base URL, so *no* external
+# reference resolves - not an absolute URL, not a protocol-relative one, not a
+# relative path. Only a data: URI survives.
+BANNED_NETWORK_PATTERNS: tuple[tuple[str, str], ...] = (
+    ("absolute URL", r"https?://"),
+    ("unresolvable url() reference", r"url\(\s*(?!['\"]?data:)"),
+    ("@import", r"(?<![\w-])@import\b"),
+)
+
+
+def _strip_comments(css: str) -> str:
+    """Drop /* ... */. A commented-out declaration is inert in both directions."""
+    return re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+
+def _violations(css: str, patterns: tuple[tuple[str, str], ...]) -> list[str]:
+    stripped = _strip_comments(css)
+    return sorted(
+        {
+            f"{label}: {match.group(0).strip()!r}"
+            for label, pattern in patterns
+            for match in re.finditer(pattern, stripped)
+        }
+    )
+
+
+def _style_css(template: str) -> str:
+    return (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
+
 
 @pytest.mark.parametrize("prop", REQUIRED_PROPERTIES)
 def test_base_css_defines_the_shared_property(prop):
@@ -1304,31 +1370,110 @@ def test_base_css_defines_the_shared_property(prop):
 @pytest.mark.parametrize("template", TEMPLATES)
 def test_template_style_does_not_declare_pagination(template):
     """Pagination is structural. A template that redefines it is a bug."""
-    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
-    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    for prop in ("break-inside", "page-break-inside"):
-        assert not re.search(rf"(?<!-)\b{prop}\s*:", stripped), (
-            f"{template}/style.css declares {prop}. Structure belongs in base.css; "
-            "set --item-break instead if this template needs breakable items."
-        )
+    found = _violations(_style_css(template), PAGINATION_PATTERNS)
+    assert not found, (
+        f"{template}/style.css declares pagination {found}. Structure belongs in "
+        "base.css; set --item-break instead if this template needs breakable items."
+    )
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
 def test_template_style_does_not_reference_the_network(template):
-    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
-    assert "http://" not in css and "https://" not in css, (
-        f"{template}/style.css references a URL. render_pdf sets content with no "
-        "base URL, so the reference would be silently dropped."
+    found = _violations(_style_css(template), BANNED_NETWORK_PATTERNS)
+    assert not found, (
+        f"{template}/style.css references something unresolvable {found}. render_pdf "
+        "sets content with no base URL, so the reference would be silently dropped. "
+        "Inline it as a data: URI."
     )
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
 def test_template_style_does_not_use_multi_column_layout(template):
     """Two-column layouts, sidebars and grid placement destroy ATS parsing."""
-    css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
-    stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    for banned in ("column-count", "grid-template-columns", "position: absolute"):
-        assert banned not in stripped, f"{template}/style.css uses {banned}"
+    found = _violations(_style_css(template), BANNED_LAYOUT_PATTERNS)
+    assert not found, f"{template}/style.css breaks the single-column rule: {found}"
+
+
+# --- The guards must actually catch what they claim to catch ----------------
+#
+# Without these, a guard can be quietly reduced to a no-op and the suite stays
+# green, because no template contains the thing it is supposed to reject.
+
+REJECTED_LAYOUT = (
+    ".sidebar { position: absolute; top: 0; right: 0; width: 2in; }",
+    ".sidebar { position:absolute; }",
+    ".sidebar { position   :   fixed; }",
+    ".two-col { display: grid; grid-template-columns: 1fr 1fr; }",
+    ".two-col { display: grid; grid-template: auto / 1fr 1fr; }",
+    ".two-col { display: grid; grid: auto-flow / 1fr 1fr; }",
+    ".two-col { grid-template-areas: 'main aside'; }",
+    ".two-col { grid-auto-flow: column; }",
+    ".aside { grid-column: 2 / 3; }",
+    ".aside { grid-area: sidebar; }",
+    ".body { columns: 2; }",
+    ".body { column-count: 2; }",
+    ".body { column-width: 18em; }",
+    ".body { -webkit-column-count: 2; }",
+    ".meta { float: right; }",
+    ".meta { float:  inline-end; }",
+)
+
+REJECTED_NETWORK = (
+    "@import url(//fonts.googleapis.com/css2?family=Inter);",
+    "@import url(https://fonts.googleapis.com/css2?family=Inter);",
+    '@import "shared.css";',
+    "@font-face { src: url(//fonts.gstatic.com/s/inter.woff2); }",
+    "@font-face { src: url('../fonts/inter.woff2'); }",
+    "@font-face { src: url(fonts/inter.woff2); }",
+    ".header { background-image: url(http://example.com/rule.png); }",
+)
+
+# Legitimate CSS the templates already use, or plausibly will. A guard that
+# flags any of these is too broad and would block Tasks 8-10.
+ACCEPTED = (
+    ".item-head { display: flex; flex-wrap: wrap; }",
+    ".meta { margin-left: auto; }",
+    ".contact-line { column-gap: 0.6em; row-gap: 0.2em; }",
+    ".item-head { justify-content: space-between; }",
+    ".rule { position: relative; }",
+    ".stack { display: grid; grid-gap: 0.4rem; }",
+    "@font-face { src: url(data:font/woff2;base64,d09GMgAB) format('woff2'); }",
+    "@font-face { src: url('data:font/woff2;base64,d09GMgAB'); }",
+    ".name { font-size: var(--fs-name); letter-spacing: 0.02em; }",
+    "/* upstream: https://rsms.me/inter/ - vendored, not fetched */",
+    "/* .legacy { position: absolute; } kept for reference */",
+)
+
+
+@pytest.mark.parametrize("css", REJECTED_LAYOUT)
+def test_the_layout_guard_rejects(css):
+    assert _violations(css, BANNED_LAYOUT_PATTERNS), (
+        f"the single-column guard does not catch {css!r}"
+    )
+
+
+@pytest.mark.parametrize("css", REJECTED_NETWORK)
+def test_the_network_guard_rejects(css):
+    assert _violations(css, BANNED_NETWORK_PATTERNS), (
+        f"the network guard does not catch {css!r}"
+    )
+
+
+@pytest.mark.parametrize("css", (".item { break-inside: auto; }", ".item{page-break-inside:avoid}"))
+def test_the_pagination_guard_rejects(css):
+    assert _violations(css, PAGINATION_PATTERNS), (
+        f"the pagination guard does not catch {css!r}"
+    )
+
+
+@pytest.mark.parametrize("css", ACCEPTED)
+def test_the_guards_accept_legitimate_css(css):
+    found = (
+        _violations(css, BANNED_LAYOUT_PATTERNS)
+        + _violations(css, BANNED_NETWORK_PATTERNS)
+        + _violations(css, PAGINATION_PATTERNS)
+    )
+    assert not found, f"guard is too broad: {css!r} flagged as {found}"
 
 
 def test_base_css_owns_item_pagination():
@@ -1357,9 +1502,13 @@ Replace `backend/templates/base.css` in full:
    changes structure only by overriding the custom properties
    declared here with different VALUES.
 
-   A style.css that declares break-inside, column-count or an
-   absolute position is a bug, and tests/test_base_css_contract.py
-   fails the build for it.
+   A style.css that declares pagination (break-inside), anything
+   that creates columns (column-count, the columns shorthand, any
+   grid track or placement property), anything out of flow
+   (position: absolute or fixed, float), or any reference the
+   renderer cannot resolve (an http/https URL, an @import, or a
+   url() that is not a data: URI) is a bug, and
+   tests/test_base_css_contract.py fails the build for it.
    ============================================================ */
 
 /* --- Reset --- */
@@ -1549,7 +1698,7 @@ Meridian now inherits them from `base.css`. Nothing else in that file changes: i
 - [ ] **Step 5: Run the contract test**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_base_css_contract.py -q`
-Expected: 30 passed (14 properties + 4 templates x 3 + 1 + ... count will vary with template count; all must pass).
+Expected: 63 passed (14 properties + 4 templates x 3 guards + 16 rejected-layout + 7 rejected-network + 2 rejected-pagination + 11 accepted + 1 base pagination). The per-template count grows as Tasks 8-10 add templates; the guard self-tests do not.
 
 - [ ] **Step 6: Confirm nothing regressed, especially extraction**
 
@@ -2043,7 +2192,7 @@ Read it before starting any of them. **Tasks 8, 9 and 10 are independent and may
 **Every template's `style.css` must:**
 - Declare `font-family` on `body`.
 - Set `--fs-name`, `--fs-section`, `--fs-body`, `--fs-meta`, `--leading` and `--measure` explicitly, even where the value matches the default. These are the template's typographic decisions and should be visible in one block at the top.
-- Not declare `break-inside`, `page-break-inside`, `column-count`, `grid-template-columns`, `position: absolute`, or any `http`/`https` URL. The contract test from Task 5 fails the build for each.
+- Not declare pagination (`break-inside`, `page-break-inside`), anything that creates columns (`column-count`, `column-width`, the `columns` shorthand, `grid-template-columns`, `grid-template`, the `grid` shorthand, `grid-template-areas`, `grid-column`/`grid-area`, `grid-auto-flow`), anything out of flow (`position: absolute`, `position: fixed`, `float`), or any reference the renderer cannot resolve (`http`/`https` URLs, `@import`, and any `url()` that is not a `data:` URI - `page.set_content` runs with no base URL, so relative and protocol-relative references are dropped too). The contract test from Task 5 matches on the property with optional whitespace and vendor prefixes, so reformatting does not evade it; it fails the build for each. `display: flex`, `display: grid` with a single track, `column-gap`, `grid-gap`, `margin-left: auto`, `justify-content` and `position: relative` are all fine and are pinned as accepted cases in that test.
 - **Never reorder flex or grid children.** No `flex-direction: row-reverse` / `column-reverse`, no `order:`, no `flex-flow` with `-reverse`. This is the one design idiom most likely to be reached for here: "role on the left, dates flushed right" is the standard resume header, and reversing the source order to get it is a natural move. It corrupts the PDF content stream — Chromium emits text in visual order, so the item extracts as dates, employer, role and an ATS reads the employer as the job title. `test_pdf_extraction_preserves_field_order_within_each_item` from Task 1 fails the build for it. Get the same look with `margin-left: auto` on `.meta` (or `justify-content: space-between`), which moves the box without touching the order.
 
 **Every template's `template.html` is a thin shell:**

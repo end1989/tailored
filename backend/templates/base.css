@@ -9,9 +9,13 @@
    changes structure only by overriding the custom properties
    declared here with different VALUES.
 
-   A style.css that declares break-inside, column-count or an
-   absolute position is a bug, and tests/test_base_css_contract.py
-   fails the build for it.
+   A style.css that declares pagination (break-inside), anything
+   that creates columns (column-count, the columns shorthand, any
+   grid track or placement property), anything out of flow
+   (position: absolute or fixed, float), or any reference the
+   renderer cannot resolve (an http/https URL, an @import, or a
+   url() that is not a data: URI) is a bug, and
+   tests/test_base_css_contract.py fails the build for it.
    ============================================================ */
 
 /* --- Reset --- */
