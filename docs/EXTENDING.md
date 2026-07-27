@@ -21,9 +21,9 @@ workflow. The truthfulness guard runs server-side inside
 | `add_profile_evidence(profile_id, projects?, skill_groups?, summary_note?)` | Import portfolio-scan findings into the master profile (`MPProject` + `SkillGroup` shapes). Additive and verified-evidence-only: never overwrites — new projects are appended (duplicate names skipped), same-label skill groups are merged, `summary_note` is appended; safe to call repeatedly. |
 | `list_templates()` | Every template in the registry (currently eight) with label/description/best_for metadata, read straight from the manifests. |
 | `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |
-| `queue_jobs` | Register many job URLs at once. Free; creates saved jobs. |
-| `next_pending_job` | The next queued job, or null when the queue is empty. |
-| `report_fetch_blocked` | Record that a posting could not be read, and why. |
+| `queue_jobs(profile_id, urls)` | Register many job URLs at once. Free; creates saved jobs. |
+| `next_pending_job(profile_id)` | The next queued job, or null when the queue is empty. |
+| `report_fetch_blocked(application_id, reason)` | Record that a posting could not be read, and why. |
 | `save_parsed_posting(application_id, parsed)` | Store the agent's `ParsedPosting` analysis (dashboard shows company/title from it). |
 | `save_research(application_id, findings)` | Optionally store agent-performed research as a `ResearchFindings` brief (tokens/cost 0). |
 | `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
