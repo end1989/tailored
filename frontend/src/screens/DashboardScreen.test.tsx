@@ -172,4 +172,26 @@ describe("DashboardScreen", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("Staff Engineer");
     expect(api.deleteApplication).not.toHaveBeenCalled();
   });
+
+  it("renders Last activity on its LOCAL calendar day, matching the Application screen's convention", async () => {
+    // last_activity_at IS an event's occurred_at (backend derives it as
+    // MAX(occurred_at)) -- same value kind as ApplicationScreen's timeline,
+    // so it must follow the same local-on-both-sides convention. Built at
+    // 23:00 local so local and UTC days genuinely differ under the stubbed
+    // TZ, regardless of the runner's own zone.
+    vi.stubEnv("TZ", "America/New_York");
+    try {
+      const instant = new Date(2026, 6, 20, 23, 0, 0); // 2026-07-20 23:00 local
+      const expectedLocalDay = instant.toLocaleDateString();
+      vi.mocked(api.listApplications).mockResolvedValue([
+        { ...BASE_APP, id: 5, last_activity_at: instant.toISOString() },
+      ]);
+
+      render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+      expect(await screen.findByText(expectedLocalDay)).toBeInTheDocument();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 });

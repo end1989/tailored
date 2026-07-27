@@ -69,15 +69,25 @@ function Timeline({
   async function submit() {
     setBusy(true);
     try {
-      // `when` is a plain "YYYY-MM-DD" string from <input type="date">. Date-only
-      // strings parse as UTC midnight (ECMA-262 Date Time String Format), so this
-      // stores the user's chosen calendar day as a fixed instant. The timeline
-      // below reads it back with `timeZone: "UTC"` so the same calendar day
-      // survives regardless of the viewer's local offset.
+      // `when` is a plain "YYYY-MM-DD" string from <input type="date">. Parsing
+      // it directly (`new Date(when)`) treats it as UTC midnight, which is the
+      // wrong calendar day once rendered back in local time for any negative
+      // UTC offset. Build the instant from LOCAL midnight of that day instead
+      // -- `new Date(year, month - 1, day)` interprets its components in the
+      // browser's local zone -- so it round-trips through local display
+      // correctly. `occurred_at` values created without a picked date (the
+      // default path, and API/MCP-created events) are already real wall-clock
+      // instants; both kinds are read back with plain local
+      // `toLocaleDateString()` below -- one convention for every value.
+      let occurredAt: string | undefined;
+      if (when) {
+        const [year, month, day] = when.split("-").map(Number);
+        occurredAt = new Date(year, month - 1, day).toISOString();
+      }
       await addEvent(applicationId, {
         kind,
         body,
-        occurred_at: when ? new Date(when).toISOString() : undefined,
+        occurred_at: occurredAt,
       });
       setBody("");
       setWhen("");
@@ -136,7 +146,7 @@ function Timeline({
           <li key={e.id}>
             <span className={`badge badge-${e.kind}`}>{e.kind}</span>{" "}
             <span className="muted">
-              {new Date(e.occurred_at).toLocaleDateString(undefined, { timeZone: "UTC" })}
+              {new Date(e.occurred_at).toLocaleDateString()}
             </span>{" "}
             {e.body}{" "}
             <button

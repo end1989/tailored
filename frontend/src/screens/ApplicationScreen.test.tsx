@@ -206,35 +206,29 @@ describe("ApplicationScreen", () => {
     expect(select).toHaveValue("applied");
   });
 
-  it("keeps the same calendar day from timeline date input to display west of UTC", async () => {
-    // Regression for I3: new Date("2026-07-20").toISOString() stores UTC
-    // midnight; rendering it with a bare toLocaleDateString() converts back
-    // to local time and shows one day early for any negative UTC offset.
+  it("sends the ISO instant for LOCAL midnight of the picked calendar day, not UTC midnight", async () => {
+    // Regression for the timeZone:"UTC" fix wave: that fix sent
+    // new Date("2026-07-20").toISOString(), which parses the date-only string
+    // as UTC midnight. For any negative UTC offset that instant, re-rendered
+    // in local time, falls on the previous calendar day. The correct write
+    // side builds the instant from LOCAL midnight (new Date(y, m-1, d)) so it
+    // survives the round trip regardless of the viewer's offset. Expectation
+    // is derived from new Date(y, m-1, d).toISOString() rather than a
+    // hardcoded string, so this test verifies the same thing at any TZ,
+    // including UTC itself.
     vi.stubEnv("TZ", "America/New_York");
     try {
+      const expectedIso = new Date(2026, 6, 20).toISOString();
       vi.mocked(api.getApplication)
         .mockResolvedValueOnce({ ...base, status: "ready" })
-        .mockResolvedValueOnce({
-          ...base,
-          status: "ready",
-          events: [
-            {
-              id: 9,
-              application_id: 1,
-              kind: "note",
-              body: "Called Tuesday",
-              occurred_at: "2026-07-20T00:00:00.000Z",
-              created_at: "2026-07-20T00:00:00.000Z",
-            },
-          ],
-        });
+        .mockResolvedValueOnce({ ...base, status: "ready" }); // re-fetch after onChanged()
       vi.mocked(api.addEvent).mockResolvedValue({
         id: 9,
         application_id: 1,
         kind: "note",
         body: "Called Tuesday",
-        occurred_at: "2026-07-20T00:00:00.000Z",
-        created_at: "2026-07-20T00:00:00.000Z",
+        occurred_at: expectedIso,
+        created_at: expectedIso,
       });
 
       renderAt();
@@ -247,11 +241,54 @@ describe("ApplicationScreen", () => {
       await waitFor(() =>
         expect(api.addEvent).toHaveBeenCalledWith(
           1,
-          expect.objectContaining({ occurred_at: "2026-07-20T00:00:00.000Z" })
+          expect.objectContaining({ occurred_at: expectedIso })
         )
       );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
 
-      expect(await screen.findByText("7/20/2026")).toBeInTheDocument();
+  it("renders a blank-date (default-path) event on its LOCAL calendar day, not its UTC day", async () => {
+    // Regression: the default path never has a user-picked date -- the
+    // backend stamps the current instant, and API/MCP-created events land
+    // here too. The previous fix forced toLocaleDateString(undefined,
+    // { timeZone: "UTC" }) on read, which is correct only for the
+    // UTC-midnight sentinel from the OTHER path. For a real wall-clock
+    // instant, forcing UTC shows the wrong day whenever local and UTC
+    // disagree on the calendar day. Built at 23:00 local so local and UTC
+    // days differ under the stubbed TZ regardless of the runner's own zone.
+    vi.stubEnv("TZ", "America/New_York");
+    try {
+      const instant = new Date(2026, 6, 20, 23, 0, 0); // 2026-07-20 23:00 local
+      const occurredAt = instant.toISOString();
+      const expectedLocalDay = instant.toLocaleDateString();
+      // Sanity check the fixture actually straddles the UTC day boundary;
+      // otherwise this test would pass for the wrong reason.
+      expect(occurredAt.slice(0, 10)).not.toBe(
+        `${instant.getFullYear()}-${String(instant.getMonth() + 1).padStart(2, "0")}-${String(
+          instant.getDate()
+        ).padStart(2, "0")}`
+      );
+
+      vi.mocked(api.getApplication).mockResolvedValueOnce({
+        ...base,
+        status: "ready",
+        events: [
+          {
+            id: 9,
+            application_id: 1,
+            kind: "note",
+            body: "Called Tuesday",
+            occurred_at: occurredAt,
+            created_at: occurredAt,
+          },
+        ],
+      });
+
+      renderAt();
+
+      expect(await screen.findByText(expectedLocalDay)).toBeInTheDocument();
     } finally {
       vi.unstubAllEnvs();
     }
