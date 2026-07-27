@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from backend import mcp_ops
 from backend.app.models import (
     Application,
+    ApplicationEvent,
     ApplicationVersion,
     Job,
     Profile,
@@ -794,3 +795,67 @@ def test_a_user_deleting_a_saved_job_mid_run_simply_removes_it(engine, profile_i
     assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
         queued[1]["application_id"]
     )
+
+
+# --- report_fetch_blocked (MCP escalation failure handler) ---
+
+
+def test_report_fetch_blocked_sets_the_fetch_status(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    result = mcp_ops.report_fetch_blocked(engine, app_id, "403 and a bot check")
+    assert result["fetch_status"] == "blocked"
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert session.get(Job, app.job_id).fetch_status == "blocked"
+
+
+def test_report_fetch_blocked_writes_a_timeline_note(engine, profile_id):
+    """The user must see WHY a posting stalled, not just that it did."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    mcp_ops.report_fetch_blocked(engine, app_id, "403 and a bot check")
+
+    with Session(engine) as session:
+        events = session.exec(
+            select(ApplicationEvent).where(ApplicationEvent.application_id == app_id)
+        ).all()
+        assert len(events) == 1
+        assert events[0].kind == "note"
+        assert "403 and a bot check" in events[0].body
+
+
+def test_report_fetch_blocked_is_visible_on_the_application(client, engine, profile_id):
+    """It has to reach the dashboard, or it is not a report."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+    mcp_ops.report_fetch_blocked(engine, app_id, "login wall")
+
+    detail = client.get(f"/api/applications/{app_id}").json()
+    assert any("login wall" in e["body"] for e in detail["events"])
+
+
+def test_report_fetch_blocked_leaves_the_job_queueable_for_a_paste(engine, profile_id):
+    """Blocked is a record, not a deletion. The user can still paste the text."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+    mcp_ops.report_fetch_blocked(engine, app_id, "login wall")
+
+    with Session(engine) as session:
+        assert session.get(Application, app_id) is not None
+
+
+def test_report_fetch_blocked_rejects_an_unknown_application(engine):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.report_fetch_blocked(engine, 9999, "nope")
+    assert "9999" in str(exc.value)
+
+
+def test_report_fetch_blocked_requires_a_reason(engine, profile_id):
+    """A blocked row with no reason is exactly the silent failure this prevents."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.report_fetch_blocked(engine, queued[0]["application_id"], "   ")

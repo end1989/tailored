@@ -60,7 +60,7 @@ class Job(SQLModel, table=True):
     url: str
     raw_text: Optional[str] = None
     parsed_json: Optional[str] = None       # ParsedPosting
-    fetch_status: str = "pending"           # "pending"|"fetched"|"needs_paste"|"pasted"
+    fetch_status: str = "pending"           # "pending"|"fetched"|"needs_paste"|"pasted"|"blocked"
     depth: str = "standard"                 # "quick"|"standard"|"deep"
     created_at: datetime = Field(default_factory=_utcnow)
 

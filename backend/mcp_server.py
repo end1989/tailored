@@ -175,6 +175,16 @@ async def next_pending_job(profile_id: int) -> dict | None:
 
 
 @mcp.tool()
+async def report_fetch_blocked(application_id: int, reason: str) -> dict:
+    """Record that you could not read a posting, and why, so the user sees it
+    on the dashboard instead of finding a job that never moved. Call this only
+    after BOTH a direct fetch and opening the URL in the user's own browser
+    failed. Say what refused you: a 403, a bot check, a login wall. Then move
+    on to the next job - do not stall the batch on one posting."""
+    return await _run(mcp_ops.report_fetch_blocked, _engine, application_id, reason)
+
+
+@mcp.tool()
 async def save_parsed_posting(application_id: int, parsed: dict) -> dict:
     """Save your structured analysis of the posting as ParsedPosting JSON
     (title, company, company_domain, must_haves, nice_to_haves, keywords,

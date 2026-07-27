@@ -21,6 +21,7 @@ from .app.api.templates import TEMPLATE_META
 from .app.config import load_user_settings
 from .app.models import (
     Application,
+    ApplicationEvent,
     ApplicationVersion,
     Job,
     Profile,
@@ -480,6 +481,40 @@ def next_pending_job(engine, profile_id: int) -> dict | None:
             return None
         app_row, job_row = row
         return {"application_id": app_row.id, "url": job_row.url}
+
+
+def report_fetch_blocked(engine, application_id: int, reason: str) -> dict:
+    """Record that a posting could not be read, and why.
+
+    Call this when a direct fetch was refused AND opening the URL in the user's
+    own browser also did not work. It marks the job blocked and writes a note
+    on the application's timeline, so the user sees on the dashboard why this
+    posting stalled instead of finding a row that never moved.
+
+    Then move on to the next job. Do not stall the batch on one posting.
+    """
+    if not reason or not reason.strip():
+        raise McpOpsError(
+            "reason must not be empty - say what refused the fetch (a 403, a "
+            "bot check, a login wall) so the user knows what to do."
+        )
+    with Session(engine) as session:
+        app, job = _get_app_and_job(session, application_id)
+        job.fetch_status = "blocked"
+        session.add(job)
+        event = ApplicationEvent(
+            application_id=app.id,
+            kind="note",
+            body=f"Could not read the posting: {reason.strip()}",
+        )
+        session.add(event)
+        session.commit()
+        session.refresh(event)
+        return {
+            "application_id": app.id,
+            "fetch_status": job.fetch_status,
+            "event_id": event.id,
+        }
 
 
 def set_application_template(
