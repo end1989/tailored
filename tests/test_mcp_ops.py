@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import copy
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 from sqlmodel import Session, select
+from starlette.background import BackgroundTasks
 
 from backend import mcp_ops
 from backend.app.models import (
     Application,
+    ApplicationEvent,
     ApplicationVersion,
     Job,
     Profile,
@@ -23,10 +26,17 @@ from backend.app.models import (
     set_contact,
     set_master_profile,
 )
-from backend.app.services import render
+from backend.app.schemas import FetchResult
+from backend.app.services import fetcher, pipeline, render
 from backend.app.services.intake import IntakeResult
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
+
+
+def _utcnow() -> datetime:
+    """Naive UTC, matching backend.app.models._utcnow (datetime.utcnow is
+    deprecated on this Python and warns)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 POSTING_TEXT = (
     "Senior Backend Engineer at Northwind Labs. Python, FastAPI, PostgreSQL, "
@@ -94,6 +104,33 @@ def test_workflow_guide_contents():
     # the structures now come from the on-disk manifests.
     assert "section order" in guide
     assert "get_master_profile" in guide
+
+    # The fetch ladder. This guide IS the deliverable for the browser half of
+    # the design, and it silently rotting is the realistic failure mode.
+    assert "DIRECT FETCH" in guide
+    assert "BROWSER ESCALATION" in guide
+    assert "ASK FOR A PASTE" in guide
+    assert "403" in guide
+    assert "400 characters" in guide, "the short-body heuristic must survive"
+    assert "user's own browser" in guide
+    assert "report_fetch_blocked" in guide
+
+    # The explicit refusal to help with evasion is part of the deliverable.
+    lowered = guide.lower()
+    assert "do not attempt to disguise automated traffic" in lowered
+
+    # The batch loop.
+    assert "queue_jobs" in guide
+    assert "next_pending_job" in guide
+    assert "one job to completion before starting the next" in lowered
+
+    # Step 2c must be actionable in BOTH flows. In the batch flow the id comes
+    # from next_pending_job; in the single-job flow no application exists yet,
+    # so the guide must say to create the row (queue_jobs) before reporting -
+    # an impossible instruction here is how the silent-failure mode returns.
+    assert "queue_jobs(profile_id, [url])" in guide
+    assert "needs_paste" in guide
+    assert "never guess an id" in lowered
 
 
 # --- profile / template listing ---
@@ -570,3 +607,417 @@ def test_add_profile_evidence_returns_expected_keys(engine, profile_id):
     assert result["skill_groups_added"] == ["New Skills"]
     assert result["skill_groups_merged"] == []
     assert result["summary_appended"] is True
+
+
+# --- queue_jobs (the MCP batch queue) ---
+
+QUEUE_URLS = [
+    "https://jobs.example.com/one",
+    "https://jobs.example.com/two",
+    "https://jobs.example.com/three",
+]
+
+
+def test_queue_jobs_creates_one_parked_application_per_url(engine, profile_id):
+    result = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    assert len(result) == 3
+    assert [r["url"] for r in result] == QUEUE_URLS
+    with Session(engine) as session:
+        apps = session.exec(select(Application)).all()
+        assert len(apps) == 3
+        for app in apps:
+            assert app.status == "not_started"
+            assert app.stage == "saved"
+            assert app.cost_usd == 0.0
+            assert app.resume_json is None
+
+
+def test_queue_jobs_stores_no_posting_text(engine, profile_id):
+    """The agent fetches each posting later, one at a time."""
+    mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        for job in session.exec(select(Job)).all():
+            assert job.raw_text is None
+            assert job.fetch_status == "pending"
+
+
+def test_queue_jobs_returns_the_ids_and_urls(engine, profile_id):
+    result = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    for entry in result:
+        assert entry["status"] == "not_started"
+        assert isinstance(entry["application_id"], int)
+
+
+def test_queue_jobs_never_calls_claude(engine, profile_id, monkeypatch):
+    """Queueing twenty URLs must cost nothing."""
+    from backend.app.services import claude as claude_module
+
+    def explode(*args, **kwargs):
+        raise AssertionError("queue_jobs must not call Claude")
+
+    monkeypatch.setattr(claude_module.ClaudeService, "structured", explode)
+    assert len(mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)) == 3
+
+
+def test_queue_jobs_rejects_an_empty_list(engine, profile_id):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.queue_jobs(engine, profile_id, [])
+    assert "empty" in str(exc.value).lower()
+
+
+def test_queue_jobs_rejects_an_unknown_profile(engine):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.queue_jobs(engine, 9999, QUEUE_URLS)
+    assert "9999" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["", "   ", "not-a-url", "example.com/job", "ftp://example.com/job", "javascript:alert(1)"],
+)
+def test_queue_jobs_rejects_a_malformed_url(engine, profile_id, bad):
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.queue_jobs(engine, profile_id, [bad])
+
+
+def test_one_bad_url_in_twenty_creates_nothing(engine, profile_id):
+    """All-or-nothing, matching the web batch route. A partial queue is worse
+    than a rejected one: the agent cannot tell which half landed."""
+    urls = [f"https://jobs.example.com/{i}" for i in range(19)] + ["not-a-url"]
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.queue_jobs(engine, profile_id, urls)
+    with Session(engine) as session:
+        assert session.exec(select(Application)).all() == []
+        assert session.exec(select(Job)).all() == []
+
+
+def test_queueing_the_same_url_twice_skips_the_second(engine, profile_id):
+    """Pasting a list twice is normal user behaviour and must not create
+    twenty duplicates."""
+    first = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    second = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+
+    assert [r["status"] for r in second] == ["skipped"] * 3
+    assert [r["application_id"] for r in second] == [r["application_id"] for r in first]
+    assert all("reason" in r for r in second)
+    with Session(engine) as session:
+        assert len(session.exec(select(Application)).all()) == 3
+
+
+def test_a_duplicate_within_one_queue_call_is_skipped(engine, profile_id):
+    result = mcp_ops.queue_jobs(
+        engine, profile_id, ["https://jobs.example.com/a", "https://jobs.example.com/a"]
+    )
+    assert [r["status"] for r in result] == ["not_started", "skipped"]
+    with Session(engine) as session:
+        assert len(session.exec(select(Application)).all()) == 1
+
+
+def test_dedup_is_scoped_to_the_profile(engine, profile_id, claude_fake):
+    """Two people may legitimately apply to the same job."""
+    with Session(engine) as session:
+        other = Profile(name="Someone Else")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+        other_id = other.id
+
+    mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    result = mcp_ops.queue_jobs(engine, other_id, ["https://jobs.example.com/a"])
+    assert result[0]["status"] == "not_started"
+
+
+def test_an_archived_application_does_not_block_requeueing(engine, profile_id):
+    """Archiving is how a user says 'done with this'. Re-queueing must work."""
+    first = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    with Session(engine) as session:
+        app = session.get(Application, first[0]["application_id"])
+        app.archived_at = _utcnow()
+        session.add(app)
+        session.commit()
+
+    second = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    assert second[0]["status"] == "not_started"
+    assert second[0]["application_id"] != first[0]["application_id"]
+
+
+def test_queue_jobs_uses_a_depth_the_pipeline_can_dispatch(engine, profile_id):
+    """Queued rows are generate-able from the dashboard (status not_started is
+    exactly what POST /generate accepts), and research_company only handles
+    quick/standard/deep. Stamping depth "external" here made every Generate
+    click die with ValueError after the parse call had already been paid for."""
+    mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        for job in session.exec(select(Job)).all():
+            assert job.depth == "standard"
+
+
+def test_a_queued_job_generates_to_ready_through_the_web_pipeline(
+    engine, profile_id, client, fake_settings, claude_fake, pdf_faked, monkeypatch
+):
+    """The full path the dashboard offers for a queued row: the Generate
+    button (POST /generate), then the built-in pipeline fetches, parses,
+    researches, tailors, and renders. With depth "external" this reached
+    research_company and died in ValueError, landing the row in status
+    "error" with a Retry button that repeated the same failure."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    # The route flips status and schedules the pipeline; drop the scheduling
+    # so the pipeline can be driven synchronously against the test engine.
+    monkeypatch.setattr(BackgroundTasks, "add_task", lambda self, fn, *a, **k: None)
+    resp = client.post(f"/api/applications/{app_id}/generate")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["status"] == "queued"
+
+    monkeypatch.setattr(pipeline, "get_settings", lambda: fake_settings)
+    monkeypatch.setattr(
+        fetcher,
+        "fetch_posting",
+        lambda url, timeout=20.0: FetchResult(status="fetched", text=POSTING_TEXT),
+    )
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "ready", app.error_message
+        assert app.error_message is None
+        job = session.get(Job, app.job_id)
+        assert job.depth == "standard"
+        assert job.fetch_status == "fetched"
+
+
+# --- next_pending_job (MCP queue consumption) ---
+
+
+def test_next_pending_job_returns_the_oldest_first(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    nxt = mcp_ops.next_pending_job(engine, profile_id)
+    assert nxt["application_id"] == queued[0]["application_id"]
+    assert nxt["url"] == QUEUE_URLS[0]
+
+
+def test_next_pending_job_returns_none_on_an_empty_queue(engine, profile_id):
+    assert mcp_ops.next_pending_job(engine, profile_id) is None
+
+
+def test_next_pending_job_ignores_applications_already_started(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        app = session.get(Application, queued[0]["application_id"])
+        app.status = "ready"
+        session.add(app)
+        session.commit()
+
+    assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
+        queued[1]["application_id"]
+    )
+
+
+def test_next_pending_job_ignores_other_profiles(engine, profile_id):
+    with Session(engine) as session:
+        other = Profile(name="Someone Else")
+        session.add(other)
+        session.commit()
+        session.refresh(other)
+        other_id = other.id
+
+    mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    assert mcp_ops.next_pending_job(engine, other_id) is None
+
+
+def test_next_pending_job_ignores_archived_applications(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        app = session.get(Application, queued[0]["application_id"])
+        app.archived_at = _utcnow()
+        session.add(app)
+        session.commit()
+
+    assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
+        queued[1]["application_id"]
+    )
+
+
+def test_the_queue_resumes_after_a_context_loss(engine, profile_id, tmp_path, pdf_faked):
+    """The property this whole design exists for.
+
+    Queue five, complete two, and the third is what comes back - with no
+    memory of the run carried anywhere but the database.
+    """
+    urls = [f"https://jobs.example.com/{i}" for i in range(5)]
+    queued = mcp_ops.queue_jobs(engine, profile_id, urls)
+
+    for entry in queued[:2]:
+        with Session(engine) as session:
+            app = session.get(Application, entry["application_id"])
+            app.status = "ready"
+            session.add(app)
+            session.commit()
+
+    nxt = mcp_ops.next_pending_job(engine, profile_id)
+    assert nxt["application_id"] == queued[2]["application_id"]
+    assert nxt["url"] == urls[2]
+
+
+def test_a_user_deleting_a_saved_job_mid_run_simply_removes_it(engine, profile_id):
+    """Correct behaviour, not an error: the agent just never receives it."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    with Session(engine) as session:
+        session.delete(session.get(Application, queued[0]["application_id"]))
+        session.commit()
+
+    assert mcp_ops.next_pending_job(engine, profile_id)["application_id"] == (
+        queued[1]["application_id"]
+    )
+
+
+# --- report_fetch_blocked (MCP escalation failure handler) ---
+
+
+def test_report_fetch_blocked_sets_the_fetch_status(engine, profile_id):
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    result = mcp_ops.report_fetch_blocked(engine, app_id, "403 and a bot check")
+    assert result["fetch_status"] == "blocked"
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert session.get(Job, app.job_id).fetch_status == "blocked"
+
+
+def test_report_fetch_blocked_moves_a_queued_application_to_needs_paste(
+    engine, profile_id
+):
+    """The status move is what surfaces the paste box on the dashboard AND
+    what takes the job out of next_pending_job's pending set."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    result = mcp_ops.report_fetch_blocked(engine, app_id, "403 and a bot check")
+    assert result["status"] == "needs_paste"
+
+    with Session(engine) as session:
+        assert session.get(Application, app_id).status == "needs_paste"
+
+
+def test_a_blocked_job_leaves_the_queue(engine, profile_id):
+    """The live-lock regression. Blocking job 1 must make next_pending_job
+    hand out job 2 - the guide says "move on to the next job", and before this
+    fix the only tool for advancing the queue returned the blocked job
+    forever, so a 20-URL batch stopped at the first refusal."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+
+    mcp_ops.report_fetch_blocked(
+        engine, queued[0]["application_id"], "403 and a bot check"
+    )
+
+    nxt = mcp_ops.next_pending_job(engine, profile_id)
+    assert nxt["application_id"] == queued[1]["application_id"]
+    assert nxt["url"] == QUEUE_URLS[1]
+
+
+def test_blocking_every_job_drains_the_queue(engine, profile_id):
+    """A batch where every posting is refused must still terminate on the
+    plain None condition, not loop."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, QUEUE_URLS)
+    for entry in queued:
+        mcp_ops.report_fetch_blocked(engine, entry["application_id"], "login wall")
+
+    assert mcp_ops.next_pending_job(engine, profile_id) is None
+
+
+def test_report_fetch_blocked_rejects_while_the_pipeline_owns_the_row(
+    engine, profile_id
+):
+    """The same guard as the other MCP writes: a misdirected application_id
+    must not scribble a blocked state onto a row the built-in pipeline is
+    actively processing."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        app.status = "fetching"
+        session.add(app)
+        session.commit()
+
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.report_fetch_blocked(engine, app_id, "403")
+    assert "fetching" in str(exc.value)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "fetching"  # unchanged
+        assert session.get(Job, app.job_id).fetch_status == "pending"  # unchanged
+        events = session.exec(
+            select(ApplicationEvent).where(ApplicationEvent.application_id == app_id)
+        ).all()
+        assert events == []  # nothing written
+
+
+def test_report_fetch_blocked_writes_a_timeline_note(engine, profile_id):
+    """The user must see WHY a posting stalled, not just that it did."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    mcp_ops.report_fetch_blocked(engine, app_id, "403 and a bot check")
+
+    with Session(engine) as session:
+        events = session.exec(
+            select(ApplicationEvent).where(ApplicationEvent.application_id == app_id)
+        ).all()
+        assert len(events) == 1
+        assert events[0].kind == "note"
+        assert "403 and a bot check" in events[0].body
+
+
+def test_report_fetch_blocked_is_visible_on_the_application(client, engine, profile_id):
+    """It has to reach the dashboard, or it is not a report."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+    mcp_ops.report_fetch_blocked(engine, app_id, "login wall")
+
+    detail = client.get(f"/api/applications/{app_id}").json()
+    assert any("login wall" in e["body"] for e in detail["events"])
+
+
+def test_report_fetch_blocked_leaves_the_job_pasteable_to_ready(
+    engine, profile_id, client, fake_settings, claude_fake, pdf_faked, monkeypatch
+):
+    """Blocked is a record, not a deletion: the promise is that the USER can
+    still paste the posting text and get a finished resume. Exercise the real
+    paste route on the blocked row, then run the paste pipeline to 'ready' -
+    a status/fetch_status combination the paste path rejects would fail here."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+    mcp_ops.report_fetch_blocked(engine, app_id, "login wall")
+
+    # The paste route must accept the blocked application...
+    monkeypatch.setattr(BackgroundTasks, "add_task", lambda self, fn, *a, **k: None)
+    resp = client.post(f"/api/applications/{app_id}/paste", json={"text": POSTING_TEXT})
+    assert resp.status_code == 200, resp.text
+
+    # ...and the pasted text must carry the pipeline all the way to ready.
+    monkeypatch.setattr(pipeline, "get_settings", lambda: fake_settings)
+    pipeline.resume_after_paste(app_id, POSTING_TEXT, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "ready", app.error_message
+        job = session.get(Job, app.job_id)
+        assert job.fetch_status == "pasted"
+        assert job.raw_text == POSTING_TEXT
+
+
+def test_report_fetch_blocked_rejects_an_unknown_application(engine):
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.report_fetch_blocked(engine, 9999, "nope")
+    assert "9999" in str(exc.value)
+
+
+def test_report_fetch_blocked_requires_a_reason(engine, profile_id):
+    """A blocked row with no reason is exactly the silent failure this prevents."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.report_fetch_blocked(engine, queued[0]["application_id"], "   ")

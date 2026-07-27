@@ -37,4 +37,11 @@ describe("McpSetup", () => {
     render(<McpSetup />);
     expect(await screen.findByText(/couldn't find it/i)).toBeInTheDocument();
   });
+
+  it("shows the batch queue prompt with a copy button", async () => {
+    vi.mocked(api.getSetup).mockResolvedValue(SETUP);
+    render(<McpSetup />);
+    expect(await screen.findByText(/queue these jobs for my profile/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy batch prompt/i })).toBeInTheDocument();
+  });
 });

@@ -21,6 +21,9 @@ workflow. The truthfulness guard runs server-side inside
 | `add_profile_evidence(profile_id, projects?, skill_groups?, summary_note?)` | Import portfolio-scan findings into the master profile (`MPProject` + `SkillGroup` shapes). Additive and verified-evidence-only: never overwrites — new projects are appended (duplicate names skipped), same-label skill groups are merged, `summary_note` is appended; safe to call repeatedly. |
 | `list_templates()` | Every template in the registry (currently eight) with label/description/best_for metadata, read straight from the manifests. |
 | `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |
+| `queue_jobs(profile_id, urls)` | Register many job URLs at once. Free; creates saved jobs. |
+| `next_pending_job(profile_id)` | The next queued job, or null when the queue is empty. |
+| `report_fetch_blocked(application_id, reason)` | Record that a posting could not be read, and why. Marks the job blocked, moves a queued application to `needs_paste` (out of the queue, with a paste box on the dashboard), and puts the reason on its timeline. |
 | `save_parsed_posting(application_id, parsed)` | Store the agent's `ParsedPosting` analysis (dashboard shows company/title from it). |
 | `save_research(application_id, findings)` | Optionally store agent-performed research as a `ResearchFindings` brief (tokens/cost 0). |
 | `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
@@ -46,6 +49,32 @@ use last-writer-wins on the whole profile record, so don't hand-edit a
 profile in the web UI while an agent is writing to it (and vice-versa) -
 this is a single-user local app and simultaneous edits to the same profile
 are unsupported.
+
+### Why Tailored does not fetch blocked postings itself
+
+Playwright is in this project to render PDFs and will not be repurposed to
+fetch job postings. A headless browser with no user session is exactly what a
+job board's defences are built to refuse, so it would fail at the one job it
+was added for while adding a whole category of maintenance.
+
+Blocked postings are read by the client agent, in the user's own browser, with
+the user's own session, on a posting the user is entitled to read. That is a
+person's browser loading a page, which is what those defences are designed to
+permit. Tailored's part is the instruction and the record: the escalation ladder
+in `get_workflow_guide`, and `report_fetch_blocked` so giving up is visible
+rather than silent.
+
+Tailored never asks a connected agent to disguise automated traffic or defeat
+a bot check, and no evasion tooling (CAPTCHA solving, proxying, fingerprint or
+user-agent rotation) will be added to this escalation path.
+
+One caveat, for honesty about the built-in pipeline (a separate code path from
+the agent ladder above): its fetcher (`backend/app/services/fetcher.py`) sends
+a browser-like User-Agent header (desktop Chrome) with its requests, because
+many job boards refuse the default Python client string outright. That is the
+whole of it: it solves no CAPTCHAs and uses no proxies, and any refusal simply
+falls through to the needs-paste flow, where the user pastes the posting text
+themselves.
 
 ## 2. The pipeline's provider seam (any model)
 
