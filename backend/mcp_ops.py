@@ -140,7 +140,7 @@ no fetching, no model call, no cost - and each URL becomes a saved job on the
 user's dashboard right away, so they can watch the list drain.
 
 Then loop:
-  job = next_pending_job(profile_id)   -> {{"application_id", "url"}} or null
+  job = next_pending_job(profile_id)   -> {{"application_id": <id>, "url": "<url>"}} or null
   if null: the queue is empty, you are finished.
   otherwise: fetch it (step 2 above), then save_parsed_posting, optionally
   save_research, then save_tailored_resume. Then ask for the next one.
@@ -475,7 +475,10 @@ def queue_jobs(engine, profile_id: int, urls: list[str]) -> list[dict]:
             .where(Application.job_id == Job.id)
             .where(Application.profile_id == profile_id)
             .where(Application.archived_at.is_(None))
+            .order_by(Application.id)
         ).all()
+        # setdefault keeps the first hit, so with the ordering above a URL
+        # that somehow has several live applications skips to the oldest.
         for app_row, job_row in rows:
             existing.setdefault(job_row.url, app_row.id)
 
@@ -501,8 +504,7 @@ def queue_jobs(engine, profile_id: int, urls: list[str]) -> list[dict]:
             # had already been paid for.
             job = Job(url=url)
             session.add(job)
-            session.commit()
-            session.refresh(job)
+            session.flush()  # assigns job.id; commits together with its application
             app_row = Application(
                 profile_id=profile_id,
                 job_id=job.id,

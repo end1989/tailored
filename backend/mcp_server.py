@@ -173,7 +173,7 @@ async def queue_jobs(profile_id: int, urls: list[str]) -> list[dict]:
 
 @mcp.tool()
 async def next_pending_job(profile_id: int) -> dict | None:
-    """The next queued job to work on, as {application_id, url}, or null when
+    """The next queued job to work on, as {"application_id": <id>, "url": "<url>"}, or null when
     the queue is empty. Loop on this after queue_jobs: process one job all the
     way to save_tailored_resume before asking for the next, so losing context
     costs one job rather than twenty. Safe to call after a restart - the queue
