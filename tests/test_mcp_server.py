@@ -38,6 +38,7 @@ EXPECTED_TOOLS = {
     "save_parsed_posting",
     "save_research",
     "save_tailored_resume",
+    "set_application_template",
     "get_application",
 }
 

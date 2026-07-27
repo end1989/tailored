@@ -197,6 +197,20 @@ async def save_tailored_resume(
 
 
 @mcp.tool()
+async def set_application_template(application_id: int, template: str) -> dict:
+    """Re-render an existing application in a different template.
+    Free and instant: no model call, no cost, no new version. Only presentation
+    changes; section order is not revisited. Call list_templates for options."""
+    return await _run(
+        mcp_ops.set_application_template,
+        _engine,
+        _settings.data_dir,
+        application_id,
+        template,
+    )
+
+
+@mcp.tool()
 async def get_application(application_id: int) -> dict:
     """Check an application's state: status (tailoring / rendering / ready /
     error), version, error_message, and the exported files. Call after
