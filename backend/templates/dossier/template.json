@@ -1,0 +1,12 @@
+{
+  "name": "dossier",
+  "label": "Dossier",
+  "description": "Dense sans-serif that fits a long career onto fewer pages without crowding.",
+  "best_for": "Fifteen or more years of history",
+  "structure": "experience-first",
+  "order": 7,
+  "fonts": [
+    {"family": "Source Sans 3", "file": "SourceSans3-italic.woff2", "weight": "400", "style": "italic"},
+    {"family": "Source Sans 3", "file": "SourceSans3-normal.woff2", "weight": "400 600", "style": "normal"}
+  ]
+}

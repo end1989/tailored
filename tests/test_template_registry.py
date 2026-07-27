@@ -415,6 +415,43 @@ def test_the_serif_template_is_registered_with_its_own_family(name):
     assert family in _font_families_named(name)
 
 
+# --- The dense one and the plain one ----------------------------------------
+
+
+def test_dossier_is_registered_with_its_own_family():
+    """The same registration guard the serifs get, for the same reason: a
+    directory nothing registers is skipped by every check parametrised over
+    TEMPLATES rather than failing one."""
+    assert "dossier" in TEMPLATE_REGISTRY, (
+        "dossier is not in the registry; every check parametrised over "
+        "TEMPLATES would silently skip it"
+    )
+    manifest = TEMPLATE_REGISTRY["dossier"]
+    assert (manifest.label, manifest.order) == ("Dossier", 7)
+    assert {face.family for face in manifest.fonts} == {"Source Sans 3"}
+    assert "Source Sans 3" in _font_families_named("dossier")
+
+
+def test_plainwork_is_registered_and_embeds_no_font():
+    """Plainwork's emptiness is the design, and nothing else in the suite asserts
+    it: the font tests all read from the manifests, so a manifest that embeds
+    nothing is invisible to them. An embedded face is one more variable between
+    the document and a hostile parser, which is the one thing this template
+    exists to minimise - and its stack is Arial, which the machine already has.
+    """
+    assert "plainwork" in TEMPLATE_REGISTRY, (
+        "plainwork is not in the registry; every check parametrised over "
+        "TEMPLATES would silently skip it"
+    )
+    manifest = TEMPLATE_REGISTRY["plainwork"]
+    assert (manifest.label, manifest.order) == ("Plainwork", 8)
+    assert manifest.fonts == (), (
+        "plainwork/template.json embeds a font. It must stay empty: the "
+        "template's whole purpose is handing a parser the fewest variables "
+        "possible, and Arial and its fallbacks are system faces."
+    )
+
+
 # --- The manifest and the stylesheet must agree on the WEIGHTS too ----------
 #
 # The family checks above pair the two on the name and stop there. The weight is

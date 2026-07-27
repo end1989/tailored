@@ -406,6 +406,111 @@ def test_the_meridian_identity_guard_reads_the_declarations_it_claims_to():
     assert _declarations(".a { text-align: center; .b { text-align: left; } }", ".b", "text-align") == ["left"]
 
 
+# --- Plainwork's markup, and only Plainwork's -------------------------------
+#
+# Plainwork is the one template that includes `_resume_body_plain.html` instead
+# of the canonical partial: stacked block elements, no flex container, because
+# block flow is the most conservative thing a resume can hand to an unknown
+# parser. A copy-pasted shell that includes the canonical body renders a
+# perfectly good-looking Plainwork and leaves every other test in this suite
+# green, since the two partials carry the same facts in the same order.
+
+
+def test_plainwork_renders_through_the_block_flow_partial():
+    html = render_resume_html(_fixture_resume(), "plainwork")
+    assert 'class="item-head"' not in html, (
+        "plainwork/template.html includes the canonical _resume_body.html, whose "
+        "flex .item-head is the layout path this template exists to avoid."
+    )
+    assert 'class="primary"' in html, (
+        "plainwork renders no .primary at all; the include resolved to something "
+        "other than _resume_body_plain.html"
+    )
+
+
+@pytest.mark.parametrize(
+    "template", [name for name in TEMPLATES if name != "plainwork"]
+)
+def test_every_other_template_renders_through_the_canonical_partial(template):
+    """The inverse: the plain partial must not leak into the other templates.
+
+    Their stylesheets all style `.item-head` and would silently stop applying.
+    """
+    assert 'class="item-head"' in render_resume_html(_fixture_resume(), template)
+
+
+# --- Plainwork is plain, and stays plain ------------------------------------
+
+_PLAINWORK_BANNED = (
+    ("a border", r"(?<![\w-])border(?:-[a-z]+)*\s*:"),
+    ("letter-spacing", r"(?<![\w-])letter-spacing\s*:"),
+    ("flex or grid layout", r"(?<![\w-])display\s*:\s*(?:inline-)?(?:flex|grid)"),
+    ("a visual transform", r"(?<![\w-])(?:transform|filter)\s*:"),
+)
+
+
+def test_plainwork_declares_none_of_the_decoration_it_exists_without():
+    """Every absence in plainwork/style.css is a decision, so each is asserted.
+
+    Matched on the property rather than as a bare substring: a substring search
+    for "border" also fires on `box-sizing: border-box`, and one for a colour
+    prefix such as "#c" fires on any legitimate hex that happens to start with
+    it. A guard that cries wolf on valid CSS gets satisfied by mangling the
+    stylesheet, which is worse than no guard.
+    """
+    css = re.sub(
+        r"/\*.*?\*/",
+        "",
+        (TEMPLATES_DIR / "plainwork" / "style.css").read_text(encoding="utf-8"),
+        flags=re.DOTALL,
+    )
+    for label, pattern in _PLAINWORK_BANNED:
+        match = re.search(pattern, css)
+        assert match is None, (
+            f"plainwork/style.css declares {label} ({match.group(0).strip()!r}). "
+            "This template is deliberately undecorated: it is what gets exported "
+            "into portals that parse badly."
+        )
+    colours = {value.lower() for value in re.findall(r"#[0-9a-fA-F]{3,8}", css)}
+    assert colours <= {"#000", "#000000", "#fff", "#ffffff"}, (
+        f"plainwork/style.css uses the colours {sorted(colours)}. It is black on "
+        "white: grey text is the first thing a bad OCR path loses."
+    )
+
+
+@pytest.mark.parametrize(
+    "css",
+    (
+        ".resume-header { border-bottom: 0.5pt solid #8a8a8a; }",
+        ".resume-header { border  : none; }",
+        ".name { letter-spacing: 0.08em; }",
+        ".item-head { display: flex; }",
+        ".item-head { display:inline-grid; }",
+        ".name { transform: rotate(2deg); }",
+    ),
+)
+def test_the_plainwork_decoration_guard_rejects(css):
+    """No shipped stylesheet contains these, so without this the guard above
+    could be reduced to a no-op and stay green."""
+    assert any(
+        re.search(pattern, css) for _label, pattern in _PLAINWORK_BANNED
+    ), f"the plainwork guard does not catch {css!r}"
+
+
+@pytest.mark.parametrize(
+    "css",
+    (
+        "*, *::before { box-sizing: border-box; }",
+        ".section-title { text-transform: uppercase; }",
+        ".name { font-weight: 700; }",
+        ":root { --measure: 100%; }",
+    ),
+)
+def test_the_plainwork_decoration_guard_accepts_legitimate_css(css):
+    found = [label for label, pattern in _PLAINWORK_BANNED if re.search(pattern, css)]
+    assert not found, f"the plainwork guard is too broad: {css!r} flagged as {found}"
+
+
 @pytest.mark.parametrize("template", TEMPLATES)
 def test_template_renders_all_six_section_types(template):
     html = render_resume_html(_all_sections_resume(), template)

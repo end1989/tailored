@@ -1,0 +1,54 @@
+/* ============================================================
+   Plainwork — the template that gets out of the way.
+   Arial, black on white, no rules, no colour, no letterspacing,
+   no flex. This is not an unfinished template; every absence is
+   a decision. It exists for portals that parse badly.
+   ============================================================ */
+
+:root {
+  --fs-name: 16pt;
+  --fs-headline: 11pt;
+  --fs-section: 11pt;
+  --fs-body: 11pt;
+  --fs-meta: 11pt;
+  --leading: 1.35;
+  --measure: 100%;
+  --ink: #000000;
+  --ink-soft: #000000;
+  --ink-faint: #000000;
+  --space-1: 0.2rem;
+  --space-2: 0.4rem;
+  --space-3: 0.7rem;
+  --space-4: 1.1rem;
+}
+
+body {
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.name {
+  font-weight: 700;
+}
+
+.headline,
+.contact-line,
+.summary,
+.primary,
+.secondary,
+.meta,
+.detail {
+  font-weight: 400;
+}
+
+.section-title {
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.primary {
+  font-weight: 700;
+}
+
+.skill-label {
+  font-weight: 700;
+}
