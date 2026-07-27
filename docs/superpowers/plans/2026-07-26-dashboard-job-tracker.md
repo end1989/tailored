@@ -1073,26 +1073,38 @@ Add `import shutil` to the imports at the top of `backend/app/api/applications.p
 Add the helper next to `_get_app_and_job`:
 
 ```python
-def _remove_export_dir(data_dir: Path, application_id: int) -> None:
-    """Delete data/exports/<application_id>/ recursively.
+def _remove_export_dir(data_dir: Path, application_id: int) -> bool:
+    """Delete data/exports/<application_id>/ recursively. True when the
+    directory is gone (removed, or already absent); False when removal failed.
 
     The path is rebuilt from data_dir and the integer id -- never from the
-    stored Application.export_dir string, which is user-visible state that
-    could be stale or wrong. The containment check is defence in depth: it is
-    unreachable through the route because application_id is typed int, but it
-    protects any future caller.
+    stored Application.export_dir string, which is persisted state that could
+    be stale or wrong.
 
-    A missing directory is not an error.
+    The containment check compares the parent directly rather than testing
+    membership in target.parents. The looser form ACCEPTS an empty or "." id,
+    because that resolves target to data_dir/exports itself -- which would wipe
+    every application's exports. Unreachable while application_id is typed int;
+    kept as defence in depth for future callers.
+
+    A missing directory is not an error. An OSError from rmtree is reported to
+    the caller rather than raised: on Windows a PDF open in a viewer locks the
+    file, and the database rows are already committed by the time we get here,
+    so an escaping exception would report a completed delete as a 500.
     """
     data_dir = Path(data_dir).resolve()
     target = (data_dir / "exports" / str(application_id)).resolve()
     if not target.is_dir():
-        return
-    if data_dir not in target.parents:
+        return True
+    if target.parent != data_dir / "exports":
         raise HTTPException(
             status_code=500, detail="refusing to delete outside the data directory"
         )
-    shutil.rmtree(target)
+    try:
+        shutil.rmtree(target)
+    except OSError:
+        return False
+    return True
 ```
 
 Add the route at the end of the file:
@@ -1125,8 +1137,10 @@ def delete_application(
     session.delete(app_row)
     session.commit()
 
-    _remove_export_dir(request.app.state.settings.data_dir, application_id)
-    return {"deleted": application_id}
+    exports_removed = _remove_export_dir(
+        request.app.state.settings.data_dir, application_id
+    )
+    return {"deleted": application_id, "exports_removed": exports_removed}
 ```
 
 The `Job` row is intentionally left in place — it is shared state, and orphan cleanup is out of scope per spec §9.
