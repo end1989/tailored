@@ -148,3 +148,81 @@ def test_detail_embeds_events(client):
 
     detail = client.get(f"/api/applications/{aid}").json()
     assert [e["body"] for e in detail["events"]] == ["hello"]
+
+
+# --- stages ----------------------------------------------------------------
+
+
+def test_new_application_starts_saved(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    assert client.get(f"/api/applications/{aid}").json()["stage"] == "saved"
+
+
+def test_set_stage(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    resp = client.patch(f"/api/applications/{aid}", json={"stage": "interview"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["stage"] == "interview"
+
+
+def test_invalid_stage_is_rejected(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    resp = client.patch(f"/api/applications/{aid}", json={"stage": "ghosted"})
+    assert resp.status_code == 422
+    assert "ghosted" in resp.json()["detail"]
+
+
+def test_applied_at_is_stamped_once(client):
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    first = client.patch(f"/api/applications/{aid}", json={"stage": "applied"}).json()
+    assert first["applied_at"] is not None
+
+    client.patch(f"/api/applications/{aid}", json={"stage": "screening"})
+    again = client.patch(f"/api/applications/{aid}", json={"stage": "applied"}).json()
+    assert again["applied_at"] == first["applied_at"]
+
+
+def test_stage_is_independent_of_status(client):
+    """Regenerating a job you are interviewing for must not reset the funnel."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    client.patch(f"/api/applications/{aid}", json={"stage": "interview"})
+
+    resp = client.post(f"/api/applications/{aid}/retry")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "queued"
+    assert resp.json()["stage"] == "interview"
+
+
+def set_status(client, application_id: int, status: str) -> None:
+    """Force a generation status the pipeline would normally set. The pipeline
+    is monkeypatched in these tests, so status is driven directly."""
+    from sqlmodel import Session
+
+    from backend.app.models import Application
+
+    with Session(client.app.state.engine) as s:
+        row = s.get(Application, application_id)
+        row.status = status
+        s.add(row)
+        s.commit()
+
+
+def test_cannot_move_a_generated_application_back_to_saved(client):
+    """'saved' means no documents exist. Allowing it on a ready application
+    would also break the migration backfill's idempotence, which identifies
+    pre-migration rows precisely by ready + saved being impossible."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    set_status(client, aid, "ready")
+
+    resp = client.patch(f"/api/applications/{aid}", json={"stage": "saved"})
+    assert resp.status_code == 422
+    assert "saved" in resp.json()["detail"]

@@ -59,6 +59,11 @@ def application_summary(
         "id": app_row.id,
         "profile_id": app_row.profile_id,
         "status": app_row.status,
+        "stage": app_row.stage,
+        "applied_at": app_row.applied_at.replace(tzinfo=timezone.utc).isoformat()
+            if app_row.applied_at else None,
+        "archived_at": app_row.archived_at.replace(tzinfo=timezone.utc).isoformat()
+            if app_row.archived_at else None,
         "version": app_row.version,
         "template": app_row.template,
         "depth": job.depth,
@@ -166,6 +171,10 @@ class ContentUpdate(BaseModel):
     cover_letter_md: Optional[str] = None
 
 
+class ApplicationPatch(BaseModel):
+    stage: Optional[str] = None
+
+
 class EventIn(BaseModel):
     kind: str
     body: str = ""
@@ -255,6 +264,37 @@ def get_application(
     application_id: int, session: Session = Depends(get_session)
 ) -> dict[str, Any]:
     app_row, job = _get_app_and_job(session, application_id)
+    return application_detail(session, app_row, job)
+
+
+@router.patch("/applications/{application_id}")
+def patch_application(
+    application_id: int,
+    body: ApplicationPatch,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Update tracker fields. `stage` is the job-hunt funnel and is deliberately
+    independent of `status`, which is the generation pipeline."""
+    app_row, job = _get_app_and_job(session, application_id)
+    if body.stage is not None:
+        if body.stage not in STAGES:
+            raise HTTPException(
+                status_code=422,
+                detail=f"invalid stage {body.stage!r}; must be one of {list(STAGES)}",
+            )
+        if body.stage == "saved" and app_row.status == "ready":
+            raise HTTPException(
+                status_code=422,
+                detail="cannot move a generated application back to 'saved'; "
+                       "its documents already exist",
+            )
+        app_row.stage = body.stage
+        if body.stage == "applied" and app_row.applied_at is None:
+            app_row.applied_at = _utcnow()
+        app_row.updated_at = _utcnow()
+        session.add(app_row)
+        session.commit()
+        session.refresh(app_row)
     return application_detail(session, app_row, job)
 
 
