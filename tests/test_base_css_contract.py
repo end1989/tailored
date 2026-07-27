@@ -214,32 +214,57 @@ def test_base_css_owns_item_pagination():
     assert "page-break-inside: var(--item-break)" in BASE_CSS
 
 
-def test_tabular_figures_are_scoped_to_the_date_column():
-    """`tnum` must not reach body prose.
+def test_no_stylesheet_uses_tabular_figures():
+    """`tnum` is banned everywhere, in base.css and in every template.
 
-    Several families -- Inter among them -- make the hyphen-minus tabular-width
-    under `tnum`, so minus signs align in a column of numbers. Applied to body
-    text that stretches every hyphen in ordinary prose: "monolith-to-services"
-    renders as "monolith - to - services". The alignment is only wanted in the
-    date column, so the declaration belongs on .meta and nowhere broader.
+    Several families -- Inter among them -- make the hyphen-minus
+    tabular-width under `tnum`, so minus signs align in a column of figures.
+    That stretches every hyphen in the text it touches.
+
+    It was tried twice and failed twice. On `body` it turned
+    "monolith-to-services" into "monolith - to - services". Scoped to `.meta`
+    it still hit project URLs and locations, because `.meta` carries those as
+    well as dates -- and the date itself is "2021-03", so the one element the
+    rule existed to align was being pulled apart by it.
     """
-    body_block = re.search(r"^body\s*\{(.*?)\}", BASE_CSS, re.DOTALL | re.MULTILINE)
-    assert body_block, "base.css has no top-level body rule"
-    assert "font-variant-numeric" not in body_block.group(1), (
-        "font-variant-numeric on body stretches every hyphen in prose; "
-        "scope it to .meta"
-    )
-    assert re.search(
-        r"\.meta\s*\{[^}]*font-variant-numeric:\s*tabular-nums", BASE_CSS, re.DOTALL
-    ), "the date column still needs tabular figures"
+    sources = {"base.css": BASE_CSS}
+    for name in TEMPLATES:
+        sources[f"{name}/style.css"] = (
+            TEMPLATES_DIR / name / "style.css"
+        ).read_text(encoding="utf-8")
+    for where, css in sources.items():
+        stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+        assert "font-variant-numeric" not in stripped, (
+            f"{where} uses font-variant-numeric; tabular figures stretch every "
+            "hyphen in the text they touch, including the dates in .meta"
+        )
+        assert "tnum" not in stripped, (
+            f"{where} enables tnum via font-feature-settings, which has the "
+            "same effect as font-variant-numeric: tabular-nums"
+        )
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
-def test_no_template_puts_tabular_figures_on_body(template):
+def test_a_centred_header_also_centres_the_capped_summary(template):
+    """A centred header over a left-flush summary block reads as a mistake.
+
+    base.css caps .summary at --measure, so any template that centres its
+    header must also give the summary auto side margins or the paragraph sits
+    flush left with a third of the column empty beside it. This is a contract,
+    not a per-template assertion: it holds for whichever templates choose a
+    centred header.
+    """
     css = (TEMPLATES_DIR / template / "style.css").read_text(encoding="utf-8")
     stripped = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
-    body_block = re.search(r"(?:^|\})\s*body\s*\{(.*?)\}", stripped, re.DOTALL)
-    if body_block:
-        assert "font-variant-numeric" not in body_block.group(1), (
-            f"{template}/style.css puts font-variant-numeric on body"
-        )
+    header = re.search(r"\.resume-header\s*\{([^}]*)\}", stripped, re.DOTALL)
+    if not header or "center" not in header.group(1):
+        return  # not a centred-header template; nothing to hold it to
+    summary = re.search(r"\.summary\s*\{([^}]*)\}", stripped, re.DOTALL)
+    assert summary, (
+        f"{template} centres its header but never sets .summary, so the capped "
+        "summary block will sit flush left under it"
+    )
+    assert "auto" in summary.group(1), (
+        f"{template} centres its header but its .summary has no auto side "
+        "margin, so the block sits flush left under a centred header"
+    )

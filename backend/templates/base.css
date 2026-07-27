@@ -136,16 +136,16 @@ img {
   font-size: var(--fs-meta);
 }
 
-/* Tabular figures keep the date column aligned down the right edge.
-   Scoped to .meta on purpose: several families (Inter among them) make the
-   hyphen-minus tabular-width under `tnum` so minus signs line up in a column
-   of numbers. Applied to body text that stretches every hyphen in ordinary
-   prose -- "monolith-to-services" renders as "monolith - to - services" --
-   which is a real typographic cost paid for an alignment nobody asked for
-   outside the date column. */
-.meta {
-  font-variant-numeric: tabular-nums;
-}
+/* No `font-variant-numeric: tabular-nums` anywhere, deliberately.
+   Several families (Inter among them) make the hyphen-minus tabular-width
+   under `tnum`, so minus signs align in a column of figures. That stretches
+   every hyphen in the text it touches. It was on `body` first, which turned
+   "monolith-to-services" into "monolith - to - services". Scoping it to
+   `.meta` did not save it: `.meta` carries project URLs and locations as well
+   as dates, so "github.com/user/my-project" and "Winston-Salem" stretched
+   instead -- and the date itself is "2021-03", so the one element the rule
+   existed to align was being pulled apart by it. Equal digit widths are not
+   worth that. tests/test_base_css_contract.py keeps it out. */
 
 /* --- Measure: prose is capped, tables of facts are not --- */
 .summary,
