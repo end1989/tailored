@@ -130,6 +130,7 @@ a { color: var(--accent); }
   padding: 0.15rem 0.55rem; border-radius: 999px; white-space: nowrap;
   text-decoration: none;
 }
+.badge-not_started { background: #F5F5F4; color: #78716C; }  /* stone, dimmer than queued */
 .badge-queued      { background: #F5F5F4; color: #57534E; }  /* stone */
 .badge-fetching    { background: #DBEAFE; color: #1D4ED8; }  /* blue */
 .badge-researching { background: #EDE9FE; color: #6D28D9; }  /* violet */
@@ -141,6 +142,7 @@ a { color: var(--accent); }
 
 /* Dark surfaces: swap the pale badge fills for translucent tints of the same
    hue with light text, so every status stays legible on --surface. */
+:root[data-theme="dark"] .badge-not_started { background: rgba(168, 162, 158, 0.14); color: #A8A29E; }
 :root[data-theme="dark"] .badge-queued      { background: rgba(168, 162, 158, 0.2); color: #E7E5E4; }
 :root[data-theme="dark"] .badge-fetching    { background: rgba(59, 130, 246, 0.22); color: #93C5FD; }
 :root[data-theme="dark"] .badge-researching { background: rgba(167, 139, 250, 0.22); color: #C4B5FD; }

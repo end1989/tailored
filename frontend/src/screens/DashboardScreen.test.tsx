@@ -23,6 +23,10 @@ vi.mock("../api", () => {
         cost_usd: 0.4321,
         created_at: "2026-07-22T10:00:00",
         error_message: null,
+        stage: "applied",
+        applied_at: "2026-07-22T10:30:00+00:00",
+        archived_at: null,
+        last_activity_at: "2026-07-22T10:30:00+00:00",
       },
       {
         id: 11,
@@ -37,10 +41,33 @@ vi.mock("../api", () => {
         cost_usd: 0.1,
         created_at: "2026-07-22T11:00:00",
         error_message: null,
+        stage: "drafted",
+        applied_at: null,
+        archived_at: null,
+        last_activity_at: "2026-07-22T11:00:00+00:00",
       },
     ]),
   };
 });
+
+const BASE_APP = {
+  id: 10,
+  profile_id: 1,
+  status: "ready" as const,
+  version: 2,
+  template: "slate" as const,
+  depth: "standard" as const,
+  url: "https://example.com/a",
+  company: "Acme",
+  title: "Backend Engineer",
+  cost_usd: 0.4321,
+  created_at: "2026-07-22T10:00:00",
+  error_message: null,
+  stage: "applied" as const,
+  applied_at: "2026-07-22T10:30:00+00:00",
+  archived_at: null,
+  last_activity_at: "2026-07-22T10:30:00+00:00",
+};
 
 describe("DashboardScreen", () => {
   it("renders one row per application with per-status badges", async () => {
@@ -73,5 +100,21 @@ describe("DashboardScreen", () => {
     );
     expect(screen.getByRole("link", { name: /add job URLs/ })).toHaveAttribute("href", "/add");
     expect(screen.queryByText("Acme")).not.toBeInTheDocument();
+  });
+
+  it("stops polling when every application is in a terminal state", async () => {
+    vi.useFakeTimers();
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 1, status: "not_started", stage: "saved" },
+    ]);
+
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await vi.advanceTimersByTimeAsync(0);
+    const callsAfterFirstTick = vi.mocked(api.listApplications).mock.calls.length;
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    expect(vi.mocked(api.listApplications).mock.calls.length).toBe(callsAfterFirstTick);
+    vi.useRealTimers();
   });
 });

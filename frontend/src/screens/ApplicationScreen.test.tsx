@@ -26,12 +26,17 @@ const base: Omit<ApplicationDetail, "status"> = {
   cost_usd: 0.25,
   created_at: "2026-07-22T10:00:00",
   error_message: null,
+  stage: "drafted",
+  applied_at: null,
+  archived_at: null,
+  last_activity_at: "2026-07-22T10:00:00+00:00",
   resume: null,
   cover_letter_md: null,
   tailoring_notes: null,
   research: null,
   parsed: null,
   raw_text_present: false,
+  events: [],
 };
 
 function renderAt() {

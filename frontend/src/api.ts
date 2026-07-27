@@ -1,9 +1,11 @@
 import type {
   ApplicationDetail,
+  ApplicationEvent,
   ApplicationSummary,
   Contact,
   Depth,
   DocumentInfo,
+  EventKind,
   ExportKind,
   JobRequest,
   MasterProfile,
@@ -13,6 +15,7 @@ import type {
   ResumeDoc,
   SettingsShape,
   SetupShape,
+  Stage,
   TemplateInfo,
   TemplateName,
 } from "./types";
@@ -105,9 +108,55 @@ export function createApplications(
   );
 }
 
-export function listApplications(profileId?: number): Promise<ApplicationSummary[]> {
-  const qs = profileId !== undefined ? `?profile_id=${profileId}` : "";
-  return request<ApplicationSummary[]>(`/applications${qs}`);
+export function listApplications(
+  profileId?: number,
+  opts?: { stage?: Stage; archived?: boolean }
+): Promise<ApplicationSummary[]> {
+  const params = new URLSearchParams();
+  if (profileId !== undefined) params.set("profile_id", String(profileId));
+  if (opts?.stage) params.set("stage", opts.stage);
+  if (opts?.archived) params.set("archived", "true");
+  const qs = params.toString();
+  return request<ApplicationSummary[]>(`/applications${qs ? `?${qs}` : ""}`);
+}
+
+export function patchApplication(id: number, patch: { stage?: Stage }): Promise<ApplicationDetail> {
+  return request<ApplicationDetail>(`/applications/${id}`, jsonInit("PATCH", patch));
+}
+
+export function archiveApplication(id: number): Promise<ApplicationDetail> {
+  return request<ApplicationDetail>(`/applications/${id}/archive`, { method: "POST" });
+}
+
+export function restoreApplication(id: number): Promise<ApplicationDetail> {
+  return request<ApplicationDetail>(`/applications/${id}/restore`, { method: "POST" });
+}
+
+export function deleteApplication(id: number): Promise<{ deleted: number; exports_removed: boolean }> {
+  return request<{ deleted: number; exports_removed: boolean }>(`/applications/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export function generateApplication(id: number): Promise<ApplicationDetail> {
+  return request<ApplicationDetail>(`/applications/${id}/generate`, { method: "POST" });
+}
+
+export function listEvents(id: number): Promise<ApplicationEvent[]> {
+  return request<ApplicationEvent[]>(`/applications/${id}/events`);
+}
+
+export function addEvent(
+  id: number,
+  event: { kind: EventKind; body: string; occurred_at?: string }
+): Promise<ApplicationEvent> {
+  return request<ApplicationEvent>(`/applications/${id}/events`, jsonInit("POST", event));
+}
+
+export function deleteEvent(id: number, eventId: number): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/applications/${id}/events/${eventId}`, {
+    method: "DELETE",
+  });
 }
 
 export function getApplication(id: number): Promise<ApplicationDetail> {

@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { listApplications, listProfiles } from "../api";
 import type { ApplicationSummary, AppStatus, ProfileSummary } from "../types";
 
-const TERMINAL: AppStatus[] = ["ready", "error", "needs_paste"];
+const TERMINAL: AppStatus[] = ["not_started", "ready", "error", "needs_paste"];
 
 /**
  * Polls listApplications every 2000ms while any application status is outside
