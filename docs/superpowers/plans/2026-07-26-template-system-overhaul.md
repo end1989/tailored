@@ -36,6 +36,7 @@
 | `backend/templates/{ledger,quarto,dossier,plainwork}/` | Four new templates: `template.json` + `template.html` + `style.css`. |
 | `backend/templates/{meridian,slate,terminal,signal}/template.json` | Manifests for the existing four. |
 | `tests/test_template_registry.py` | Manifest loading, ordering, malformed-manifest failure, font inlining. |
+| `tests/test_vendored_fonts.py` | Integrity of the committed woff2 binaries: roster, woff2 header, size budget, licence provenance. |
 | `tests/test_pdf_extraction.py` | The marquee guard: every template's PDF extracts employers, titles and dates in document order, and in role-employer-dates order within each entry. |
 | `tests/test_json_ld.py` | JSON-LD validity, `@type` correctness, script-injection safety. |
 | `tests/test_template_switch.py` | The `PATCH /applications/{id}/template` endpoint and its MCP twin. |
@@ -653,12 +654,12 @@ Leave `_env` where the code above places it — after the registry, so a manifes
 - [ ] **Step 5: Run the registry tests**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_template_registry.py -q`
-Expected: 10 passed.
+Expected: 11 passed.
 
 - [ ] **Step 6: Run the whole suite — nothing may regress**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/ -q`
-Expected: 204 passed (192 baseline + 12 from Task 1). Zero failures. `TEMPLATES` is still a tuple of the same four names in the same order, so every existing validation site and test is unaffected.
+Expected: 219 passed (192 baseline + 16 from Task 1 + 11 from Task 2). Zero failures. `TEMPLATES` is still a tuple of the same four names in the same order, so every existing validation site and test is unaffected.
 
 - [ ] **Step 7: Commit**
 
@@ -675,6 +676,7 @@ git commit -m "feat: discover templates from template.json manifests"
 - Create: `scripts/vendor_fonts.py`
 - Create: `backend/templates/fonts/*.woff2` (generated)
 - Create: `backend/templates/fonts/LICENSES.md` (generated)
+- Create: `tests/test_vendored_fonts.py`
 
 **Interfaces:**
 - Produces: font files on disk, named `<Stem>-<style>.woff2` for a variable face (`Inter-normal.woff2`) or `<Stem>-<weight>-<style>.woff2` for a static one (`IBMPlexMono-400-normal.woff2`). The script prints the exact JSON `fonts` array to paste into each manifest in Task 4.
@@ -880,15 +882,79 @@ If the total exceeds 600 KB, drop the italic face of the largest family and re-r
 - [ ] **Step 3: Sanity-check what landed**
 
 Run: `ls -la backend/templates/fonts/ && ./.venv/Scripts/python.exe -c "from pathlib import Path; print(sum(p.stat().st_size for p in Path('backend/templates/fonts').glob('*.woff2'))/1024, 'KB')"`
-Expected: roughly 12 to 14 `.woff2` files plus `LICENSES.md`, total 300-600 KB. Every file must start with the bytes `wOF2` — verify:
+Expected: roughly 12 to 14 `.woff2` files plus `LICENSES.md`, total 300-600 KB.
 
-Run: `./.venv/Scripts/python.exe -c "from pathlib import Path; [print(p.name, p.read_bytes()[:4]) for p in sorted(Path('backend/templates/fonts').glob('*.woff2'))]"`
-Expected: every line ends with `b'wOF2'`. Anything else means an HTML error page was saved instead of a font.
+This is an eyeball, not the guard. Step 4 turns it into a test, because these
+binaries otherwise have no automated coverage at all: no manifest declares a
+font until Task 4, three of the seven families are unreferenced until Tasks
+9-10, and the registry test only asserts `path.is_file()`, which an empty or
+HTML-content file satisfies.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Write the integrity guard**
+
+The failure this exists to catch: `_latin_faces` calls `resp.raise_for_status()`,
+which only rejects an error *status*. A captive portal or corporate proxy that
+answers HTTP 200 with an HTML body makes the script write markup into all
+fourteen `.woff2` files. Nothing downstream errors — Chromium silently falls
+back — so every exported PDF renders in the wrong face with a green suite.
+
+Create `tests/test_vendored_fonts.py`. The check parses the woff2 header, which
+is uncompressed and self-describing: a `wOF2` signature, a table count, and a
+total-length field that must equal the file size on disk. That separates a real
+font from an error page, a truncated download, or an empty file, without needing
+`brotli` or `fonttools` — neither is installed, and the no-build-step constraint
+says neither may be. Whether the glyphs *extract as text* is a different
+question, covered by `tests/test_pdf_extraction.py` once a template uses the
+family.
+
+The file must contain:
+
+- `EXPECTED_FAMILIES: dict[str, tuple[str, ...]]` — display name to filenames.
+  This is the roster, and it doubles as the licence cross-check.
+- `test_the_vendored_font_roster_is_exactly_what_is_on_disk` — set equality, so
+  a deleted binary fails loudly.
+- `test_vendored_font_is_a_structurally_valid_woff2`, parametrised over the
+  roster **union** what is on disk — parametrising over the glob alone turns a
+  wiped directory into zero collected tests, which reads as success. Asserts the
+  file exists, is at least 4 KB, starts with `b"wOF2"`, has a header length
+  equal to `len(raw)`, and declares at least one sfnt table.
+- `test_no_two_vendored_fonts_are_byte_identical` — a proxy serving one canned
+  response for every request yields a directory of identical valid-looking
+  fonts.
+- `test_the_vendored_fonts_stay_within_their_size_budget` — 300-600 KB, the
+  same budget as Step 2. These are base64-inlined into every export, so this is
+  per-document weight.
+- `test_every_vendored_family_is_covered_by_the_licence_file` and
+  `test_every_vendored_file_belongs_to_a_licensed_family` — enforce the
+  OFL-only constraint in both directions.
+
+- [ ] **Step 5: Prove the guard bites**
+
+Each of these must fail; restore with `git checkout -- backend/templates/fonts/`
+between them.
+
+1. Write an HTML page over one `.woff2` (larger than 4 KB, so it is the
+   signature check that catches it, not the size floor).
+   Expected: `test_vendored_font_is_a_structurally_valid_woff2[...]` fails with
+   `does not start with b'wOF2'`.
+2. Truncate one `.woff2` to half its length.
+   Expected: the same test fails on the header-length mismatch.
+3. Move all `.woff2` files out of the directory and run the **whole** suite.
+   Expected: 16 failures. Before this guard existed the suite returned a
+   byte-identical `219 passed` with every font deleted.
+
+- [ ] **Step 6: Run the tests**
+
+Run: `./.venv/Scripts/python.exe -m pytest tests/test_vendored_fonts.py -q`
+Expected: 19 passed (14 fonts + 5 directory-level tests).
+
+Run: `./.venv/Scripts/python.exe -m pytest tests/ -q`
+Expected: 238 passed (219 after Task 2 + 19 here).
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add scripts/vendor_fonts.py backend/templates/fonts/
+git add scripts/vendor_fonts.py backend/templates/fonts/ tests/test_vendored_fonts.py
 git commit -m "feat: vendor latin-subset OFL woff2 fonts"
 ```
 
@@ -1074,7 +1140,7 @@ import functools
 - [ ] **Step 6: Run the tests**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/test_template_registry.py -q`
-Expected: 17 passed.
+Expected: 18 passed (11 from Task 2 + 7 here).
 
 - [ ] **Step 7: Prove the fonts survive PDF extraction**
 
@@ -1086,7 +1152,7 @@ Expected: 16 passed. A failure here means a font subset has no usable ToUnicode 
 - [ ] **Step 8: Full suite**
 
 Run: `./.venv/Scripts/python.exe -m pytest tests/ -q`
-Expected: 211 passed, 0 failed.
+Expected: 245 passed (238 after Task 3 + 7 here), 0 failed.
 
 - [ ] **Step 9: Commit**
 
