@@ -3020,6 +3020,30 @@ def test_mcp_set_application_template_rejects_unknown(engine, seeded):
 
 
 def test_mcp_set_application_template_rejects_mid_pipeline(engine, seeded):
+    """Uses "rendering", not "tailoring".
+
+    The MCP guard `_reject_if_pipeline_active` deliberately EXCLUDES "tailoring"
+    from `_PIPELINE_ACTIVE_STATUSES` (mcp_ops.py:369-373): that is the MCP
+    parking state between create_application and save_tailored_resume, so an
+    agent must be able to act on an application sitting in it. The HTTP route
+    guards on `PROCESSING_STATUSES`, which does include "tailoring". The
+    asymmetry is intentional and this test pins it.
+    """
+    from backend import mcp_ops
+
+    with Session(engine) as session:
+        row = session.get(Application, seeded["application_id"])
+        row.status = "rendering"
+        session.add(row)
+        session.commit()
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.set_application_template(
+            engine, seeded["data_dir"], seeded["application_id"], "ledger"
+        )
+
+
+def test_mcp_set_application_template_allows_the_mcp_parking_state(engine, seeded):
+    """"tailoring" is where an MCP agent parks an application; it must not block."""
     from backend import mcp_ops
 
     with Session(engine) as session:
@@ -3027,10 +3051,10 @@ def test_mcp_set_application_template_rejects_mid_pipeline(engine, seeded):
         row.status = "tailoring"
         session.add(row)
         session.commit()
-    with pytest.raises(mcp_ops.McpOpsError):
-        mcp_ops.set_application_template(
-            engine, seeded["data_dir"], seeded["application_id"], "ledger"
-        )
+    result = mcp_ops.set_application_template(
+        engine, seeded["data_dir"], seeded["application_id"], "ledger"
+    )
+    assert result["template"] == "ledger"
 ```
 
 - [ ] **Step 2: Run and confirm they fail**
@@ -3136,7 +3160,7 @@ def set_application_template(
         )
     with Session(engine) as session:
         app, job = _get_app_and_job(session, application_id)
-        _reject_if_pipeline_active(app)
+        _reject_if_pipeline_active(app, application_id)
         resume_doc = get_resume(app)
         if resume_doc is None:
             raise McpOpsError(
