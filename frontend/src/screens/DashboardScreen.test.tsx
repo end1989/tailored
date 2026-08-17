@@ -74,19 +74,75 @@ const BASE_APP = {
   last_activity_at: "2026-07-22T10:30:00+00:00",
 };
 
+/**
+ * Renders on the All tab, where every fixture row is visible whatever its
+ * stage. The screen opens on "To apply", which deliberately hides anything
+ * already sent -- so tests about badges, stage editing, deletion, and refetch
+ * say "All" explicitly rather than depending on the default.
+ */
+async function renderOnAllTab() {
+  render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+  fireEvent.click(await screen.findByRole("button", { name: /^all/i }));
+}
+
 describe("DashboardScreen", () => {
   it("renders one row per application with per-status badges", async () => {
-    render(
-      <MemoryRouter>
-        <DashboardScreen />
-      </MemoryRouter>
-    );
+    await renderOnAllTab();
     expect(await screen.findByText("Acme")).toBeInTheDocument();
     expect(screen.getByText("Globex")).toBeInTheDocument();
-    expect(screen.getByText("ready")).toHaveClass("badge", "badge-ready");
-    expect(screen.getByText("tailoring")).toHaveClass("badge", "badge-tailoring");
+    // Badges name the artifact, not the enum: "ready" alone read as "ready to
+    // apply" and collided with the Stage column.
+    expect(screen.getByText("Docs ready")).toHaveClass("badge", "badge-ready");
+    expect(screen.getByText("Writing")).toHaveClass("badge", "badge-tailoring");
     expect(screen.getByLabelText(/stage for row 1/i)).toHaveValue("applied");
     expect(screen.getAllByText("Open")).toHaveLength(2);
+  });
+
+  it("separates what still needs sending from what is already out", async () => {
+    // The whole point of the tabs: "which have I applied for and which haven't"
+    // must be answerable without reading a stage column row by row.
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 1, company: "NotSentYet", stage: "drafted", applied_at: null },
+      { ...BASE_APP, id: 2, company: "AlsoNotSent", stage: "saved", status: "not_started", applied_at: null },
+      { ...BASE_APP, id: 3, company: "AlreadySent", stage: "applied" },
+      { ...BASE_APP, id: 4, company: "Interviewing", stage: "interview" },
+      { ...BASE_APP, id: 5, company: "TurnedDown", stage: "rejected" },
+    ]);
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+    // Opens on "To apply": only the two that have not gone out.
+    expect(await screen.findByText("NotSentYet")).toBeInTheDocument();
+    expect(screen.getByText("AlsoNotSent")).toBeInTheDocument();
+    expect(screen.queryByText("AlreadySent")).not.toBeInTheDocument();
+    expect(screen.queryByText("TurnedDown")).not.toBeInTheDocument();
+
+    // "Applied" holds everything sent and still live -- including later
+    // stages, since an interview is a sent application that progressed.
+    fireEvent.click(screen.getByRole("button", { name: /^applied/i }));
+    expect(await screen.findByText("AlreadySent")).toBeInTheDocument();
+    expect(screen.getByText("Interviewing")).toBeInTheDocument();
+    expect(screen.queryByText("NotSentYet")).not.toBeInTheDocument();
+    expect(screen.queryByText("TurnedDown")).not.toBeInTheDocument();
+
+    // "Closed" isolates the dead ones so they stop padding the live count.
+    fireEvent.click(screen.getByRole("button", { name: /^closed/i }));
+    expect(await screen.findByText("TurnedDown")).toBeInTheDocument();
+    expect(screen.queryByText("AlreadySent")).not.toBeInTheDocument();
+  });
+
+  it("counts every bucket so the split is readable without switching tabs", async () => {
+    vi.mocked(api.listApplications).mockResolvedValue([
+      { ...BASE_APP, id: 1, company: "A", stage: "drafted", applied_at: null },
+      { ...BASE_APP, id: 2, company: "B", stage: "applied" },
+      { ...BASE_APP, id: 3, company: "C", stage: "offer" },
+      { ...BASE_APP, id: 4, company: "D", stage: "rejected" },
+    ]);
+    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+
+    expect(await screen.findByRole("button", { name: /to apply 1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /applied 2/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /closed 1/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /all 4/i })).toBeInTheDocument();
   });
 
   it("shows Getting Started and profile links in the empty state", async () => {
@@ -139,7 +195,7 @@ describe("DashboardScreen", () => {
       { ...BASE_APP, id: 7, stage: "applied" },
     ]);
     vi.mocked(api.patchApplication).mockResolvedValue({ ...BASE_APP, id: 7, stage: "interview" } as never);
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await renderOnAllTab();
 
     const select = await screen.findByLabelText(/stage for row 1/i);
     fireEvent.change(select, { target: { value: "interview" } });
@@ -153,7 +209,7 @@ describe("DashboardScreen", () => {
     vi.mocked(api.listApplications).mockResolvedValue([
       { ...BASE_APP, id: 7, status: "ready", stage: "applied" },
     ]);
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await renderOnAllTab();
 
     const select = await screen.findByLabelText(/stage for row 1/i);
     const savedOption = within(select).getByRole("option", { name: "Saved" }) as HTMLOptionElement;
@@ -164,7 +220,7 @@ describe("DashboardScreen", () => {
     vi.mocked(api.listApplications).mockResolvedValue([
       { ...BASE_APP, id: 3, company: "Initech", title: "Staff Engineer" },
     ]);
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await renderOnAllTab();
 
     fireEvent.click(await screen.findByLabelText(/select row 1/i));
     fireEvent.click(screen.getByRole("button", { name: /delete permanently/i }));
@@ -188,7 +244,7 @@ describe("DashboardScreen", () => {
         { ...BASE_APP, id: 5, last_activity_at: instant.toISOString() },
       ]);
 
-      render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+      await renderOnAllTab();
 
       expect(await screen.findByText(expectedLocalDay)).toBeInTheDocument();
     } finally {
@@ -209,7 +265,7 @@ describe("DashboardScreen", () => {
       { ...BASE_APP, id: 5, company: "Before Co" },
     ]);
     vi.mocked(api.patchApplication).mockRejectedValueOnce(new Error("API 422: nope"));
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await renderOnAllTab();
     await screen.findByText("Before Co");
 
     vi.mocked(api.listApplications).mockResolvedValue([
@@ -235,7 +291,7 @@ describe("DashboardScreen", () => {
       .mockRejectedValueOnce(new Error("API 409: busy"))
       .mockResolvedValueOnce(undefined as never)
       .mockRejectedValueOnce(new Error("API 500: boom"));
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    await renderOnAllTab();
     await screen.findByText("One");
 
     for (const n of [1, 2, 3]) {

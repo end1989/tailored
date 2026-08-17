@@ -9,7 +9,7 @@ import {
   patchApplication,
   restoreApplication,
 } from "../api";
-import { TERMINAL_STATUSES } from "../statuses";
+import { STATUS_LABELS, TERMINAL_STATUSES } from "../statuses";
 import type { ApplicationSummary, ProfileSummary, Stage } from "../types";
 
 const STAGES: Stage[] = [
@@ -30,12 +30,20 @@ const STAGE_LABELS: Record<Stage, string> = {
 
 const TERMINAL_STAGES: Stage[] = ["rejected", "withdrawn"];
 
-type Tab = "all" | "saved" | "active" | "archived";
+// The dashboard's primary question is "what still needs sending, and what is
+// already out?" -- so the buckets split on that line rather than on status.
+// NOT_YET_SENT and IN_FLIGHT together with TERMINAL_STAGES partition every
+// stage exactly once; a new Stage must be added to one of the three.
+const NOT_YET_SENT: Stage[] = ["saved", "drafted"];
+const IN_FLIGHT: Stage[] = ["applied", "screening", "interview", "offer"];
+
+type Tab = "to_apply" | "applied" | "closed" | "all" | "archived";
 
 const TABS: { key: Tab; label: string }[] = [
+  { key: "to_apply", label: "To apply" },
+  { key: "applied", label: "Applied" },
+  { key: "closed", label: "Closed" },
   { key: "all", label: "All" },
-  { key: "saved", label: "Saved" },
-  { key: "active", label: "Active" },
   { key: "archived", label: "Archived" },
 ];
 
@@ -83,25 +91,48 @@ function StatusBadge({ app }: { app: ApplicationSummary }) {
   if (app.status === "needs_paste") {
     return (
       <Link to={`/applications/${app.id}`} className="badge badge-needs_paste">
-        Paste required
+        {STATUS_LABELS.needs_paste}
       </Link>
     );
   }
-  return <span className={`badge badge-${app.status}`}>{app.status.replace("_", " ")}</span>;
+  return <span className={`badge badge-${app.status}`}>{STATUS_LABELS[app.status]}</span>;
 }
 
 function visible(apps: ApplicationSummary[], tab: Tab): ApplicationSummary[] {
-  if (tab === "saved") return apps.filter((a) => a.stage === "saved");
-  if (tab === "active") {
-    return apps.filter((a) => !TERMINAL_STAGES.includes(a.stage));
-  }
+  if (tab === "to_apply") return apps.filter((a) => NOT_YET_SENT.includes(a.stage));
+  if (tab === "applied") return apps.filter((a) => IN_FLIGHT.includes(a.stage));
+  if (tab === "closed") return apps.filter((a) => TERMINAL_STAGES.includes(a.stage));
   return apps;
 }
+
+/**
+ * Counts for every tab, from the one list already in hand. Returns null while
+ * viewing Archived: that fetch returns ONLY archived rows, so counting the
+ * other buckets from it would show numbers that are quietly wrong.
+ */
+function tabCounts(apps: ApplicationSummary[], tab: Tab): Record<Tab, number> | null {
+  if (tab === "archived") return null;
+  return {
+    to_apply: visible(apps, "to_apply").length,
+    applied: visible(apps, "applied").length,
+    closed: visible(apps, "closed").length,
+    all: apps.length,
+    archived: 0,
+  };
+}
+
+const EMPTY_MESSAGE: Record<Tab, string> = {
+  to_apply: "Nothing waiting to be sent. Everything generated has gone out.",
+  applied: "Nothing sent yet.",
+  closed: "Nothing closed out yet — no rejections or withdrawals logged.",
+  all: "",
+  archived: "Nothing archived.",
+};
 
 export default function DashboardScreen() {
   const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
   const [profileId, setProfileId] = useState<number | undefined>(undefined);
-  const [tab, setTab] = useState<Tab>("all");
+  const [tab, setTab] = useState<Tab>("to_apply");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [confirming, setConfirming] = useState<ApplicationSummary[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -109,6 +140,7 @@ export default function DashboardScreen() {
 
   const apps = usePolling(profileId, tab === "archived", reloadKey);
   const rows = visible(apps, tab);
+  const counts = tabCounts(apps, tab);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
   useEffect(() => {
@@ -197,7 +229,13 @@ export default function DashboardScreen() {
             onClick={() => setTab(t.key)}
           >
             {t.label}
-            {t.key === tab && <span className="tab-count"> {rows.length}</span>}
+            {t.key === tab ? (
+              <span className="tab-count"> {rows.length}</span>
+            ) : (
+              counts && t.key !== "archived" && (
+                <span className="tab-count"> {counts[t.key]}</span>
+              )
+            )}
           </button>
         ))}
       </div>
@@ -238,7 +276,7 @@ export default function DashboardScreen() {
               <th>Company</th>
               <th>Role</th>
               <th>Stage</th>
-              <th>Status</th>
+              <th>Documents</th>
               <th>Applied</th>
               <th>Last activity</th>
               <th>Actions</th>
@@ -296,15 +334,15 @@ export default function DashboardScreen() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="muted">
-                  {tab === "archived" ? (
-                    "Nothing archived."
-                  ) : (
+                  {apps.length === 0 && tab !== "archived" ? (
                     <>
                       No applications yet. New here? Start with{" "}
                       <Link to="/getting-started">Getting Started</Link>, or{" "}
                       <Link to="/profiles">create your Master Profile</Link> and then{" "}
                       <Link to="/add">add job URLs</Link>.
                     </>
+                  ) : (
+                    EMPTY_MESSAGE[tab]
                   )}
                 </td>
               </tr>

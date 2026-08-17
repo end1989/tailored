@@ -15,3 +15,25 @@ import type { AppStatus } from "./types";
  * declaring their own.
  */
 export const TERMINAL_STATUSES: AppStatus[] = ["not_started", "ready", "error", "needs_paste"];
+
+/**
+ * Human labels for AppStatus. Status describes ONLY the document pipeline --
+ * whether a resume and cover letter have been generated -- and says nothing
+ * about whether the application was ever sent. That is `stage`.
+ *
+ * The raw enum names leaked into the UI and read as job-hunt states: a
+ * submitted application and an untouched one both showed "ready", which
+ * invites "ready for what?". These labels name the artifact instead, so the
+ * Documents column and the Stage column can't be mistaken for each other.
+ */
+export const STATUS_LABELS: Record<AppStatus, string> = {
+  not_started: "Not built",
+  queued: "Queued",
+  fetching: "Fetching posting",
+  researching: "Researching",
+  tailoring: "Writing",
+  rendering: "Rendering",
+  ready: "Docs ready",
+  needs_paste: "Paste required",
+  error: "Failed",
+};
