@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import urlparse
 
 from pydantic import ValidationError
 from sqlmodel import Session, select
@@ -20,6 +21,7 @@ from .app.api.templates import TEMPLATE_META
 from .app.config import load_user_settings
 from .app.models import (
     Application,
+    ApplicationEvent,
     ApplicationVersion,
     Job,
     Profile,
@@ -80,8 +82,41 @@ enforces truthfulness, and renders the print-ready exports.
 WORKFLOW (call the tools in this order):
 1. get_master_profile - read the candidate's contact info and master profile.
    The master profile is the single source of truth: the ONLY facts you may use.
-2. Fetch the job posting yourself (browse the URL with your own abilities - you
-   can read login-walled postings the app cannot fetch).
+2. Fetch the job posting. Escalate in this order, cheapest first:
+
+   2a. DIRECT FETCH
+       Fetch the URL with your normal tooling. If you get the posting text,
+       you are done - go to step 3.
+
+   2b. BROWSER ESCALATION - when the direct fetch is refused.
+       Triggers: HTTP 401, 403 or 429; a bot check or CAPTCHA interstitial; a
+       login wall; a consent gate; or a page whose extracted body is under
+       about 400 characters, which usually means you received a JavaScript
+       shell or a "please enable cookies" page rather than a posting. Many
+       sites return HTTP 200 for those, so do not key this on status alone.
+
+       Open the URL in the user's own browser (Claude in Chrome, or your
+       client's equivalent), let it render, and read the page text. This uses
+       the user's existing session, so postings behind a login they already
+       hold are readable.
+
+       Do not attempt to disguise automated traffic, defeat a CAPTCHA, or
+       reach anything the user could not open themselves in their own browser.
+       If the user is not logged in and the posting requires it, that is 2c.
+
+   2c. ASK FOR A PASTE - only when both of the above failed.
+       Working from the queue (next_pending_job gave you an application_id):
+       call report_fetch_blocked(application_id, reason). The job moves to
+       needs_paste and leaves the queue, and the reason lands on its timeline,
+       so the user sees why this posting stalled and gets a paste box for it.
+       Then move on to the next job. Do not stall the batch on one posting.
+
+       Single job, no application yet (step 3 has not run, so you have no
+       application_id): call queue_jobs(profile_id, [url]) first to create the
+       saved job, then call report_fetch_blocked with the application_id it
+       returns. Never guess an id or reuse one from another job - the report
+       would land on the wrong application. Finally tell the user which URL
+       needs pasting and why.
 3. create_application(profile_id, url, posting_text) - register the job with the
    posting text you gathered. Returns the application_id for every later call.
    Optionally call list_templates first and pass template= to pick a visual
@@ -98,6 +133,32 @@ WORKFLOW (call the tools in this order):
 Separately, to import a workspace portfolio scan straight into the master
 profile itself (not a single application), call add_profile_evidence - it
 additively merges agent-verified projects and skill groups into the profile.
+
+WORKING THROUGH A LIST OF JOBS:
+Call queue_jobs(profile_id, urls) once with every URL. It is free and instant -
+no fetching, no model call, no cost - and each URL becomes a saved job on the
+user's dashboard right away, so they can watch the list drain.
+
+Then loop:
+  job = next_pending_job(profile_id)   -> {{"application_id": <id>, "url": "<url>"}} or null
+  if null: the queue is empty, you are finished.
+  otherwise: fetch it (step 2 above), then save_parsed_posting, optionally
+  save_research, then save_tailored_resume. Then ask for the next one.
+
+Process one job to completion before starting the next. If you lose
+context partway through a batch, that costs one job rather than twenty.
+
+The queue lives in the database, not in your context. After a restart, or after
+compacting, just call next_pending_job again: it returns the oldest job you have
+not finished, so you resume exactly where you stopped. Do not start over.
+
+If the user deletes a saved job while you are working, next_pending_job simply
+stops returning it. That is correct - it is the user changing their mind, not an
+error.
+
+A job you report with report_fetch_blocked also leaves the queue: it moves to
+needs_paste, the dashboard offers the user a paste box for it, and
+next_pending_job hands you the next job instead of the blocked one.
 
 TRUTHFULNESS CONTRACT (absolute, non-negotiable, enforced server-side):
 - You may SELECT which experiences, projects, and bullets to include.
@@ -353,6 +414,202 @@ def create_application(
             "application_id": app.id,
             "status": app.status,
             "next": "save_parsed_posting, then save_tailored_resume",
+        }
+
+
+_ALLOWED_URL_SCHEMES = ("http", "https")
+
+
+def _valid_url(url: str) -> bool:
+    """A URL an agent could plausibly open. Deliberately permissive.
+
+    There is no URL validation anywhere else in this project: the web batch
+    route accepts any string. This exists only so that a typo or a stray line
+    from a pasted list fails the whole batch loudly instead of creating a queue
+    entry that can never be fetched. It is not a security boundary.
+    """
+    if not url or not url.strip():
+        return False
+    parsed = urlparse(url.strip())
+    return parsed.scheme in _ALLOWED_URL_SCHEMES and bool(parsed.netloc)
+
+
+def queue_jobs(engine, profile_id: int, urls: list[str]) -> list[dict]:
+    """Register many job URLs at once, cheaply, for working through one by one.
+
+    Creates one parked application per URL: status "not_started", stage
+    "saved", no posting text, no pipeline run, no model call, no cost. They
+    appear on the dashboard immediately and the user can watch them drain.
+
+    All-or-nothing: if any URL is malformed the whole batch is rejected and
+    nothing is created, matching the web batch route. A partial queue is worse
+    than a rejected one, because the agent cannot tell which half landed.
+
+    Returns one entry per INPUT url, in input order, so the caller never has to
+    diff two lists. Entries already queued for this profile come back with
+    status "skipped" and the existing application_id.
+    """
+    if not urls:
+        raise McpOpsError("urls must not be empty - pass at least one job URL.")
+    bad = [u for u in urls if not _valid_url(u)]
+    if bad:
+        raise McpOpsError(
+            f"{len(bad)} malformed URL(s), so nothing was queued: {bad[:5]}. "
+            "Every URL must be an absolute http or https address."
+        )
+
+    with Session(engine) as session:
+        profile = session.get(Profile, profile_id)
+        if profile is None:
+            raise McpOpsError(
+                f"Profile {profile_id} not found. Call list_profiles to see "
+                "what exists."
+            )
+
+        # Existing, non-archived applications for this profile, by URL.
+        # Archiving is how a user says "done with this", so an archived row
+        # must not block re-queueing.
+        existing: dict[str, int] = {}
+        rows = session.exec(
+            select(Application, Job)
+            .where(Application.job_id == Job.id)
+            .where(Application.profile_id == profile_id)
+            .where(Application.archived_at.is_(None))
+            .order_by(Application.id)
+        ).all()
+        # setdefault keeps the first hit, so with the ordering above a URL
+        # that somehow has several live applications skips to the oldest.
+        for app_row, job_row in rows:
+            existing.setdefault(job_row.url, app_row.id)
+
+        results: list[dict] = []
+        for url in urls:
+            url = url.strip()
+            if url in existing:
+                results.append(
+                    {
+                        "application_id": existing[url],
+                        "url": url,
+                        "status": "skipped",
+                        "reason": "already queued for this profile",
+                    }
+                )
+                continue
+            # No explicit depth: the model default ("standard") applies.
+            # These rows are generate-able from the dashboard (status
+            # not_started is exactly what POST /generate accepts), and the
+            # built-in pipeline can only dispatch quick/standard/deep -
+            # "external" (create_application's marker for agent-gathered
+            # text) would make research_company raise after the parse call
+            # had already been paid for.
+            job = Job(url=url)
+            session.add(job)
+            session.flush()  # assigns job.id; commits together with its application
+            app_row = Application(
+                profile_id=profile_id,
+                job_id=job.id,
+                status="not_started",
+            )
+            session.add(app_row)
+            session.commit()
+            session.refresh(app_row)
+            # A duplicate later in the same list is a skip, not a second row.
+            existing[url] = app_row.id
+            results.append(
+                {
+                    "application_id": app_row.id,
+                    "url": url,
+                    "status": "not_started",
+                }
+            )
+        return results
+
+
+def next_pending_job(engine, profile_id: int) -> dict | None:
+    """The oldest queued job for this profile, or None when the queue is empty.
+
+    Returns None rather than raising on an empty queue: it makes your loop
+    terminate on a plain condition rather than on an error.
+
+    Does not lock or reserve the row. Tailored is a local, single-user
+    application, so a claim protocol would guard a scenario that does not
+    exist. If the user deletes a saved job mid-run, it simply stops being
+    returned, which is correct.
+    """
+    with Session(engine) as session:
+        row = session.exec(
+            select(Application, Job)
+            .where(Application.job_id == Job.id)
+            .where(Application.profile_id == profile_id)
+            .where(Application.status == "not_started")
+            .where(Application.archived_at.is_(None))
+            .order_by(Application.id)
+        ).first()
+        if row is None:
+            return None
+        app_row, job_row = row
+        return {"application_id": app_row.id, "url": job_row.url}
+
+
+def report_fetch_blocked(engine, application_id: int, reason: str) -> dict:
+    """Record that a posting could not be read, and why.
+
+    Call this when a direct fetch was refused AND opening the URL in the user's
+    own browser also did not work. It marks the job blocked, moves a queued
+    ("not_started") application to "needs_paste" so next_pending_job stops
+    handing it back, and writes a note on the application's timeline - the
+    user sees on the dashboard why this posting stalled and gets a paste box
+    for exactly that posting.
+
+    Without the status move, a blocked job would stay in the pending set and
+    next_pending_job would return it forever: the batch loop would live-lock
+    on the first refusal, which is the exact failure this tool exists to
+    handle.
+
+    Then move on to the next job. Do not stall the batch on one posting.
+    """
+    if not reason or not reason.strip():
+        raise McpOpsError(
+            "reason must not be empty - say what refused the fetch (a 403, a "
+            "bot check, a login wall) so the user knows what to do."
+        )
+    with Session(engine) as session:
+        app, job = _get_app_and_job(session, application_id)
+        _reject_if_pipeline_active(app, application_id)
+        # A posting we already hold the text for cannot be fetch-blocked. The
+        # pipeline guard above covers rows the built-in pipeline is working on;
+        # this covers the other misdirection - an application_id that points at
+        # finished work. Without it, a wrong id overwrites a "pasted"/"fetched"
+        # job with "blocked" and puts "Could not read the posting" on the
+        # timeline of an application whose resume is already exported.
+        #
+        # Keyed on raw_text rather than status so that re-blocking stays a safe
+        # no-op: a stubborn URL gets reported once, moves to needs_paste, and a
+        # later batch over the same list must not raise on it. Refusing to
+        # stall the batch is the whole point of this tool.
+        if job.raw_text:
+            raise McpOpsError(
+                f"application {application_id} already has posting text, so it "
+                "cannot be fetch-blocked - check the application_id. Blocked is "
+                "for postings that could not be read at all."
+            )
+        job.fetch_status = "blocked"
+        session.add(job)
+        event = ApplicationEvent(
+            application_id=app.id,
+            kind="note",
+            body=f"Could not read the posting: {reason.strip()}",
+        )
+        session.add(event)
+        session.commit()
+        session.refresh(event)
+        if app.status == "not_started":
+            _set_status(session, app, "needs_paste")
+        return {
+            "application_id": app.id,
+            "status": app.status,
+            "fetch_status": job.fetch_status,
+            "event_id": event.id,
         }
 
 

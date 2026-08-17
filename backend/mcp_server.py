@@ -142,13 +142,58 @@ async def list_templates() -> list[dict]:
 async def create_application(
     profile_id: int, url: str, posting_text: str, template: str = "slate"
 ) -> dict:
-    """Create a job application from a posting YOU gathered: browse/fetch the
-    URL yourself (you can read login-walled postings) and pass the full posting
-    text. Returns the application_id used by every later call. Next steps:
-    save_parsed_posting, then save_tailored_resume."""
+    """Create a job application from a posting YOU gathered: fetch the URL
+    yourself and pass the full posting text. If the site refuses you (403, a
+    bot check, a login wall, or a body under about 400 characters), open the
+    URL in the user's own browser and read it there - that uses their session,
+    so postings behind a login they already hold are readable. Never try to
+    disguise automated traffic or defeat a CAPTCHA. If both fail you have no
+    posting text and cannot call this tool: call queue_jobs(profile_id, [url])
+    to create the saved job, then report_fetch_blocked with the application_id
+    it returns, and ask the user to paste the posting text.
+    For more than one job, call queue_jobs instead. Returns the application_id
+    used by every later call. Next: save_parsed_posting, save_tailored_resume."""
     return await _run(
         mcp_ops.create_application, _engine, profile_id, url, posting_text, template
     )
+
+
+@mcp.tool()
+async def queue_jobs(profile_id: int, urls: list[str]) -> list[dict]:
+    """Register many job URLs at once so you can work through them one at a
+    time. Free and instant: no fetching, no model call, no cost. Each becomes a
+    saved job on the user's dashboard, and the queue survives you losing
+    context - call next_pending_job to pick up where you left off.
+    Rejects the whole batch if any URL is malformed. URLs already queued for
+    this profile come back marked "skipped" with their existing id.
+    Then loop: next_pending_job, fetch the posting (see get_workflow_guide for
+    what to do when a site refuses), save_parsed_posting, save_tailored_resume."""
+    return await _run(mcp_ops.queue_jobs, _engine, profile_id, urls)
+
+
+@mcp.tool()
+async def next_pending_job(profile_id: int) -> dict | None:
+    """The next queued job to work on, as {"application_id": <id>, "url": "<url>"}, or null when
+    the queue is empty. Loop on this after queue_jobs: process one job all the
+    way to save_tailored_resume before asking for the next, so losing context
+    costs one job rather than twenty. Safe to call after a restart - the queue
+    lives in the database, so you resume exactly where you stopped."""
+    return await _run(mcp_ops.next_pending_job, _engine, profile_id)
+
+
+@mcp.tool()
+async def report_fetch_blocked(application_id: int, reason: str) -> dict:
+    """Record that you could not read a posting, and why, so the user sees it
+    on the dashboard instead of finding a job that never moved. Call this only
+    after BOTH a direct fetch and opening the URL in the user's own browser
+    failed. Say what refused you: a 403, a bot check, a login wall. The
+    application moves to needs_paste and out of the queue, and the dashboard
+    offers the user a paste box for it, so move on to the next job - do not
+    stall the batch on one posting. If you have no application_id yet (the
+    single-job flow, where nothing was created), call
+    queue_jobs(profile_id, [url]) first and use the id it returns - never
+    guess an id or reuse one from another application."""
+    return await _run(mcp_ops.report_fetch_blocked, _engine, application_id, reason)
 
 
 @mcp.tool()

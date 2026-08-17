@@ -9,11 +9,11 @@ and emphasizes* from it per job. It never invents anything
 ## Highlights
 
 - **Truthfulness enforced in the data layer, not the prompt.** Most AI resume tools ask the model nicely not to exaggerate. Tailored rejects any generated resume that contains an employer, title, date, degree, or certification not present in your Master Profile — a structural check on the write path, so the guarantee holds no matter which AI produced the text.
-- **Two ways to supply the intelligence, one contract.** Use the built-in Anthropic API pipeline (paste a batch of job URLs and walk away), or connect your own agent over MCP — a from-scratch MCP server (11 tools) that lets Claude Code, Codex, or any MCP-capable client do the work on its own subscription, no API key, and read login-walled postings its browser can reach. The same truthfulness guard applies to both.
+- **Two ways to supply the intelligence, one contract.** Use the built-in Anthropic API pipeline (paste a batch of job URLs and walk away), or connect your own agent over MCP — a from-scratch MCP server (14 tools) that lets Claude Code, Codex, or any MCP-capable client do the work on its own subscription, no API key, and read login-walled postings its browser can reach. The same truthfulness guard applies to both.
 - **Your codebase becomes resume evidence.** A portfolio-scan prompt plus an MCP write tool let an agent read the repos in your workspace and write evidence-backed, skill-tagged project entries straight into your profile (additive-only, validated, never destructive).
 - **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, eight print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
 - **It tracks the job hunt, not just the generation.** Stages from Saved through Offer, a dated timeline for callbacks, interviews and notes, archive and permanent delete, and saved jobs you can park for free and generate later.
-- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 548 automated tests (479 backend including real headless-Chromium PDF rendering and text extraction, 69 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
+- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 596 automated tests (526 backend including real headless-Chromium PDF rendering and text extraction, 70 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
 
 Job URLs can be queued for immediate generation or parked as a saved job to
 generate later at no cost. For each job URL you choose to generate, it runs a
@@ -142,6 +142,30 @@ your master profile: run the
 [portfolio scan prompt](docs/portfolio-scan-prompt.md) and the agent writes its
 verified findings back through the `add_profile_evidence` tool (additive — it
 never overwrites what you already have), no copy-paste needed.
+
+### Working through a list of jobs
+
+Paste a list of URLs at your agent and let it work:
+
+> Queue these twenty jobs for my profile and work through them one at a time.
+
+The agent calls `queue_jobs` once, and all twenty appear on your dashboard as
+saved jobs immediately, before anything has been fetched or generated. Nothing
+has cost anything yet. It then loops on `next_pending_job`, taking one job all
+the way to a finished resume before starting the next, and you watch the list
+drain in real time.
+
+The queue lives in the database, not in the agent's context. If the agent
+restarts or runs out of context at job eleven, it picks up at job eleven. If you
+delete a saved job partway through, the agent simply never receives it.
+
+When a job board refuses to be read, the agent opens the posting in your own
+Chrome using your own session, which is what works for postings behind a login
+you already hold. Tailored never asks your agent to disguise automated traffic
+or defeat a bot check, and no evasion tooling will be added. If that still does
+not work, the job is marked blocked with the reason on its timeline and moves
+out of the queue into the needs-paste state, so you get a paste box for exactly
+that posting instead of finding a row that never moved.
 
 ## Demo mode (no API key, fully offline)
 

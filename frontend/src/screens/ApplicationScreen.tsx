@@ -15,7 +15,7 @@ import {
   setApplicationTemplate,
   updateContent,
 } from "../api";
-import { TERMINAL_STATUSES } from "../statuses";
+import { STATUS_LABELS, TERMINAL_STATUSES } from "../statuses";
 import type {
   ApplicationDetail,
   ApplicationEvent,
@@ -440,7 +440,7 @@ export default function ApplicationScreen() {
         {detail.company ? detail.company : detail.url} — {detail.title ?? ""}
       </h1>
       <p>
-        <span className={`badge badge-${detail.status}`}>{detail.status}</span>{" "}
+        <span className={`badge badge-${detail.status}`}>{STATUS_LABELS[detail.status]}</span>{" "}
         <span className="muted">
           v{detail.version} · ${detail.cost_usd.toFixed(4)} · {detail.depth} · {detail.template}
         </span>
