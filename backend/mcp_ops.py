@@ -576,6 +576,23 @@ def report_fetch_blocked(engine, application_id: int, reason: str) -> dict:
     with Session(engine) as session:
         app, job = _get_app_and_job(session, application_id)
         _reject_if_pipeline_active(app, application_id)
+        # A posting we already hold the text for cannot be fetch-blocked. The
+        # pipeline guard above covers rows the built-in pipeline is working on;
+        # this covers the other misdirection - an application_id that points at
+        # finished work. Without it, a wrong id overwrites a "pasted"/"fetched"
+        # job with "blocked" and puts "Could not read the posting" on the
+        # timeline of an application whose resume is already exported.
+        #
+        # Keyed on raw_text rather than status so that re-blocking stays a safe
+        # no-op: a stubborn URL gets reported once, moves to needs_paste, and a
+        # later batch over the same list must not raise on it. Refusing to
+        # stall the batch is the whole point of this tool.
+        if job.raw_text:
+            raise McpOpsError(
+                f"application {application_id} already has posting text, so it "
+                "cannot be fetch-blocked - check the application_id. Blocked is "
+                "for postings that could not be read at all."
+            )
         job.fetch_status = "blocked"
         session.add(job)
         event = ApplicationEvent(

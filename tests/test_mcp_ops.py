@@ -1010,6 +1010,47 @@ def test_report_fetch_blocked_leaves_the_job_pasteable_to_ready(
         assert job.raw_text == POSTING_TEXT
 
 
+def test_report_fetch_blocked_rejects_a_row_that_already_has_posting_text(
+    engine, profile_id
+):
+    """The other half of the misdirected-id guard. The pipeline check catches
+    rows mid-run; this catches finished ones. A wrong application_id must not
+    overwrite a pasted/fetched job with "blocked" and hang "Could not read the
+    posting" on an application whose resume is already exported."""
+    app_id = mcp_ops.create_application(
+        engine, profile_id, "https://jobs.example.com/done", POSTING_TEXT
+    )["application_id"]
+
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.report_fetch_blocked(engine, app_id, "403")
+    assert "already has posting text" in str(exc.value)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        job = session.get(Job, app.job_id)
+        assert job.raw_text == POSTING_TEXT  # untouched
+        assert job.fetch_status == "pasted"  # not overwritten with "blocked"
+        events = session.exec(
+            select(ApplicationEvent).where(ApplicationEvent.application_id == app_id)
+        ).all()
+        assert events == []  # no false note on the timeline
+
+
+def test_report_fetch_blocked_is_idempotent_on_a_stubborn_url(engine, profile_id):
+    """Re-running a batch over the same refusing URL must stay a no-op rather
+    than raise. The guard is keyed on posting text, not status, precisely so
+    that a second report on an already-blocked (needs_paste) row is allowed -
+    the tool exists to keep a batch moving, not to make it throw."""
+    queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
+    app_id = queued[0]["application_id"]
+
+    mcp_ops.report_fetch_blocked(engine, app_id, "login wall")
+    again = mcp_ops.report_fetch_blocked(engine, app_id, "login wall, still")
+
+    assert again["status"] == "needs_paste"
+    assert again["fetch_status"] == "blocked"
+
+
 def test_report_fetch_blocked_rejects_an_unknown_application(engine):
     with pytest.raises(mcp_ops.McpOpsError) as exc:
         mcp_ops.report_fetch_blocked(engine, 9999, "nope")
