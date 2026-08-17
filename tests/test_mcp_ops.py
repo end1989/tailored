@@ -115,6 +115,9 @@ def test_workflow_guide_contents():
     assert "user's own browser" in guide
     assert "report_fetch_blocked" in guide
 
+    assert "em dash" in guide.lower()
+    assert "passionate about" in guide
+
     # The explicit refusal to help with evasion is part of the deliverable.
     lowered = guide.lower()
     assert "do not attempt to disguise automated traffic" in lowered

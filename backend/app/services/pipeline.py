@@ -10,6 +10,7 @@ from ..models import (
     Job,
     Profile,
     ResearchBrief,
+    SourceDocument,
     _utcnow,
     get_contact,
     get_findings,
@@ -106,6 +107,22 @@ def _style_retry_feedback(feedback: str | None, violations: list[str]) -> str:
     return f"{feedback}\n\n{block}" if feedback else block
 
 
+def _voice_for(session: Session, profile: Profile) -> tuple[str | None, str | None]:
+    """(voice_sample, voice_notes) for a profile.
+
+    The sample is the most recent document the user uploaded during intake:
+    their own writing, already in the database. It is style-only, and
+    verify_truthfulness is what makes that safe.
+    """
+    latest = session.exec(
+        select(SourceDocument)
+        .where(SourceDocument.profile_id == profile.id)
+        .order_by(SourceDocument.id.desc())
+    ).first()
+    sample = latest.text if latest is not None and latest.text else None
+    return sample, (profile.voice_notes or None)
+
+
 def _tailor_and_render(session: Session, app: Application,
                        master: MasterProfile, contact: Contact,
                        parsed: ParsedPosting,
@@ -117,12 +134,14 @@ def _tailor_and_render(session: Session, app: Application,
     # the rules or the model, and burning tokens in a cycle is worse than
     # surfacing it. Both gates run on every attempt: a retry that fixes an em
     # dash but invents an employer must still be rejected for inventing one.
+    voice_sample, voice_notes = _voice_for(session, session.get(Profile, app.profile_id))
     attempt_feedback = feedback
     result = None
     for attempt in (0, 1):
         result, usage = tailor_application(
             master, contact, parsed, findings, app.template, claude,
             feedback=attempt_feedback,
+            voice_sample=voice_sample, voice_notes=voice_notes,
         )
         _add_usage(app, usage)
 

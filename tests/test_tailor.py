@@ -159,3 +159,60 @@ def test_single_changed_company_yields_exactly_one_violation(claude_fake):
     violations = verify_truthfulness(bad, intake.master_profile)
     assert len(violations) == 1
     assert "Fake Corp" in violations[0]
+
+
+def test_voice_sample_reaches_the_model_labelled_as_style_only(claude_fake):
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_sample="I fix things that are broken. I do not oversell.",
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert "I fix things that are broken" in content
+    assert "NOT a source of facts" in content
+
+
+def test_voice_notes_reach_the_model(claude_fake):
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_notes="Plain and direct. Short sentences.",
+    )
+    assert "Plain and direct. Short sentences." in claude_fake.calls[-1]["user_content"]
+
+
+def test_voice_notes_are_marked_as_taking_precedence(claude_fake):
+    """Explicit instruction beats inference, and the prompt has to say so."""
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_sample="Some earlier writing.",
+        voice_notes="Short sentences.",
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert content.index("Short sentences.") < content.index("Some earlier writing.")
+
+
+def test_no_voice_information_leaves_the_input_unchanged(claude_fake):
+    tailor_application(PROFILE, CONTACT, PARSED, None, "slate", claude_fake)
+    content = claude_fake.calls[-1]["user_content"]
+    assert "register reference" not in content.lower()
+    assert "VOICE" not in content
+
+
+def test_the_voice_sample_is_truncated(claude_fake):
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_sample="x" * 10000,
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert content.count("x") <= 2100, "a whole resume would crowd out the real input"
+
+
+def test_the_system_prompt_carries_the_baseline_style_rules():
+    """Enforcement is the backstop; the prompt is the mechanism, so most runs
+    pass first time and the retry rarely fires."""
+    from backend.app.services.tailor import TAILOR_SYSTEM
+
+    lowered = TAILOR_SYSTEM.lower()
+    assert "em dash" in lowered
+    assert "emoji" in lowered
+    assert "passionate about" in lowered
+    assert "straight quote" in lowered

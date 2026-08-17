@@ -196,6 +196,17 @@ COVER LETTER (markdown, 3-5 short paragraphs):
 - No boilerplate openings ("I am writing to apply...", "I was excited to see...").
 - Ground every claim in facts from the master profile.
 
+WRITING VOICE (enforced server-side, like truthfulness):
+- Plain, concrete, specific. Prefer short sentences to long ones.
+- No superlatives, no throat-clearing, no summarising what you just said.
+- Never use an em dash. Never use an en dash except between two years.
+- Never use emoji, curly quotes, or the ellipsis character.
+- Never write: passionate about, proven track record, results-driven,
+  results-oriented, results-focused, wealth of experience, seamlessly,
+  testament to, delve, tapestry, "I am excited to", "in today's ... world".
+- save_tailored_resume rejects violations and returns the list, exactly as it
+  does for truthfulness. Follow these the first time and you will not see it.
+
 JSON SHAPES (strict: every object level carries "additionalProperties": false -
 send exactly these fields, no extras):
 

@@ -11,6 +11,7 @@ from backend.app.models import (
     Job,
     Profile,
     ResearchBrief,
+    SourceDocument,
     set_contact,
     set_master_profile,
 )
@@ -463,3 +464,84 @@ def test_a_clean_generation_makes_exactly_one_tailoring_call(
     with Session(engine) as session:
         assert session.get(Application, app_id).status == "ready"
     assert len([c for c in claude_fake.calls if c.get("task") == "tailor"]) == 1
+
+
+def test_the_pipeline_passes_voice_notes_to_the_model(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked
+):
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        profile = session.get(Profile, app.profile_id)
+        profile.voice_notes = "Plain and direct. Short sentences."
+        session.add(profile)
+        session.commit()
+
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+    tailor_calls = [c for c in claude_fake.calls if c.get("task") == "tailor"]
+    assert "Plain and direct. Short sentences." in tailor_calls[-1]["user_content"]
+
+
+def test_the_pipeline_passes_the_most_recent_source_document_as_voice(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked
+):
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        session.add(
+            SourceDocument(
+                profile_id=app.profile_id, filename="old.txt", kind="txt",
+                text="OLDER WRITING SAMPLE",
+            )
+        )
+        session.commit()
+        session.add(
+            SourceDocument(
+                profile_id=app.profile_id, filename="new.txt", kind="txt",
+                text="NEWER WRITING SAMPLE",
+            )
+        )
+        session.commit()
+
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+    content = [c for c in claude_fake.calls if c.get("task") == "tailor"][-1]["user_content"]
+    assert "NEWER WRITING SAMPLE" in content
+    assert "OLDER WRITING SAMPLE" not in content
+
+
+def test_a_voice_sample_cannot_smuggle_in_an_employer(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """The voice sample is style-only, and truthfulness is what makes that true.
+
+    A model that lifts an employer out of the sample is rejected by the existing
+    structural guard, which is the argument for having built it structurally.
+    """
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        session.add(
+            SourceDocument(
+                profile_id=app.profile_id, filename="v.txt", kind="txt",
+                text="At Nonexistent Holdings I ran the whole platform.",
+            )
+        )
+        session.commit()
+
+    # Simulate the model taking the bait.
+    real = pipeline.verify_truthfulness
+
+    def _tempted(resume, profile):
+        for section in resume.sections:
+            if section.type == "experience" and section.items:
+                section.items[0].company = "Nonexistent Holdings"
+                break
+        return real(resume, profile)
+
+    monkeypatch.setattr(pipeline, "verify_truthfulness", _tempted)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        assert "Nonexistent Holdings" in (app.error_message or "")
