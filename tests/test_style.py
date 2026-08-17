@@ -96,8 +96,8 @@ def test_emoji_is_a_violation():
 
 def test_invisible_characters_are_violations():
     """Independently harmful: they corrupt ATS text extraction."""
-    assert check_style(_with_bullet("Cut latency by half"), "")
-    assert check_style(_with_bullet("Cut​latency by half"), "")
+    assert check_style(_with_bullet("Cut\u00a0latency by half"), "")
+    assert check_style(_with_bullet("Cut\u200blatency by half"), "")
 
 
 # --- the en dash rule, which is the one most likely to be broken later -------
@@ -166,8 +166,9 @@ def test_excited_openers_are_detected_in_the_cover_letter():
 
 
 def test_in_todays_world_construction_is_detected():
-    assert check_style(_resume(), "In today’s fast-moving world, data matters.")
-    assert check_style(_resume(), "In today’s competitive landscape, speed wins.")
+    assert check_style(_resume(), "In today's fast-moving world, data matters.")
+    assert check_style(_resume(), "In today's competitive landscape, speed wins.")
+    assert check_style(_resume(), "In today\u2019s fast-moving world, data matters.")
 
 
 # --- the anti-creep test -----------------------------------------------------

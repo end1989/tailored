@@ -31,7 +31,7 @@ from ..schemas import ResumeDoc
 
 BANNED_CHARACTERS: tuple[tuple[re.Pattern[str], str, str], ...] = (
     (
-        re.compile("—"),
+        re.compile("\u2014"),
         "em dash",
         "rewrite the sentence, or use a comma, colon or full stop",
     ),
@@ -40,7 +40,7 @@ BANNED_CHARACTERS: tuple[tuple[re.Pattern[str], str, str], ...] = (
         # written with an en dash is correct typography and passes; "work - life"
         # does not. Stated precisely because the naive rule would reject a
         # truthful bullet like "Led the 2020-2023 platform migration".
-        re.compile(r"(?<!\d)–|–(?!\d)"),
+        re.compile(r"(?<!\d)\u2013|\u2013(?!\d)"),
         "en dash outside a numeric range",
         "use a comma or rewrite; en dashes belong only between two years",
     ),
@@ -48,26 +48,26 @@ BANNED_CHARACTERS: tuple[tuple[re.Pattern[str], str, str], ...] = (
         re.compile(
             "["
             "\U0001f000-\U0001faff"  # emoji and pictographs
-            "☀-⛿"  # miscellaneous symbols
-            "✀-➿"  # dingbats
-            "️"  # variation selector, the emoji presentation marker
+            "\u2600-\u26ff"  # miscellaneous symbols
+            "\u2700-\u27bf"  # dingbats
+            "\ufe0f"  # variation selector, the emoji presentation marker
             "]"
         ),
         "emoji or pictograph",
         "remove it; there is no legitimate use in a resume or cover letter",
     ),
     (
-        re.compile("[“”‘’]"),
+        re.compile("[\u201c\u201d\u2018\u2019]"),
         "curly quote",
         "use a straight quote, which is always acceptable and never a tell",
     ),
     (
-        re.compile("…"),
+        re.compile("\u2026"),
         "ellipsis character",
         "use three periods, or better, finish the sentence",
     ),
     (
-        re.compile("[ ​‌‍﻿]"),
+        re.compile("[\u00a0\u200b\u200c\u200d\ufeff]"),
         "invisible character (non-breaking or zero-width space)",
         "replace it with an ordinary space; these also corrupt ATS text extraction",
     ),
@@ -94,11 +94,11 @@ BANNED_PHRASES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bI am excited to\b", "open on a specific fact about the company or role"),
         (r"\bI was excited to\b", "open on a specific fact about the company or role"),
         (
-            r"\bin today[‘’]s\b[^.!?]{0,40}\bworld\b",
+            r"\bin today[\u0027\u2019]s\b[^.!?]{0,40}\bworld\b",
             "cut the throat-clearing and open on the specific point",
         ),
         (
-            r"\bin today[‘’]s\b[^.!?]{0,40}\blandscape\b",
+            r"\bin today[\u0027\u2019]s\b[^.!?]{0,40}\blandscape\b",
             "cut the throat-clearing and open on the specific point",
         ),
     )
