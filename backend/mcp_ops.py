@@ -37,6 +37,7 @@ from .app.schemas import MPProject, ParsedPosting, ResearchFindings, ResumeDoc, 
 from .app.services import render
 from .app.services.claude import strict_schema
 from .app.services.pipeline import _mark_error, _set_status
+from .app.services.style import check_style
 from .app.services.tailor import verify_truthfulness
 
 
@@ -787,6 +788,15 @@ def save_tailored_resume(
                 + "\n- ".join(violations)
                 + "\nCorrect the resume to use only entries from the master "
                 "profile and call this tool again."
+            )
+
+        style_violations = check_style(resume_doc, cover_letter_md)
+        if style_violations:
+            raise McpOpsError(
+                "Style check failed:\n- "
+                + "\n- ".join(style_violations)
+                + "\nRewrite the flagged text in the candidate's own plain "
+                "voice and call this tool again."
             )
 
         try:
