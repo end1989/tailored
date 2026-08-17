@@ -243,8 +243,7 @@ fabrication. Regenerations are versioned, so earlier outputs are never lost.
 
 ## Voice
 
-The list is deliberately short. Words with real, common, pre-LLM use in resumes
-- leverage, robust, scale, spearheaded - are not banned, because a false
+The list is deliberately short. Words with real, common, pre-LLM use in resumes - leverage, robust, scale, spearheaded - are not banned, because a false
 positive blocks a truthful resume and that is worse than an occasional
 stylistic miss.
 
