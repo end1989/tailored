@@ -263,7 +263,8 @@ export default function ProfileScreen() {
       const d = await buildProfile(selectedId);
       setDetail(d);
       setMp({ ...emptyMP, ...d.master_profile });
-      setVoiceNotes(d.voice_notes);
+      // Voice notes are deliberately not reseeded here: build runs intake,
+      // which never touches them, so reseeding would discard unsaved edits.
       setBuildUsage(d.usage ?? null);
     } catch (err) {
       setError(String(err));

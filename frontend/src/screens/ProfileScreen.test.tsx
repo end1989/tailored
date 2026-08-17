@@ -83,6 +83,21 @@ describe("ProfileScreen", () => {
     );
   });
 
+  it("building the master profile keeps unsaved voice notes", async () => {
+    // Build runs intake, which never touches voice notes; reseeding the box
+    // from its response would silently discard what the user just typed.
+    vi.mocked(api.buildProfile).mockResolvedValueOnce({
+      ...baseProfileDetail,
+      voice_notes: "",
+    });
+    render(<ProfileScreen />);
+    const box = await screen.findByLabelText(/voice notes/i);
+    fireEvent.change(box, { target: { value: "Short sentences only." } });
+    fireEvent.click(screen.getByRole("button", { name: /build master profile/i }));
+    await waitFor(() => expect(api.buildProfile).toHaveBeenCalled());
+    expect(screen.getByLabelText(/voice notes/i)).toHaveValue("Short sentences only.");
+  });
+
   it("shows the voice notes already on the profile", async () => {
     vi.mocked(api.getProfile).mockResolvedValueOnce({
       ...baseProfileDetail,
