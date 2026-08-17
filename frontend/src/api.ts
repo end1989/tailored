@@ -65,7 +65,7 @@ export function getProfile(id: number): Promise<ProfileDetail> {
 
 export function updateProfile(
   id: number,
-  patch: { name?: string; contact?: Contact; master_profile?: MasterProfile }
+  patch: { name?: string; contact?: Contact; master_profile?: MasterProfile; voice_notes?: string }
 ): Promise<ProfileDetail> {
   return request<ProfileDetail>(`/profiles/${id}`, jsonInit("PUT", patch));
 }

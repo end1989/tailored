@@ -43,6 +43,7 @@ export default function ProfileScreen() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [detail, setDetail] = useState<ProfileDetail | null>(null);
   const [mp, setMp] = useState<MasterProfile>(emptyMP);
+  const [voiceNotes, setVoiceNotes] = useState("");
   const [newName, setNewName] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [pasteName, setPasteName] = useState("");
@@ -57,6 +58,7 @@ export default function ProfileScreen() {
     const d = await getProfile(id);
     setDetail(d);
     setMp({ ...emptyMP, ...d.master_profile });
+    setVoiceNotes(d.voice_notes);
   }
 
   async function refreshProfiles(selectId?: number) {
@@ -261,6 +263,7 @@ export default function ProfileScreen() {
       const d = await buildProfile(selectedId);
       setDetail(d);
       setMp({ ...emptyMP, ...d.master_profile });
+      setVoiceNotes(d.voice_notes);
       setBuildUsage(d.usage ?? null);
     } catch (err) {
       setError(String(err));
@@ -274,9 +277,10 @@ export default function ProfileScreen() {
     setSaving(true);
     setError(null);
     try {
-      const d = await updateProfile(selectedId, { master_profile: mp });
+      const d = await updateProfile(selectedId, { master_profile: mp, voice_notes: voiceNotes });
       setDetail(d);
       setMp({ ...emptyMP, ...d.master_profile });
+      setVoiceNotes(d.voice_notes);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -390,6 +394,21 @@ export default function ProfileScreen() {
                 value={mp.summary_notes}
                 onChange={(e) => setMp({ ...mp, summary_notes: e.target.value })}
               />
+            </div>
+
+            <div className="field">
+              <label className="field-label" htmlFor="voice-notes">Voice notes</label>
+              <textarea
+                id="voice-notes"
+                className="textarea"
+                value={voiceNotes}
+                placeholder="Plain and direct. No salesmanship. Short sentences. Never call myself passionate about anything."
+                onChange={(e) => setVoiceNotes(e.target.value)}
+              />
+              <p className="muted">
+                How you want your resume and cover letters to sound. This shapes the writing
+                only; every fact still comes from your master profile.
+              </p>
             </div>
 
             <h3>Experiences</h3>

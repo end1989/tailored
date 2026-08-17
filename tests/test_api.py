@@ -425,3 +425,33 @@ def test_paste_and_retry_conflict_while_processing(client):
     assert client.calls["paste"] == []
     assert client.calls["regenerate"] == []
     assert client.calls["process"] == [app_id]  # only the original batch-create schedule
+
+
+def test_a_new_profile_has_empty_voice_notes(client):
+    resp = client.post("/api/profiles", json={"name": "Ada"})
+    assert resp.status_code in (200, 201)
+    assert resp.json()["voice_notes"] == ""
+
+
+def test_voice_notes_round_trips_through_put(client):
+    profile_id = client.post("/api/profiles", json={"name": "Ada"}).json()["id"]
+    notes = "Plain and direct. No salesmanship. Short sentences."
+    resp = client.put(f"/api/profiles/{profile_id}", json={"voice_notes": notes})
+    assert resp.status_code == 200
+    assert resp.json()["voice_notes"] == notes
+    assert client.get(f"/api/profiles/{profile_id}").json()["voice_notes"] == notes
+
+
+def test_putting_other_fields_leaves_voice_notes_alone(client):
+    profile_id = client.post("/api/profiles", json={"name": "Ada"}).json()["id"]
+    client.put(f"/api/profiles/{profile_id}", json={"voice_notes": "Be plain."})
+    resp = client.put(f"/api/profiles/{profile_id}", json={"name": "Ada L"})
+    assert resp.json()["voice_notes"] == "Be plain."
+    assert resp.json()["name"] == "Ada L"
+
+
+def test_voice_notes_can_be_cleared(client):
+    profile_id = client.post("/api/profiles", json={"name": "Ada"}).json()["id"]
+    client.put(f"/api/profiles/{profile_id}", json={"voice_notes": "Be plain."})
+    resp = client.put(f"/api/profiles/{profile_id}", json={"voice_notes": ""})
+    assert resp.json()["voice_notes"] == ""

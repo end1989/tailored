@@ -1,9 +1,10 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ProfileScreen from "./ProfileScreen";
+import * as api from "../api";
 
-vi.mock("../api", () => {
+const { baseProfileDetail } = vi.hoisted(() => {
   const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
-  const detail = {
+  const baseProfileDetail = {
     id: 1,
     name: "Jordan Rivera",
     contact,
@@ -25,13 +26,18 @@ vi.mock("../api", () => {
       certifications: [],
       extras: [],
     },
+    voice_notes: "",
     documents: [{ id: 5, filename: "resume.pdf", kind: "pdf" }],
   };
+  return { baseProfileDetail };
+});
+
+vi.mock("../api", () => {
   return {
     listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
+      { id: 1, name: "Jordan Rivera", contact: baseProfileDetail.contact, has_master_profile: true },
     ]),
-    getProfile: vi.fn().mockResolvedValue(detail),
+    getProfile: vi.fn().mockResolvedValue(baseProfileDetail),
     createProfile: vi.fn(),
     updateProfile: vi.fn(),
     uploadDocument: vi.fn(),
@@ -54,5 +60,35 @@ describe("ProfileScreen", () => {
     expect(screen.getAllByPlaceholderText("Bullet text")).toHaveLength(1);
     fireEvent.click(screen.getByText("Add bullet"));
     expect(screen.getAllByPlaceholderText("Bullet text")).toHaveLength(2);
+  });
+
+  it("saves voice notes for the profile", async () => {
+    vi.mocked(api.updateProfile).mockResolvedValueOnce({
+      ...baseProfileDetail,
+      voice_notes: "Plain and direct. Never call myself passionate.",
+    });
+    render(<ProfileScreen />);
+    const box = await screen.findByLabelText(/voice notes/i);
+    fireEvent.change(box, {
+      target: { value: "Plain and direct. Never call myself passionate." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /save master profile/i }));
+    await waitFor(() =>
+      expect(api.updateProfile).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.objectContaining({
+          voice_notes: "Plain and direct. Never call myself passionate.",
+        }),
+      ),
+    );
+  });
+
+  it("shows the voice notes already on the profile", async () => {
+    vi.mocked(api.getProfile).mockResolvedValueOnce({
+      ...baseProfileDetail,
+      voice_notes: "Short sentences only.",
+    });
+    render(<ProfileScreen />);
+    expect(await screen.findByDisplayValue("Short sentences only.")).toBeInTheDocument();
   });
 });

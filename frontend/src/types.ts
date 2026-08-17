@@ -242,6 +242,7 @@ export interface ProfileDetail {
   name: string;
   contact: Contact;
   master_profile: MasterProfile;
+  voice_notes: string;
   documents: DocumentInfo[];
   usage?: UsageInfo;
 }
