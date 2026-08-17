@@ -203,7 +203,10 @@ WRITING VOICE (enforced server-side, like truthfulness):
 - Never use emoji, curly quotes, or the ellipsis character.
 - Never write: passionate about, proven track record, results-driven,
   results-oriented, results-focused, wealth of experience, seamlessly,
-  testament to, delve, tapestry, "I am excited to", "in today's ... world".
+  testament to, delve, tapestry, "I am/I'm excited to", "in today's ... world".
+- If get_master_profile returns a non-empty voice_notes, follow it. It is the
+  candidate's explicit direction on how their writing should sound and takes
+  precedence over anything you infer.
 - save_tailored_resume rejects violations and returns the list, exactly as it
   does for truthfulness. Follow these the first time and you will not see it.
 
@@ -277,6 +280,7 @@ def get_master_profile(engine, profile_id: int | None = None) -> dict:
             "profile_id": profile.id,
             "name": profile.name,
             "contact": get_contact(profile).model_dump(),
+            "voice_notes": profile.voice_notes,
             "master_profile": _master_profile_of(profile).model_dump(),
         }
 
@@ -769,10 +773,11 @@ def save_tailored_resume(
     cover_letter_md: str,
     tailoring_notes: str = "",
 ) -> dict:
-    """The truthfulness-gated write: validate, verify, snapshot, render, export.
+    """The truthfulness- and style-gated write: validate, verify, snapshot,
+    render, export.
 
-    Validation or truthfulness failures raise before any state change - the
-    application stays in "tailoring" so the agent can correct and retry.
+    Validation, truthfulness, or style failures raise before any state change -
+    the application stays in "tailoring" so the agent can correct and retry.
     After the gate passes, any crash (e.g. during rendering) lands the
     application in status "error" (pipeline's _mark_error pattern), never a
     stuck "rendering".

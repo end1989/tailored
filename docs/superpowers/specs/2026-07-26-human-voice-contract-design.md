@@ -212,6 +212,10 @@ screen with a placeholder showing that example.
 When present it takes precedence over the inferred register, because explicit
 instruction beats inference.
 
+Amendment 2026-08-17: voice_notes is also returned by the MCP
+`get_master_profile` tool and the workflow guide tells agents to follow it, so
+both generation paths receive it.
+
 ### 6.3 Baseline style rules
 
 Applied regardless of samples, in both the `tailor.py` system prompt and

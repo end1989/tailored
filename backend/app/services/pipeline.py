@@ -144,6 +144,11 @@ def _tailor_and_render(session: Session, app: Application,
             voice_sample=voice_sample, voice_notes=voice_notes,
         )
         _add_usage(app, usage)
+        # Commit the cost before the gates run. A gate raises, _mark_error
+        # rolls back, and tokens already spent would otherwise vanish from the
+        # ledger; the user paid for them either way.
+        session.add(app)
+        session.commit()
 
         violations = verify_truthfulness(result.resume, master)
         if violations:

@@ -206,6 +206,16 @@ def test_the_voice_sample_is_truncated(claude_fake):
     assert content.count("x") <= 2100, "a whole resume would crowd out the real input"
 
 
+def test_the_voice_notes_are_truncated(claude_fake):
+    """Same cap as the sample: a pasted essay must not crowd out the input."""
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_notes="x" * 10000,
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert content.count("x") <= 2100
+
+
 def test_the_system_prompt_carries_the_baseline_style_rules():
     """Enforcement is the backstop; the prompt is the mechanism, so most runs
     pass first time and the retry rarely fires."""
@@ -216,3 +226,4 @@ def test_the_system_prompt_carries_the_baseline_style_rules():
     assert "emoji" in lowered
     assert "passionate about" in lowered
     assert "straight quote" in lowered
+    assert "i'm excited to" in lowered

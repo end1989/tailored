@@ -411,6 +411,27 @@ def test_the_retry_is_billed(
         assert retried.cost_usd > clean.cost_usd
 
 
+def test_failed_attempts_are_still_billed(
+    engine, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """Tokens spent are spent. A run that ends in error must still show them,
+    or the cost of a failed generation silently disappears from the ledger."""
+    claude = BilledClaude(FIXTURES_DIR)
+    monkeypatch.setattr(
+        pipeline, "check_style", lambda resume, cover_md: ["Summary: em dash."]
+    )
+    app_id = seed_application(engine, claude)
+    pipeline.process_application(app_id, engine=engine, claude=claude)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        # Parse and research are committed as they go, so they land either way;
+        # the two tailoring attempts are the ones the rollback used to discard.
+        assert app.input_tokens >= 4000, "parse, research, and two tailoring calls"
+        assert app.cost_usd > 0
+
+
 def test_truthfulness_is_still_never_retried(
     engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
 ):

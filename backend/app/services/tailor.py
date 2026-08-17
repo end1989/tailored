@@ -34,7 +34,7 @@ WRITING VOICE (this text must read as the candidate's own writing):
 - Never use an em dash. Use a comma, a colon, or a full stop.
 - Never use an en dash except between two years, as in 2020-2023.
 - Never use emoji, curly quotes, or the ellipsis character. Straight quotes and three periods are correct.
-- Never write: passionate about, proven track record, results-driven, results-oriented, results-focused, wealth of experience, seamlessly, testament to, delve, tapestry, "I am excited to", "in today's ... world".
+- Never write: passionate about, proven track record, results-driven, results-oriented, results-focused, wealth of experience, seamlessly, testament to, delve, tapestry, "I am/I'm excited to", "in today's ... world".
 - These rules are checked server-side and a violation is rejected, so follow them the first time.
 
 COVER LETTER (markdown, 3-5 short paragraphs):
@@ -83,7 +83,7 @@ def tailor_application(
         parts.append(
             "VOICE DIRECTION FROM THE CANDIDATE (highest-priority style "
             "instruction; explicit direction beats anything inferred below):\n"
-            + voice_notes
+            + voice_notes[:2000]
         )
     if voice_sample:
         parts.append(

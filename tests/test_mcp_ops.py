@@ -117,6 +117,9 @@ def test_workflow_guide_contents():
 
     assert "em dash" in guide.lower()
     assert "passionate about" in guide
+    # The guide has to point at the candidate's own direction, not just at the
+    # ban list, or an agent never asks for it.
+    assert "voice_notes" in guide
 
     # The explicit refusal to help with evasion is part of the deliverable.
     lowered = guide.lower()
@@ -148,6 +151,19 @@ def test_get_master_profile_sole_and_explicit(engine, profile_id):
     listing = mcp_ops.list_profiles(engine)
     assert [p["id"] for p in listing] == [profile_id]
     assert listing[0]["has_master_profile"] is True
+
+
+def test_get_master_profile_returns_voice_notes(engine, profile_id):
+    """The candidate's explicit direction has to reach MCP agents too, or the
+    two generation paths write in different voices."""
+    with Session(engine) as session:
+        profile = session.get(Profile, profile_id)
+        profile.voice_notes = "Plain and direct. Short sentences."
+        session.add(profile)
+        session.commit()
+
+    data = mcp_ops.get_master_profile(engine, profile_id)
+    assert data["voice_notes"] == "Plain and direct. Short sentences."
 
 
 def test_get_master_profile_ambiguous_and_missing(engine, profile_id):
