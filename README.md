@@ -243,6 +243,11 @@ fabrication. Regenerations are versioned, so earlier outputs are never lost.
 
 ## Voice
 
+Generated text that carries the mechanical tells of machine writing (em dashes,
+emoji, curly quotes, the ellipsis character, invisible spaces, and a short
+curated list of recruitment cliches) is rejected on the write path, for both
+the built-in pipeline and MCP agents; the pipeline retries once with the
+violations attached, and an agent gets the list back to correct.
 The list is deliberately short. Words with real, common, pre-LLM use in resumes - leverage, robust, scale, spearheaded - are not banned, because a false
 positive blocks a truthful resume and that is worse than an occasional
 stylistic miss.
