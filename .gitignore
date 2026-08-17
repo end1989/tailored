@@ -12,3 +12,6 @@ __pycache__/
 
 # node (frontend/dist IS committed on purpose -- do not ignore it)
 frontend/node_modules/
+
+# per-machine Claude Code instructions (auto-loaded, never committed)
+CLAUDE.local.md
