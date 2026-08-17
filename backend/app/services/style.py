@@ -50,6 +50,9 @@ BANNED_CHARACTERS: tuple[tuple[re.Pattern[str], str, str], ...] = (
             "\U0001f000-\U0001faff"  # emoji and pictographs
             "\u2600-\u26ff"  # miscellaneous symbols
             "\u2700-\u27bf"  # dingbats
+            "\u2300-\u23ff"  # miscellaneous technical
+            "\u2b00-\u2bff"  # arrows and miscellaneous symbols
+            "\u203c\u2049"  # double exclamation and exclamation-question
             "\ufe0f"  # variation selector, the emoji presentation marker
             "]"
         ),
@@ -57,7 +60,11 @@ BANNED_CHARACTERS: tuple[tuple[re.Pattern[str], str, str], ...] = (
         "remove it; there is no legitimate use in a resume or cover letter",
     ),
     (
-        re.compile("[\u201c\u201d\u2018\u2019]"),
+        # Quotation marks, not apostrophes. A right single quotation mark
+        # between two word characters is how Word spells Macy's and O'Brien,
+        # so it arrives in names and postings; rejecting it would block
+        # truthful text on every generation for that user or employer.
+        re.compile("[\u201c\u201d\u2018]|(?<!\\w)\u2019|\u2019(?!\\w)"),
         "curly quote",
         "use a straight quote, which is always acceptable and never a tell",
     ),
@@ -67,8 +74,9 @@ BANNED_CHARACTERS: tuple[tuple[re.Pattern[str], str, str], ...] = (
         "use three periods, or better, finish the sentence",
     ),
     (
-        re.compile("[\u00a0\u200b\u200c\u200d\ufeff]"),
-        "invisible character (non-breaking or zero-width space)",
+        re.compile("[\u00a0\u00ad\u2000-\u200f\u2028-\u202f\u205f-\u2064\u3000\ufeff]"),
+        "invisible or unusual space character (non-breaking, zero-width, soft "
+        "hyphen, and similar)",
         "replace it with an ordinary space; these also corrupt ATS text extraction",
     ),
 )
@@ -89,10 +97,16 @@ BANNED_PHRASES: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\bwealth of experience\b", "say how many years, doing what"),
         (r"\bseamlessly\b", "cut the adverb, or say what made it work"),
         (r"\btestament to\b", "state the fact plainly"),
-        (r"\bdelv\w*\b", "use a plain verb such as studied, examined or read"),
+        (
+            # The verb's forms, not every word that starts with delv: a
+            # surname such as Delvecchio is not a tell.
+            r"\bdelv(?:e|es|ed|ing)\b",
+            "use a plain verb such as studied, examined or read",
+        ),
         (r"\btapestry\b", "use a plain noun"),
         (r"\bI am excited to\b", "open on a specific fact about the company or role"),
         (r"\bI was excited to\b", "open on a specific fact about the company or role"),
+        (r"\bI['’]m excited to\b", "open on a specific fact about the company or role"),
         (
             r"\bin today[\u0027\u2019]s\b[^.!?]{0,40}\bworld\b",
             "cut the throat-clearing and open on the specific point",
@@ -128,8 +142,16 @@ def _check_text(label: str, text: str) -> list[str]:
         return []
     found: list[str] = []
     for pattern, name, advice in BANNED_CHARACTERS:
-        if pattern.search(text):
-            found.append(f"{label}: {name}. {advice[0].upper()}{advice[1:]}.")
+        match = pattern.search(text)
+        if match:
+            # A character has no name of its own in the prose, so quote where
+            # it sits: the model has to find it before it can rewrite it.
+            excerpt = text[max(0, match.start() - 15) : match.end() + 15]
+            excerpt = excerpt.replace("\r", " ").replace("\n", " ")
+            found.append(
+                f"{label}: {name} near {excerpt!r}. "
+                f"{advice[0].upper()}{advice[1:]}."
+            )
     for pattern, advice in BANNED_PHRASES:
         match = pattern.search(text)
         if match:

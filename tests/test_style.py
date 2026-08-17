@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.schemas import ResumeDoc, TailorResult
-from backend.app.services.style import check_style
+from backend.app.services.style import ALLOWED_WORDS, check_style
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
 
@@ -81,9 +81,31 @@ def test_a_violation_names_its_location_and_says_what_to_do():
     assert any(word in violations[0].lower() for word in ("rewrite", "use", "replace"))
 
 
+def test_a_character_violation_quotes_the_offending_text():
+    """A character has no name of its own in the prose, so show where it sits."""
+    violations = check_style(_with_bullet("Cut latency — by half"), "")
+    assert "latency" in violations[0]
+
+
 def test_curly_quotes_are_violations():
+    """Quotation marks, not apostrophes: an intra-word U+2019 is allowed."""
     assert check_style(_with_bullet("Built the “fleet” service"), "")
-    assert check_style(_with_bullet("Ran Ada’s migration"), "")
+    assert check_style(_with_bullet("Ran the ‘Ada’ migration"), "")
+
+
+def test_a_curly_apostrophe_inside_a_word_is_allowed():
+    """Spec 4.2 amendment: names and postings carry it, so rejecting it would
+    block truthful text on every generation for that user or employer.
+    """
+    assert (
+        check_style(_resume(), "I would like to work at Macy’s with O’Brien.")
+        == []
+    )
+
+
+def test_curly_quotes_around_a_phrase_are_still_violations():
+    assert check_style(_resume(), "the ‘fleet’ service")
+    assert check_style(_with_bullet("Built the “fleet” service"), "")
 
 
 def test_ellipsis_character_is_a_violation():
@@ -94,10 +116,27 @@ def test_emoji_is_a_violation():
     assert check_style(_with_bullet("Shipped the release \U0001F680"), "")
 
 
+def test_symbols_outside_the_pictograph_block_are_violations():
+    """The emoji families that live in the older, lower symbol blocks."""
+    assert check_style(_with_bullet("Shipped the release \u2b50"), "")
+    assert check_style(_with_bullet("Shipped the release \u23f0"), "")
+
+
 def test_invisible_characters_are_violations():
     """Independently harmful: they corrupt ATS text extraction."""
     assert check_style(_with_bullet("Cut\u00a0latency by half"), "")
     assert check_style(_with_bullet("Cut\u200blatency by half"), "")
+
+
+def test_unusual_space_characters_are_violations():
+    assert check_style(_with_bullet("Cut\u202flatency by half"), "")
+    assert check_style(_with_bullet("Cut\u00adlatency by half"), "")
+
+
+def test_ordinary_ascii_punctuation_is_clean():
+    """The widened character classes must not reach ASCII."""
+    bullet = "Cut latency by 40% (p95), $2M ARR; see https://a.example/x?y=1&z=2"
+    assert check_style(_with_bullet(bullet), "") == []
 
 
 # --- the en dash rule, which is the one most likely to be broken later -------
@@ -155,6 +194,11 @@ def test_delve_catches_its_inflections():
     assert check_style(_with_bullet("Delving into the data"), "")
 
 
+def test_delve_does_not_catch_a_surname_that_starts_the_same_way():
+    """The rule lists the verb's forms, not every word beginning in delv."""
+    assert check_style(_resume(), "Dear Ms. Delvecchio,") == []
+
+
 def test_passionately_is_not_caught_by_the_passionate_about_rule():
     """Word-boundary matching, not substring matching."""
     assert check_style(_with_bullet("Worked passionately on the migration"), "") == []
@@ -163,6 +207,12 @@ def test_passionately_is_not_caught_by_the_passionate_about_rule():
 def test_excited_openers_are_detected_in_the_cover_letter():
     assert check_style(_resume(), "I am excited to apply for this role.")
     assert check_style(_resume(), "I was excited to see this posting.")
+
+
+def test_the_contracted_excited_opener_is_detected():
+    """Both apostrophes, because the model writes either one."""
+    assert check_style(_resume(), "I'm excited to apply.")
+    assert check_style(_resume(), "I’m excited to apply.")
 
 
 def test_in_todays_world_construction_is_detected():
@@ -178,8 +228,17 @@ def test_legitimate_resume_vocabulary_is_not_banned():
     """Spec section 4.4. Every word here has real, common, pre-LLM resume use.
 
     Banning them would block truthful sentences and push the model toward
-    stranger phrasing. This test exists to stop the ban list creeping.
+    stranger phrasing. This test exists to stop the ban list creeping, so it
+    reads ALLOWED_WORDS itself: adding a word there without keeping it usable
+    fails here.
     """
+    for word in ALLOWED_WORDS:
+        fragment = (
+            "not only design but also drive"
+            if word == "not only ... but also"
+            else word
+        )
+        assert check_style(_with_bullet(f"Shipped the {fragment} work"), "") == [], word
     bullet = (
         "Spearheaded a robust, cutting-edge platform, using meticulous testing "
         "to leverage existing infrastructure and scale it; as architect I did "
