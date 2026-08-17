@@ -27,6 +27,7 @@ from ..schemas import (
 from . import fetcher, render
 from .claude import ClaudeError, ClaudeService, make_claude
 from .research import parse_posting, research_company
+from .style import check_style
 from .tailor import tailor_application, verify_truthfulness
 
 
@@ -91,26 +92,58 @@ def _run_from_research(session: Session, app: Application, job: Job,
                        claude, feedback=None)
 
 
+def _style_retry_feedback(feedback: str | None, violations: list[str]) -> str:
+    """The original feedback plus the style violations, for the single retry.
+
+    A retry that does not say what was wrong is just a second dice roll, so the
+    violations are passed back verbatim; they are written to be actionable.
+    """
+    block = (
+        "STYLE VIOLATIONS in your previous attempt. Rewrite the flagged text "
+        "in the candidate's own plain voice, keeping every fact unchanged:\n- "
+        + "\n- ".join(violations)
+    )
+    return f"{feedback}\n\n{block}" if feedback else block
+
+
 def _tailor_and_render(session: Session, app: Application,
                        master: MasterProfile, contact: Contact,
                        parsed: ParsedPosting,
                        findings: ResearchFindings | None,
                        claude: ClaudeService, feedback: str | None) -> None:
     _set_status(session, app, "tailoring")
-    result, usage = tailor_application(
-        master, contact, parsed, findings, app.template, claude,
-        feedback=feedback,
-    )
-    violations = verify_truthfulness(result.resume, master)
-    if violations:
-        raise ClaudeError(
-            "Truthfulness check failed: " + "; ".join(violations)
+
+    # One retry, never a loop. A second failure means something is wrong with
+    # the rules or the model, and burning tokens in a cycle is worse than
+    # surfacing it. Both gates run on every attempt: a retry that fixes an em
+    # dash but invents an employer must still be rejected for inventing one.
+    attempt_feedback = feedback
+    result = None
+    for attempt in (0, 1):
+        result, usage = tailor_application(
+            master, contact, parsed, findings, app.template, claude,
+            feedback=attempt_feedback,
         )
+        _add_usage(app, usage)
+
+        violations = verify_truthfulness(result.resume, master)
+        if violations:
+            raise ClaudeError(
+                "Truthfulness check failed: " + "; ".join(violations)
+            )
+
+        style_violations = check_style(result.resume, result.cover_letter_md)
+        if not style_violations:
+            break
+        if attempt == 1:
+            raise ClaudeError(
+                "Style check failed: " + "; ".join(style_violations)
+            )
+        attempt_feedback = _style_retry_feedback(feedback, style_violations)
 
     app.resume_json = result.resume.model_dump_json()
     app.cover_letter_md = result.cover_letter_md
     app.tailoring_notes = result.tailoring_notes
-    _add_usage(app, usage)
     session.add(app)
     session.commit()
     session.refresh(app)
