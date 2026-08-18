@@ -1,6 +1,7 @@
 """API route tests (Task 12). All pipeline work is monkeypatched - no Claude, no network."""
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pytest
@@ -455,3 +456,154 @@ def test_voice_notes_can_be_cleared(client):
     client.put(f"/api/profiles/{profile_id}", json={"voice_notes": "Be plain."})
     resp = client.put(f"/api/profiles/{profile_id}", json={"voice_notes": ""})
     assert resp.json()["voice_notes"] == ""
+
+
+# --- Inline editing ----------------------------------------------------------
+#
+# The live preview is edited in place, so the preview endpoint has an edit
+# variant, and saving reports style-gate hits without ever refusing the write.
+
+
+def _stub_export(client, monkeypatch, app_id):
+    monkeypatch.setattr(
+        render,
+        "export_application",
+        lambda *args, **kwargs: Path(client.app.state.settings.data_dir)
+        / "exports"
+        / str(app_id),
+    )
+
+
+def _resume_with(summary=None, bullet=None):
+    resume = copy.deepcopy(VALID_RESUME)
+    if summary is not None:
+        resume["summary"] = summary
+    if bullet is not None:
+        resume["sections"][0]["items"][0]["bullets"] = [bullet]
+    return resume
+
+
+def test_preview_edit_mode_returns_editable_markup(client, monkeypatch):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    _stub_export(client, monkeypatch, app_id)
+    client.put(f"/api/applications/{app_id}/content", json={"resume": VALID_RESUME})
+
+    plain = client.get(f"/api/applications/{app_id}/preview")
+    assert "data-edit-path" not in plain.text
+    assert "contenteditable" not in plain.text
+
+    edit = client.get(f"/api/applications/{app_id}/preview", params={"edit": 1})
+    assert edit.status_code == 200
+    assert edit.headers["content-type"].startswith("text/html")
+    assert 'data-edit-path="summary"' in edit.text
+    assert 'contenteditable="plaintext-only"' in edit.text
+    assert 'data-node-path="sections.0.items.0"' in edit.text
+    assert "data-locked" in edit.text
+    assert ".edit-del" in edit.text  # the edit-mode stylesheet came along
+
+
+def test_preview_edit_mode_404s_before_a_resume_exists(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    assert client.get(
+        f"/api/applications/{app_id}/preview", params={"edit": 1}
+    ).status_code == 404
+
+
+def test_content_update_reports_style_violations_without_refusing(
+    client, monkeypatch
+):
+    """A hand edit is the user's own text: it is checked, never blocked."""
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    _stub_export(client, monkeypatch, app_id)
+
+    resp = client.put(
+        f"/api/applications/{app_id}/content",
+        json={
+            "resume": _resume_with(
+                summary="Built systems \u2014 the unglamorous half.",
+                bullet="Shipped the \u201cingestion\u201d layer.",
+            ),
+            "cover_letter_md": "I am excited to apply.",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # the edit was saved regardless
+    assert body["resume"]["summary"] == "Built systems \u2014 the unglamorous half."
+
+    violations = body["style_violations"]
+    by_rule = {v["rule"]: v for v in violations}
+    assert by_rule["em dash"]["path"] == "summary"
+    assert by_rule["em dash"]["mechanical"] is False
+    assert by_rule["curly quote"]["path"] == "sections.0.items.0.bullets.0"
+    assert by_rule["curly quote"]["mechanical"] is True
+    assert by_rule["banned phrase"]["path"] == ""
+    assert by_rule["banned phrase"]["field"] == "Cover letter"
+    assert by_rule["em dash"]["message"].startswith("Summary: em dash near ")
+
+
+def test_content_update_reports_no_violations_for_clean_text(client, monkeypatch):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    _stub_export(client, monkeypatch, app_id)
+    resp = client.put(
+        f"/api/applications/{app_id}/content",
+        json={"resume": VALID_RESUME, "cover_letter_md": "Dear team,"},
+    )
+    assert resp.json()["style_violations"] == []
+
+
+def test_content_clean_fixes_mechanical_and_leaves_the_rest(client, monkeypatch):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    _stub_export(client, monkeypatch, app_id)
+    client.put(
+        f"/api/applications/{app_id}/content",
+        json={
+            "resume": _resume_with(
+                summary="Built systems \u2014 the \u201cunglamorous\u201d half\u2026"
+            ),
+            "cover_letter_md": "He said \u2018hi\u2019\u2026",
+        },
+    )
+
+    resp = client.put(f"/api/applications/{app_id}/content", json={"clean": True})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["resume"]["summary"] == 'Built systems \u2014 the "unglamorous" half...'
+    assert body["cover_letter_md"] == "He said 'hi'..."
+    # the em dash is a judgment call and survives, still reported
+    assert [v["rule"] for v in body["style_violations"]] == ["em dash"]
+
+
+def test_content_clean_rewrites_the_exports(client, monkeypatch):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    exports = []
+
+    def fake_export(application_id, resume, cover_md, contact, template, data_dir,
+                    page_size="Letter"):
+        out = Path(data_dir) / "exports" / str(application_id)
+        out.mkdir(parents=True, exist_ok=True)
+        exports.append(resume.summary)
+        return out
+
+    monkeypatch.setattr(render, "export_application", fake_export)
+    client.put(
+        f"/api/applications/{app_id}/content",
+        json={"resume": _resume_with(summary="Curly \u201cquotes\u201d here.")},
+    )
+    client.put(f"/api/applications/{app_id}/content", json={"clean": True})
+    assert exports == ['Curly \u201cquotes\u201d here.', 'Curly "quotes" here.']
+
+
+def test_content_clean_before_a_resume_exists_is_harmless(client):
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    resp = client.put(f"/api/applications/{app_id}/content", json={"clean": True})
+    assert resp.status_code == 200
+    assert resp.json()["resume"] is None
+    assert resp.json()["style_violations"] == []

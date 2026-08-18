@@ -276,6 +276,25 @@ export interface ApplicationDetail extends ApplicationSummary {
   events: ApplicationEvent[];
 }
 
+/** One voice-contract hit, addressed to the field it sits in. */
+export interface StyleViolation {
+  /** Human label, e.g. "Experience 'Travelport' bullet 2". */
+  field: string;
+  /** data-edit-path of the offending field; "" for the cover letter. */
+  path: string;
+  rule: string;
+  excerpt: string;
+  advice: string;
+  /** True when the fix has exactly one right answer and can be applied for you. */
+  mechanical: boolean;
+  message: string;
+}
+
+/** A content save always succeeds; the style gate reports rather than refuses. */
+export interface ContentSaveResult extends ApplicationDetail {
+  style_violations: StyleViolation[];
+}
+
 export interface SettingsShape {
   api_key_set: boolean;
   fake_mode: boolean;

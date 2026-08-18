@@ -3,6 +3,7 @@ HTML preview, and export downloads."""
 from __future__ import annotations
 
 import shutil
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -34,6 +35,7 @@ from ..models import (
 from ..schemas import ResumeDoc
 from ..services import pipeline, render
 from ..services.render import TEMPLATES
+from ..services.style import clean_mechanical, style_report
 
 router = APIRouter()
 
@@ -215,6 +217,10 @@ class RegenerateRequest(BaseModel):
 class ContentUpdate(BaseModel):
     resume: Optional[dict] = None
     cover_letter_md: Optional[str] = None
+    # Apply the style gate's mechanical fixes to whatever is being saved. The
+    # inline editor's "Clean these" button sends this on its own, with no
+    # content, to fix what the previous save reported.
+    clean: bool = False
 
 
 class ApplicationPatch(BaseModel):
@@ -559,6 +565,17 @@ def update_content(
         set_resume(app_row, resume_doc)
     if body.cover_letter_md is not None:
         app_row.cover_letter_md = body.cover_letter_md
+    if body.clean:
+        # Runs over the content as it is about to be saved, so a save and a
+        # clean can arrive in the same request.
+        pending = get_resume(app_row)
+        if pending is not None:
+            cleaned, cleaned_cover = clean_mechanical(
+                pending, app_row.cover_letter_md or ""
+            )
+            set_resume(app_row, cleaned)
+            if app_row.cover_letter_md is not None:
+                app_row.cover_letter_md = cleaned_cover
     app_row.updated_at = _utcnow()
     session.add(app_row)
     session.commit()
@@ -584,18 +601,37 @@ def update_content(
         session.add(app_row)
         session.commit()
         session.refresh(app_row)
-    return application_detail(session, app_row, job)
+
+    detail = application_detail(session, app_row, job)
+    # Reported, never enforced. A hand edit is the user's own writing, so the
+    # style gate advises here instead of refusing the write the way it does on
+    # the generated path.
+    detail["style_violations"] = (
+        [
+            asdict(violation)
+            for violation in style_report(resume_now, app_row.cover_letter_md or "")
+        ]
+        if resume_now is not None
+        else []
+    )
+    return detail
 
 
 @router.get("/applications/{application_id}/preview")
 def preview(
-    application_id: int, session: Session = Depends(get_session)
+    application_id: int,
+    edit: bool = False,
+    session: Session = Depends(get_session),
 ) -> HTMLResponse:
+    """The rendered resume. `edit=1` returns the same document with the inline
+    editing vocabulary added; it is never what gets exported."""
     app_row, _job = _get_app_and_job(session, application_id)
     resume = get_resume(app_row)
     if resume is None:
         raise HTTPException(status_code=404, detail="no resume generated yet")
-    return HTMLResponse(render.render_resume_html(resume, app_row.template))
+    return HTMLResponse(
+        render.render_resume_html(resume, app_row.template, edit_mode=edit)
+    )
 
 
 @router.get("/applications/{application_id}/exports/{kind}")

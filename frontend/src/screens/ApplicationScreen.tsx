@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import {
   addEvent,
   deleteEvent,
   exportUrl,
+  fetchEditPreview,
   generateApplication,
   getApplication,
   listTemplates,
@@ -15,6 +16,7 @@ import {
   setApplicationTemplate,
   updateContent,
 } from "../api";
+import { harvestResume, removalTarget } from "../inlineEdit";
 import { STATUS_LABELS, TERMINAL_STATUSES } from "../statuses";
 import type {
   ApplicationDetail,
@@ -22,8 +24,8 @@ import type {
   EventKind,
   ExportKind,
   ResumeDoc,
-  SkillGroup,
   Stage,
+  StyleViolation,
   TemplateInfo,
 } from "../types";
 
@@ -46,11 +48,41 @@ const STAGES: Stage[] = [
 
 type Tab = "resume" | "cover" | "research" | "exports";
 
-function splitCsv(value: string): string[] {
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+function StyleReport({
+  violations,
+  onClean,
+  busy,
+}: {
+  violations: StyleViolation[];
+  onClean: () => void;
+  busy: boolean;
+}) {
+  if (violations.length === 0) return null;
+  const mechanical = violations.filter((v) => v.mechanical).length;
+  return (
+    <div className="style-report">
+      <div className="style-report-head">
+        <strong>
+          {violations.length} style {violations.length === 1 ? "hit" : "hits"}
+        </strong>
+        {mechanical > 0 && (
+          <button className="btn btn-ghost" onClick={onClean} disabled={busy}>
+            {busy ? "Cleaning..." : `Clean the ${mechanical} mechanical`}
+          </button>
+        )}
+      </div>
+      <ul className="style-report-list">
+        {violations.map((v, i) => (
+          <li key={i}>
+            <span className="style-rule">{v.rule}</span>
+            <span className="style-field">{v.field}</span>
+            <span className="style-excerpt">{v.excerpt}</span>
+            {!v.mechanical && <span className="style-yours">your call</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function Timeline({
@@ -180,10 +212,21 @@ export default function ApplicationScreen() {
 
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [tab, setTab] = useState<Tab>("resume");
-  const [editingResume, setEditingResume] = useState(false);
-  const [draft, setDraft] = useState<ResumeDoc | null>(null);
-  const [editingCover, setEditingCover] = useState(false);
-  const [coverDraft, setCoverDraft] = useState("");
+  // The editable preview: the rendered template HTML, handed to the iframe as
+  // srcdoc so the parent can read the document back out of it.
+  const [editHtml, setEditHtml] = useState<string | null>(null);
+  const [frameReady, setFrameReady] = useState(false);
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // Edits live in the frame's DOM, not in React state, so dirtiness is tracked
+  // rather than derived. The ref is what the fetch effect reads: putting dirty
+  // in its dependencies would refetch (and discard the frame) on every save.
+  const [dirty, setDirtyState] = useState(false);
+  const dirtyRef = useRef(false);
+  const [violations, setViolations] = useState<StyleViolation[]>([]);
+  const [saveNote, setSaveNote] = useState<string | null>(null);
+  // null means "not touched": show, and keep showing, whatever the server has.
+  const [coverDraft, setCoverDraft] = useState<string | null>(null);
+  const coverRef = useRef<HTMLTextAreaElement | null>(null);
   const [iframeKey, setIframeKey] = useState(0);
   const [feedback, setFeedback] = useState("");
   const [pasteText, setPasteText] = useState("");
@@ -192,6 +235,12 @@ export default function ApplicationScreen() {
   const [pollNonce, setPollNonce] = useState(0);
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [switching, setSwitching] = useState(false);
+
+  // Editing is offered once there is a resume and the pipeline has settled.
+  // Mid-regeneration the preview stays read-only: anything typed into it would
+  // be overwritten by the run in flight.
+  const editable =
+    detail !== null && detail.resume !== null && TERMINAL_STATUSES.includes(detail.status);
 
   // The registry is static for the life of the process, so this is a mount-only
   // fetch rather than part of the poll effect below, which re-runs on every
@@ -230,111 +279,157 @@ export default function ApplicationScreen() {
     };
   }, [appId, pollNonce]);
 
-  // ---- resume draft editing helpers ----
-
-  function startEditResume() {
-    if (detail && detail.resume) {
-      setDraft(JSON.parse(JSON.stringify(detail.resume)) as ResumeDoc);
-      setEditingResume(true);
+  // Fetch the editable preview. Skipped while there are unsaved edits in the
+  // frame: a refetch replaces the document, and silently discarding someone's
+  // typing is worse than a preview that lags a template switch by one save.
+  useEffect(() => {
+    if (!editable) {
+      setEditHtml(null);
+      return;
     }
-  }
+    if (dirtyRef.current) return;
+    let stopped = false;
+    fetchEditPreview(appId)
+      .then((html) => {
+        if (!stopped) setEditHtml(html);
+      })
+      .catch((err) => {
+        if (!stopped) setError(String(err));
+      });
+    return () => {
+      stopped = true;
+    };
+  }, [appId, iframeKey, editable]);
 
-  function cancelEditResume() {
-    setEditingResume(false);
-    setDraft(null);
-  }
+  // Render the preview into the frame. srcdoc would be the obvious way, but
+  // jsdom does not parse srcdoc content, which would leave the editing path
+  // testable only in a real browser. Writing the document works in both, and
+  // the frame stays same-origin either way.
+  useEffect(() => {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc || editHtml === null) return;
+    doc.open();
+    doc.write(editHtml);
+    doc.close();
+    attachFrame(doc);
+    setFrameReady(true);
+    // attachFrame is redefined every render and intentionally not a dependency:
+    // this must run once per document, not once per keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editHtml, iframeKey]);
 
-  function setSectionTitle(idx: number, title: string) {
-    setDraft((d) =>
-      d ? { ...d, sections: d.sections.map((s, i) => (i === idx ? { ...s, title } : s)) } : d
-    );
-  }
-
-  function removeSection(idx: number) {
-    setDraft((d) => (d ? { ...d, sections: d.sections.filter((_, i) => i !== idx) } : d));
-  }
-
-  function setExperienceBullet(secIdx: number, itemIdx: number, bulletIdx: number, text: string) {
-    setDraft((d) => {
-      if (!d) return d;
-      return {
-        ...d,
-        sections: d.sections.map((s, i) => {
-          if (i !== secIdx || s.type !== "experience") return s;
-          return {
-            ...s,
-            items: s.items.map((item, j) =>
-              j === itemIdx
-                ? { ...item, bullets: item.bullets.map((b, k) => (k === bulletIdx ? text : b)) }
-                : item
-            ),
-          };
-        }),
-      };
+  // Mark the fields the style gate flagged, in place, where they sit.
+  useEffect(() => {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc || !frameReady) return;
+    doc.querySelectorAll(".edit-violation").forEach((el) => {
+      el.classList.remove("edit-violation");
     });
+    for (const violation of violations) {
+      if (violation.path === "") continue;
+      doc
+        .querySelector(`[data-edit-path="${violation.path}"]`)
+        ?.classList.add("edit-violation");
+    }
+    // editHtml and iframeKey are dependencies because a rewritten document is
+    // a blank one: after Clean, the refetched preview lands a tick later and
+    // replaces every node, so the violations that survived have to be marked
+    // again. (Verified in a browser: jsdom's instant fetch batches the two
+    // updates into one commit, where effect order alone hides the gap.)
+  }, [violations, frameReady, editHtml, iframeKey]);
+
+  // A regeneration replaces the documents wholesale, so anything typed before it
+  // started is void. Clearing here is what stops a Save from posting the old
+  // text back over the new version once the run finishes.
+  useEffect(() => {
+    if (editable) return;
+    dirtyRef.current = false;
+    setDirtyState(false);
+    setViolations([]);
+    setSaveNote(null);
+  }, [editable]);
+
+  // Closing the tab with unsaved edits should cost a confirmation, not the work.
+  useEffect(() => {
+    if (!dirty && coverDraft === null) return;
+    function warn(event: BeforeUnloadEvent) {
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty, coverDraft]);
+
+  // The cover letter is edited in a borderless textarea, so it has to grow to
+  // fit its text the way the rendered letter would.
+  useEffect(() => {
+    const el = coverRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [coverDraft, detail?.cover_letter_md, tab]);
+
+  function setDirty(value: boolean) {
+    dirtyRef.current = value;
+    setDirtyState(value);
   }
 
-  function removeExperienceBullet(secIdx: number, itemIdx: number, bulletIdx: number) {
-    setDraft((d) => {
-      if (!d) return d;
-      return {
-        ...d,
-        sections: d.sections.map((s, i) => {
-          if (i !== secIdx || s.type !== "experience") return s;
-          return {
-            ...s,
-            items: s.items.map((item, j) =>
-              j === itemIdx
-                ? { ...item, bullets: item.bullets.filter((_, k) => k !== bulletIdx) }
-                : item
-            ),
-          };
-        }),
-      };
+  /**
+   * Wire up the preview document.
+   *
+   * Nothing runs inside the frame -- it is sandboxed without allow-scripts --
+   * but it is same-origin, so listeners attached from here see everything that
+   * happens in it. Typing bubbles as `input`; the delete markers are handled by
+   * removing their node, which is all harvest needs to drop the item.
+   */
+  function attachFrame(doc: Document) {
+    doc.addEventListener("input", () => {
+      setDirty(true);
+      setSaveNote(null);
     });
-  }
-
-  function removeExperienceItem(secIdx: number, itemIdx: number) {
-    setDraft((d) => {
-      if (!d) return d;
-      return {
-        ...d,
-        sections: d.sections.map((s, i) => {
-          if (i !== secIdx || s.type !== "experience") return s;
-          return { ...s, items: s.items.filter((_, j) => j !== itemIdx) };
-        }),
-      };
+    doc.addEventListener("click", (event) => {
+      const target = event.target as Element | null;
+      if (target === null) return;
+      const node = removalTarget(target);
+      if (node === null) return;
+      node.remove();
+      setDirty(true);
+      setSaveNote(null);
     });
+    setFrameReady(true);
   }
 
-  function setSkillGroupField(secIdx: number, groupIdx: number, patch: Partial<SkillGroup>) {
-    setDraft((d) => {
-      if (!d) return d;
-      return {
-        ...d,
-        sections: d.sections.map((s, i) => {
-          if (i !== secIdx || s.type !== "skills") return s;
-          return {
-            ...s,
-            groups: s.groups.map((g, j) => (j === groupIdx ? { ...g, ...patch } : g)),
-          };
-        }),
-      };
-    });
+  function currentEdits(): { resume?: ResumeDoc; cover_letter_md?: string } {
+    const patch: { resume?: ResumeDoc; cover_letter_md?: string } = {};
+    const doc = frameRef.current?.contentDocument;
+    // Only when the frame is loaded AND has been typed into. Saving the cover
+    // letter must not send a resume harvested from a frame that has not
+    // rendered yet -- that would post an empty document over a good one.
+    if (dirty && frameReady && doc && detail?.resume) {
+      patch.resume = harvestResume(doc, detail.resume);
+    }
+    if (coverDraft !== null) patch.cover_letter_md = coverDraft;
+    return patch;
   }
 
-  // ---- actions ----
-
-  async function saveResume() {
-    if (!draft) return;
+  async function saveEdits(extra: { clean?: boolean } = {}) {
+    const patch = { ...currentEdits(), ...extra };
+    if (patch.resume === undefined && patch.cover_letter_md === undefined && !extra.clean) {
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const d = await updateContent(appId, { resume: draft });
+      const d = await updateContent(appId, patch);
       setDetail(d);
-      setEditingResume(false);
-      setDraft(null);
-      setIframeKey((k) => k + 1);
+      setViolations(d.style_violations);
+      setDirty(false);
+      setCoverDraft(null);
+      setSaveNote("Saved. Every export file rewritten.");
+      if (extra.clean) {
+        // The server rewrote the text, so the frame is now stale.
+        setIframeKey((k) => k + 1);
+      }
     } catch (err) {
       setError(String(err));
     } finally {
@@ -342,25 +437,12 @@ export default function ApplicationScreen() {
     }
   }
 
-  function startEditCover() {
-    if (detail) {
-      setCoverDraft(detail.cover_letter_md ?? "");
-      setEditingCover(true);
-    }
-  }
-
-  async function saveCover() {
-    setBusy(true);
-    setError(null);
-    try {
-      const d = await updateContent(appId, { cover_letter_md: coverDraft });
-      setDetail(d);
-      setEditingCover(false);
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
+  function revertEdits() {
+    setDirty(false);
+    setCoverDraft(null);
+    setViolations([]);
+    setSaveNote(null);
+    setIframeKey((k) => k + 1);
   }
 
   async function handleRegenerate() {
@@ -433,6 +515,8 @@ export default function ApplicationScreen() {
   }
 
   const working = !TERMINAL_STATUSES.includes(detail.status);
+  const coverValue = coverDraft ?? detail.cover_letter_md ?? "";
+  const coverDirty = coverDraft !== null && coverDraft !== (detail.cover_letter_md ?? "");
 
   return (
     <div>
@@ -477,7 +561,8 @@ export default function ApplicationScreen() {
         <select
           className="select-inline"
           value={detail.template}
-          disabled={switching}
+          disabled={switching || dirty}
+          title={dirty ? "Save or revert your edits first" : undefined}
           onChange={async (e) => {
             const next = e.target.value;
             setSwitching(true);
@@ -576,190 +661,126 @@ export default function ApplicationScreen() {
             </button>
           </div>
 
-          {tab === "resume" && (
-            <div>
-              {!editingResume && (
-                <>
-                  <div className="row">
-                    <button
-                      className="btn"
-                      onClick={startEditResume}
-                      disabled={!detail.resume || working}
-                    >
-                      Edit
-                    </button>
-                  </div>
-                  <div className="preview-frame-wrap">
-                    <iframe
-                      key={iframeKey}
-                      src={previewUrl(appId)}
-                      title="Resume preview"
-                      className="preview-frame"
-                      sandbox=""
-                    />
-                  </div>
-                </>
-              )}
-
-              {editingResume && draft && (
-                <div className="card">
-                  <div className="card-title">Edit resume</div>
-                  <div className="field">
-                    <label className="field-label">Headline</label>
-                    <input
-                      className="input"
-                      value={draft.headline}
-                      onChange={(e) => setDraft({ ...draft, headline: e.target.value })}
-                    />
-                  </div>
-                  <div className="field">
-                    <label className="field-label">Summary</label>
-                    <textarea
-                      className="textarea"
-                      value={draft.summary}
-                      onChange={(e) => setDraft({ ...draft, summary: e.target.value })}
-                    />
-                  </div>
-
-                  {draft.sections.map((section, si) => (
-                    <div className="card" key={si}>
-                      <div className="row">
-                        <input
-                          className="input"
-                          aria-label={`Section ${si + 1} title`}
-                          value={section.title}
-                          onChange={(e) => setSectionTitle(si, e.target.value)}
-                        />
-                        <button className="btn btn-danger" onClick={() => removeSection(si)}>
-                          Remove section
-                        </button>
-                      </div>
-
-                      {section.type === "experience" &&
-                        section.items.map((item, ii) => (
-                          <div className="card" key={ii}>
-                            <div className="row">
-                              <strong>
-                                {item.company} — {item.role}
-                              </strong>
-                              <span className="muted">
-                                {item.start} – {item.end ?? "present"}
-                              </span>
-                              <button
-                                className="btn btn-danger"
-                                onClick={() => removeExperienceItem(si, ii)}
-                              >
-                                Remove item
-                              </button>
-                            </div>
-                            {item.bullets.map((b, bi) => (
-                              <div className="row" key={bi}>
-                                <textarea
-                                  className="textarea"
-                                  style={{ minHeight: "3rem" }}
-                                  value={b}
-                                  onChange={(e) =>
-                                    setExperienceBullet(si, ii, bi, e.target.value)
-                                  }
-                                />
-                                <button
-                                  className="btn btn-danger"
-                                  onClick={() => removeExperienceBullet(si, ii, bi)}
-                                >
-                                  Remove bullet
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-
-                      {section.type === "skills" &&
-                        section.groups.map((g, gi) => (
-                          <div className="row" key={gi}>
-                            <input
-                              className="input"
-                              placeholder="Group label"
-                              value={g.label}
-                              onChange={(e) =>
-                                setSkillGroupField(si, gi, { label: e.target.value })
-                              }
-                            />
-                            <input
-                              className="input"
-                              placeholder="items, comma, separated"
-                              value={g.items.join(", ")}
-                              onChange={(e) =>
-                                setSkillGroupField(si, gi, { items: splitCsv(e.target.value) })
-                              }
-                            />
-                          </div>
-                        ))}
-                    </div>
-                  ))}
-
-                  <div className="row">
-                    <button className="btn btn-primary" onClick={saveResume} disabled={busy}>
-                      {busy ? "Saving..." : "Save"}
-                    </button>
-                    <button className="btn btn-ghost" onClick={cancelEditResume}>
-                      Cancel
-                    </button>
-                  </div>
+          {/* Kept mounted while other tabs are open: the edits live in the
+              frame's DOM, and unmounting would throw them away. */}
+          <div style={{ display: tab === "resume" ? undefined : "none" }}>
+            {editable ? (
+              <>
+                <div className="editor-bar">
+                  {dirty ? (
+                    <>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => saveEdits()}
+                        disabled={busy}
+                      >
+                        {busy ? "Saving..." : "Save"}
+                      </button>
+                      <button className="btn btn-ghost" onClick={revertEdits} disabled={busy}>
+                        Revert
+                      </button>
+                      <span className="editor-status">Unsaved edits</span>
+                    </>
+                  ) : (
+                    <span className="editor-hint">
+                      Click any text to edit it. Facts from your Master Profile are locked.
+                    </span>
+                  )}
+                  {saveNote && !dirty && <span className="editor-status">{saveNote}</span>}
                 </div>
-              )}
-
-              <div className="card" style={{ marginTop: "1.25rem" }}>
-                <div className="card-title">Regenerate with feedback</div>
-                <textarea
-                  className="textarea"
-                  placeholder="e.g. Emphasize the data pipeline work more; shorter summary."
-                  value={feedback}
-                  onChange={(e) => setFeedback(e.target.value)}
+                <StyleReport
+                  violations={violations}
+                  onClean={() => saveEdits({ clean: true })}
+                  busy={busy}
                 />
-                <button
-                  className="btn btn-primary"
-                  onClick={handleRegenerate}
-                  disabled={busy || working}
-                >
-                  {busy ? "Submitting..." : "Regenerate"}
-                </button>
+                <div className="preview-frame-wrap">
+                  <iframe
+                    key={iframeKey}
+                    ref={frameRef}
+                    title="Resume preview"
+                    className="preview-frame"
+                    /* allow-same-origin, and deliberately not allow-scripts:
+                       the parent needs to read this document, nothing in it
+                       needs to run. */
+                    sandbox="allow-same-origin"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="preview-frame-wrap">
+                <iframe
+                  key={iframeKey}
+                  src={previewUrl(appId)}
+                  title="Resume preview"
+                  className="preview-frame"
+                  sandbox=""
+                />
               </div>
+            )}
+
+            <div className="card" style={{ marginTop: "1.25rem" }}>
+              <div className="card-title">Regenerate with feedback</div>
+              <textarea
+                className="textarea"
+                placeholder="e.g. Emphasize the data pipeline work more; shorter summary."
+                value={feedback}
+                onChange={(e) => setFeedback(e.target.value)}
+              />
+              <button
+                className="btn btn-primary"
+                onClick={handleRegenerate}
+                disabled={busy || working || dirty}
+                title={dirty ? "Save or revert your edits first" : undefined}
+              >
+                {busy ? "Submitting..." : "Regenerate"}
+              </button>
             </div>
-          )}
+          </div>
 
           {tab === "cover" && (
             <div>
-              {!editingCover && (
-                <>
-                  <div className="row">
+              <div className="editor-bar">
+                {coverDirty ? (
+                  <>
                     <button
-                      className="btn"
-                      onClick={startEditCover}
-                      disabled={detail.cover_letter_md === null || working}
+                      className="btn btn-primary"
+                      onClick={() => saveEdits()}
+                      disabled={busy}
                     >
-                      Edit
-                    </button>
-                  </div>
-                  <pre className="cover-md">{detail.cover_letter_md ?? "No cover letter yet."}</pre>
-                </>
-              )}
-              {editingCover && (
-                <div className="card">
-                  <textarea
-                    className="textarea"
-                    style={{ minHeight: "20rem" }}
-                    value={coverDraft}
-                    onChange={(e) => setCoverDraft(e.target.value)}
-                  />
-                  <div className="row">
-                    <button className="btn btn-primary" onClick={saveCover} disabled={busy}>
                       {busy ? "Saving..." : "Save"}
                     </button>
-                    <button className="btn btn-ghost" onClick={() => setEditingCover(false)}>
-                      Cancel
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => setCoverDraft(null)}
+                      disabled={busy}
+                    >
+                      Revert
                     </button>
-                  </div>
-                </div>
+                    <span className="editor-status">Unsaved edits</span>
+                  </>
+                ) : (
+                  <span className="editor-hint">Click the text to edit it.</span>
+                )}
+                {saveNote && !coverDirty && <span className="editor-status">{saveNote}</span>}
+              </div>
+              <StyleReport
+                violations={violations}
+                onClean={() => saveEdits({ clean: true })}
+                busy={busy}
+              />
+              {detail.cover_letter_md === null ? (
+                <pre className="cover-md">No cover letter yet.</pre>
+              ) : (
+                <textarea
+                  ref={coverRef}
+                  className="cover-editor"
+                  aria-label="Cover letter"
+                  value={coverValue}
+                  onChange={(e) => {
+                    setCoverDraft(e.target.value);
+                    setSaveNote(null);
+                  }}
+                />
               )}
             </div>
           )}

@@ -12,7 +12,12 @@ from pathlib import Path
 import pytest
 
 from backend.app.schemas import ResumeDoc, TailorResult
-from backend.app.services.style import ALLOWED_WORDS, check_style
+from backend.app.services.style import (
+    ALLOWED_WORDS,
+    check_style,
+    clean_mechanical,
+    style_report,
+)
 
 FIXTURES_DIR = Path(__file__).resolve().parents[1] / "backend" / "app" / "fixtures"
 
@@ -384,3 +389,157 @@ def test_multiple_violations_are_all_reported():
 def test_one_field_with_two_different_problems_reports_both():
     violations = check_style(_with_bullet("Cut latency — seamlessly"), "")
     assert len(violations) == 2
+
+
+# --- Structured report and mechanical cleanup (inline editing) ----------------
+#
+# The inline editor needs more than a list of sentences: it has to highlight the
+# field a violation sits in, and it offers a one-click fix for the violations
+# that have exactly one correct answer.
+
+
+def test_style_report_carries_the_path_of_the_offending_field():
+    resume = _with_bullet("Cut latency 40\u2014fastest in the org.")
+    report = style_report(resume, "")
+    assert [v.path for v in report] == ["sections.0.items.0.bullets.0"]
+    assert report[0].rule == "em dash"
+    assert report[0].field.startswith("Experience 'Initech' bullet 1")
+
+
+def test_style_report_paths_match_the_rendered_edit_paths():
+    """The frontend highlights by querySelector on these, so they have to be
+    the same strings the template emits."""
+    resume = _resume(
+        headline="Engineer \u2014 backend",
+        summary="Built \u201cthings\u201d.",
+        sections=[
+            {
+                "type": "projects",
+                "title": "Projects",
+                "items": [
+                    {
+                        "name": "VerifyMyAI",
+                        "description": "Passionate about detection.",
+                        "bullets": ["Shipped it\u2026"],
+                    }
+                ],
+            }
+        ],
+    )
+    assert {v.path for v in style_report(resume, "")} == {
+        "headline",
+        "summary",
+        "sections.0.items.0.description",
+        "sections.0.items.0.bullets.0",
+    }
+
+
+def test_style_report_marks_the_cover_letter_with_no_path():
+    report = style_report(_resume(), "I am excited to apply.")
+    assert len(report) == 1
+    assert report[0].path == ""
+    assert report[0].field == "Cover letter"
+
+
+def test_mechanical_violations_are_the_ones_with_a_single_right_answer():
+    resume = _resume(
+        headline="A \u201ccurly\u201d headline",
+        summary="Trailing thought\u2026 and a non\u00a0breaking space.",
+    )
+    report = style_report(resume, "Wrote it \u2014 quickly, with \U0001f600 flair.")
+    by_rule = {v.rule: v.mechanical for v in report}
+    assert by_rule["curly quote"] is True
+    assert by_rule["ellipsis character"] is True
+    assert by_rule[
+        "invisible or unusual space character (non-breaking, zero-width, soft "
+        "hyphen, and similar)"
+    ] is True
+    assert by_rule["em dash"] is False
+    assert by_rule["emoji or pictograph"] is False
+
+
+def test_banned_phrases_are_never_mechanical():
+    report = style_report(_resume(summary="Passionate about payments."), "")
+    assert len(report) == 1
+    assert report[0].mechanical is False
+    assert report[0].rule == "banned phrase"
+
+
+def test_check_style_still_returns_the_same_sentences():
+    """The pipeline and the MCP path read this; the refactor must not move it."""
+    resume = _with_bullet("Cut latency 40\u2014fast.")
+    strings = check_style(resume, "")
+    assert len(strings) == 1
+    assert strings[0].startswith("Experience 'Initech' bullet 1: em dash near ")
+    assert strings[0].endswith(
+        "Rewrite the sentence, or use a comma, colon or full stop."
+    )
+
+
+def test_clean_mechanical_fixes_quotes_ellipsis_and_invisibles():
+    resume = _resume(
+        headline="A \u201ccurly\u201d headline",
+        summary="Trailing\u2026 and non\u00a0breaking\u200b space.",
+    )
+    cleaned, cover = clean_mechanical(resume, "He said \u2018hi\u2019\u2026")
+    assert cleaned.headline == 'A "curly" headline'
+    assert cleaned.summary == "Trailing... and non breaking space."
+    assert cover == "He said 'hi'..."
+    assert style_report(cleaned, cover) == []
+
+
+def test_clean_mechanical_leaves_judgment_calls_alone():
+    resume = _resume(summary="Fast \u2014 and passionate about payments.")
+    cleaned, _ = clean_mechanical(resume, "")
+    assert cleaned.summary == "Fast \u2014 and passionate about payments."
+
+
+def test_clean_mechanical_reaches_every_prose_field_and_no_others():
+    resume = _resume(
+        headline="H\u2026",
+        summary="S\u2026",
+        sections=[
+            {
+                "type": "experience",
+                "title": "Experience\u2026",
+                "items": [
+                    {
+                        "company": "Initech\u2026",
+                        "role": "Engineer",
+                        "start": "2020",
+                        "end": "2024",
+                        "bullets": ["B\u2026"],
+                    }
+                ],
+            },
+            {
+                "type": "education",
+                "title": "Education",
+                "items": [
+                    {
+                        "institution": "MIT",
+                        "credential": "BS",
+                        "detail": "D\u2026",
+                    }
+                ],
+            },
+            {"type": "extras", "title": "Additional", "items": ["E\u2026"]},
+        ],
+    )
+    cleaned, _ = clean_mechanical(resume, "")
+    assert cleaned.headline == "H..."
+    assert cleaned.summary == "S..."
+    assert cleaned.sections[0].items[0].bullets == ["B..."]
+    assert cleaned.sections[1].items[0].detail == "D..."
+    assert cleaned.sections[2].items == ["E..."]
+    # Facts are never rewritten, even when they carry a banned character: they
+    # came from the master profile and the truthfulness guard compares them
+    # verbatim.
+    assert cleaned.sections[0].items[0].company == "Initech\u2026"
+    assert cleaned.sections[0].title == "Experience\u2026"
+
+
+def test_clean_mechanical_does_not_mutate_the_input():
+    resume = _resume(summary="S\u2026")
+    clean_mechanical(resume, "")
+    assert resume.summary == "S\u2026"

@@ -206,6 +206,36 @@ a { color: var(--accent); }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: var(--radius); padding: 1.25rem; line-height: 1.7;
 }
+/* ---- inline editing ---- */
+.editor-bar {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  min-height: 2.25rem; margin-bottom: 0.75rem;
+}
+.editor-hint, .editor-status { font-size: var(--fs-sm); color: var(--muted); }
+.style-report {
+  background: var(--danger-soft); border: 1px solid var(--danger);
+  border-radius: var(--radius); padding: 0.75rem 1rem; margin-bottom: 0.75rem;
+  font-size: var(--fs-sm);
+}
+.style-report-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+}
+.style-report-list { list-style: none; margin: 0.5rem 0 0; padding: 0; }
+.style-report-list li {
+  display: flex; gap: 0.6rem; align-items: baseline; padding: 0.15rem 0;
+}
+.style-rule { font-weight: 650; min-width: 9rem; }
+.style-field { color: var(--muted); min-width: 12rem; }
+.style-excerpt { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.style-yours { color: var(--muted); font-style: italic; margin-left: auto; }
+/* The cover letter is edited where it is read: same box, same type, no mode. */
+.cover-editor {
+  display: block; width: 100%; resize: none; overflow: hidden;
+  font-family: var(--font-sans); font-size: var(--fs-sm); line-height: 1.7;
+  color: var(--ink); background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem;
+}
+.cover-editor:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .preview-frame-wrap {
   /* At narrow window widths the full-size preview shouldn't reflow the
      resume into a cramped column — let the wrapper scroll horizontally
