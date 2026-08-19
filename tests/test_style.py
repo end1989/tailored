@@ -539,6 +539,17 @@ def test_clean_mechanical_reaches_every_prose_field_and_no_others():
     assert cleaned.sections[0].title == "Experience\u2026"
 
 
+def test_style_helpers_accept_a_cover_letter_with_no_resume():
+    """An application can hold a cover letter before a resume exists."""
+    assert [v.rule for v in style_report(None, "Said “hi”…")] == [
+        "curly quote",
+        "ellipsis character",
+    ]
+    resume, cover = clean_mechanical(None, "Said “hi”…")
+    assert resume is None
+    assert cover == 'Said "hi"...'
+
+
 def test_clean_mechanical_does_not_mutate_the_input():
     resume = _resume(summary="S\u2026")
     clean_mechanical(resume, "")

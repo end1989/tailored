@@ -600,10 +600,31 @@ def test_content_clean_rewrites_the_exports(client, monkeypatch):
     assert exports == ['Curly \u201cquotes\u201d here.', 'Curly "quotes" here.']
 
 
-def test_content_clean_before_a_resume_exists_is_harmless(client):
+def test_content_clean_before_any_content_exists_is_harmless(client):
     pid = make_profile(client)
     app_id = make_application(client, pid)
     resp = client.put(f"/api/applications/{app_id}/content", json={"clean": True})
     assert resp.status_code == 200
     assert resp.json()["resume"] is None
     assert resp.json()["style_violations"] == []
+
+
+def test_a_cover_letter_is_cleaned_and_reported_on_without_a_resume(client):
+    """The endpoint accepts a cover letter on its own, so clean and the style
+    report have to treat the two documents independently rather than gating
+    both on the resume."""
+    pid = make_profile(client)
+    app_id = make_application(client, pid)
+    saved = client.put(
+        f"/api/applications/{app_id}/content",
+        json={"cover_letter_md": "He said “hi”… and left — quickly."},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["resume"] is None
+    rules = {v["rule"] for v in saved.json()["style_violations"]}
+    assert {"curly quote", "ellipsis character", "em dash"} <= rules
+
+    cleaned = client.put(f"/api/applications/{app_id}/content", json={"clean": True})
+    assert cleaned.status_code == 200
+    assert cleaned.json()["cover_letter_md"] == 'He said "hi"... and left — quickly.'
+    assert [v["rule"] for v in cleaned.json()["style_violations"]] == ["em dash"]

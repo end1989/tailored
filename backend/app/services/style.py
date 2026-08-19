@@ -251,8 +251,13 @@ def _check_text(label: str, path: str, text: str) -> list[StyleViolation]:
     return found
 
 
-def _prose_fields(resume: ResumeDoc, cover_md: str) -> list[tuple[str, str, str]]:
+def _prose_fields(
+    resume: ResumeDoc | None, cover_md: str
+) -> list[tuple[str, str, str]]:
     """(label, path, text) for every field the model wrote as prose.
+
+    `resume` is optional because an application can hold a cover letter before
+    a resume exists; the cover letter is checked either way.
 
     Excluded on purpose: company, role, institution and credential names; start,
     end and year strings; URLs, email, phone and location; skill group labels
@@ -263,6 +268,8 @@ def _prose_fields(resume: ResumeDoc, cover_md: str) -> list[tuple[str, str, str]
     violation can be highlighted on the field it came from. The cover letter is
     not part of the resume document and carries "".
     """
+    if resume is None:
+        return [("Cover letter", "", cover_md)]
     fields: list[tuple[str, str, str]] = [
         ("Headline", "headline", resume.headline),
         ("Summary", "summary", resume.summary),
@@ -315,7 +322,9 @@ def _prose_fields(resume: ResumeDoc, cover_md: str) -> list[tuple[str, str, str]
     return fields
 
 
-def style_report(resume: ResumeDoc, cover_md: str) -> list[StyleViolation]:
+def style_report(
+    resume: ResumeDoc | None, cover_md: str
+) -> list[StyleViolation]:
     """Every violation of the voice contract, addressed to the field it sits in.
 
     The structured form check_style is built from. The inline editor reads it to
@@ -343,7 +352,9 @@ def _clean_text(text: str) -> str:
     return text
 
 
-def clean_mechanical(resume: ResumeDoc, cover_md: str) -> tuple[ResumeDoc, str]:
+def clean_mechanical(
+    resume: ResumeDoc | None, cover_md: str
+) -> tuple[ResumeDoc | None, str]:
     """Fix the violations that have one right answer; leave the rest alone.
 
     Returns new objects: the caller's resume is never mutated. Reaches exactly
@@ -351,6 +362,8 @@ def clean_mechanical(resume: ResumeDoc, cover_md: str) -> tuple[ResumeDoc, str]:
     never rewritten -- the truthfulness guard compares those verbatim, and a
     helpful substitution there would turn a valid resume into a rejected one.
     """
+    if resume is None:
+        return None, _clean_text(cover_md)
     cleaned = resume.model_copy(deep=True)
     cleaned.headline = _clean_text(cleaned.headline)
     cleaned.summary = _clean_text(cleaned.summary)

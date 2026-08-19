@@ -567,15 +567,16 @@ def update_content(
         app_row.cover_letter_md = body.cover_letter_md
     if body.clean:
         # Runs over the content as it is about to be saved, so a save and a
-        # clean can arrive in the same request.
-        pending = get_resume(app_row)
-        if pending is not None:
-            cleaned, cleaned_cover = clean_mechanical(
-                pending, app_row.cover_letter_md or ""
-            )
+        # clean can arrive in the same request. Each document is cleaned on its
+        # own: an application can hold a cover letter before it has a resume,
+        # and that cover letter still gets fixed.
+        cleaned, cleaned_cover = clean_mechanical(
+            get_resume(app_row), app_row.cover_letter_md or ""
+        )
+        if cleaned is not None:
             set_resume(app_row, cleaned)
-            if app_row.cover_letter_md is not None:
-                app_row.cover_letter_md = cleaned_cover
+        if app_row.cover_letter_md is not None:
+            app_row.cover_letter_md = cleaned_cover
     app_row.updated_at = _utcnow()
     session.add(app_row)
     session.commit()
@@ -606,14 +607,10 @@ def update_content(
     # Reported, never enforced. A hand edit is the user's own writing, so the
     # style gate advises here instead of refusing the write the way it does on
     # the generated path.
-    detail["style_violations"] = (
-        [
-            asdict(violation)
-            for violation in style_report(resume_now, app_row.cover_letter_md or "")
-        ]
-        if resume_now is not None
-        else []
-    )
+    detail["style_violations"] = [
+        asdict(violation)
+        for violation in style_report(resume_now, app_row.cover_letter_md or "")
+    ]
     return detail
 
 

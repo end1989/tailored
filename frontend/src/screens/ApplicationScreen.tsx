@@ -212,11 +212,18 @@ export default function ApplicationScreen() {
 
   const [detail, setDetail] = useState<ApplicationDetail | null>(null);
   const [tab, setTab] = useState<Tab>("resume");
-  // The editable preview: the rendered template HTML, handed to the iframe as
-  // srcdoc so the parent can read the document back out of it.
+  // The editable preview: the rendered template HTML, written into the iframe
+  // document so the parent can read the edits back out of it.
   const [editHtml, setEditHtml] = useState<string | null>(null);
   const [frameReady, setFrameReady] = useState(false);
   const frameRef = useRef<HTMLIFrameElement | null>(null);
+  // Removed before each re-attach, so one written document means one set of
+  // listeners in every environment. See attachFrame.
+  const frameListeners = useRef<{
+    doc: Document;
+    onInput: () => void;
+    onClick: (event: Event) => void;
+  } | null>(null);
   // Edits live in the frame's DOM, not in React state, so dirtiness is tracked
   // rather than derived. The ref is what the fetch effect reads: putting dirty
   // in its dependencies would refetch (and discard the frame) on every save.
@@ -381,13 +388,28 @@ export default function ApplicationScreen() {
    * but it is same-origin, so listeners attached from here see everything that
    * happens in it. Typing bubbles as `input`; the delete markers are handled by
    * removing their node, which is all harvest needs to drop the item.
+   *
+   * Listeners are removed before each re-attach rather than left to the
+   * browser to clean up. `document.open()` does unregister every listener on
+   * the document, so in Chrome leaving them would be harmless even though the
+   * Document object is reused across open/write/close (measured: three writes,
+   * three attachments, one handler call per event). jsdom does not implement
+   * that clearing (same measurement: three calls), so relying on it would mean
+   * the tests exercise a different listener graph than the browser does.
+   * Removing them by hand costs a few lines and holds everywhere.
    */
   function attachFrame(doc: Document) {
-    doc.addEventListener("input", () => {
+    const previous = frameListeners.current;
+    if (previous !== null) {
+      previous.doc.removeEventListener("input", previous.onInput);
+      previous.doc.removeEventListener("click", previous.onClick);
+    }
+
+    const onInput = () => {
       setDirty(true);
       setSaveNote(null);
-    });
-    doc.addEventListener("click", (event) => {
+    };
+    const onClick = (event: Event) => {
       const target = event.target as Element | null;
       if (target === null) return;
       const node = removalTarget(target);
@@ -395,7 +417,11 @@ export default function ApplicationScreen() {
       node.remove();
       setDirty(true);
       setSaveNote(null);
-    });
+    };
+
+    doc.addEventListener("input", onInput);
+    doc.addEventListener("click", onClick);
+    frameListeners.current = { doc, onInput, onClick };
     setFrameReady(true);
   }
 
