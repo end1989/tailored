@@ -73,10 +73,35 @@ The truthfulness guard is exact-match: every resume experience `(company, role, 
 - `models.py` — SQLModel tables (`Profile`, `SourceDocument`, `Job`, `ResearchBrief`, `Application`, `ApplicationVersion`, `ApplicationEvent`). Structured data is stored as JSON TEXT columns; always go through the typed helpers (`get_resume/set_resume`, `get_master_profile/set_master_profile`, `get_parsed/set_parsed`, `get_contact`, `get_findings`).
 - `schemas.py` — the Pydantic contract shared by API, pipeline, MCP, and prompts: `MasterProfile` (+ `MPExperience/MPProject/SkillGroup/…`), `ParsedPosting`, `ResearchFindings`, `ResumeDoc` (typed sections), `TailorResult`, `UsageInfo`, `FetchResult`.
 - `services/claude.py` — the single AI seam. `ClaudeService.structured(task, system, user_content, schema_model, tools, max_tokens) -> (model, UsageInfo)`. Fake mode loads `backend/app/fixtures/<task>.json` (tasks: `intake`, `parse_posting`, `research_standard`, `research_deep`, `tailor`) and records every call on `.calls` for assertions. Real mode uses strict structured output with a prompt-embedded-schema fallback for oversized grammars; `MODEL_ID`/pricing constants live here. `make_claude(settings)` picks the mode.
-- `services/` — `intake.py` (uploaded PDF/DOCX/TXT → MasterProfile), `fetcher.py` (httpx + trafilatura; never raises, collapses to `needs_paste`), `research.py` (parse posting; standard/deep research with web_fetch/web_search tools; `quick` returns None), `tailor.py`, `style.py` (`check_style`, the voice contract), `render.py` (template registry, Jinja HTML, ATS text, JSON-LD, Playwright PDF, `export_application` → five files under `data/exports/<id>/`).
-- `api/` — `applications.py` (batch create, paste/regenerate/retry/generate, template switch, content edit, exports, events, archive/delete), `profiles.py` (CRUD, document upload, `build`), `settings.py`, `setup.py` (emits the exact `claude mcp add` command for the Getting Started screen), `templates.py` (`TEMPLATE_META` + live previews rendered from `fixtures/tailor.json`).
+- `services/` — `intake.py` (uploaded PDF/DOCX/TXT → MasterProfile), `fetcher.py` (httpx + trafilatura; never raises, collapses to `needs_paste`), `research.py` (parse posting; standard/deep research with web_fetch/web_search tools; `quick` returns None), `tailor.py`, `style.py` (`check_style`, the voice contract; `style_report` and `clean_mechanical` for the inline editor), `render.py` (template registry, Jinja HTML, ATS text, JSON-LD, Playwright PDF, `export_application` → five files under `data/exports/<id>/`; `render_resume_html(..., edit_mode=True)` for the inline editor).
+- `api/` — `applications.py` (batch create, paste/regenerate/retry/generate, template switch, content edit, `preview?edit=1`, exports, events, archive/delete), `profiles.py` (CRUD, document upload, `build`), `settings.py`, `setup.py` (emits the exact `claude mcp add` command for the Getting Started screen), `templates.py` (`TEMPLATE_META` + live previews rendered from `fixtures/tailor.json`).
 
 Package import root is the project root: modules are `backend.app.*` (`run.py` and pytest run from root; `mcp_server.py` and `conftest.py` insert the root on `sys.path` themselves).
+
+### Inline editing (the live preview is the editor)
+
+`GET /applications/{id}/preview?edit=1` renders the same document through
+`render_resume_html(..., edit_mode=True)`, which adds three attributes from
+`templates/_edit.html` and appends `templates/edit_mode.css`:
+`data-edit-path` (this element's text *is* the value at that path),
+`data-node-path` (this container *is* that object) and `data-delete-path`.
+`ApplicationScreen` writes that HTML into an iframe sandboxed
+`allow-same-origin` **without** `allow-scripts` — nothing runs inside it; the
+parent reads and listens to its document because it is same-origin —
+and `frontend/src/inlineEdit.ts` harvests a `ResumeDoc` back out of it.
+Harvest rebuilds every array from the containers still in the DOM rather than
+from the paths, which is what makes deletion work; the paths only locate the
+base object each container came from. Fields the truthfulness guard checks are
+rendered `data-locked` and not editable, so a hand edit cannot trip it.
+
+Edit mode is **on-screen only**. `edit_mode=False` output is asserted
+byte-identical to golden copies of both body partials
+(`tests/test_inline_edit.py`, `tests/golden/`), so nothing here can ever reach
+an exported file. `PUT /content` accepts `clean: true` (apply
+`style.clean_mechanical`) and always returns `style_violations` from
+`style.style_report` — the structured form of `check_style`, carrying the
+`data-edit-path` of each hit and whether it has a single correct fix. Hand
+edits are reported on, never blocked; the generated path still hard-fails.
 
 ### Templates (`backend/templates/`)
 

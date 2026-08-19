@@ -1,79 +1,83 @@
 {# Plainwork's markup: block flow only. No flex, no inline layout, no
    decoration. Every fact sits on its own line in reading order, which is the
-   most conservative thing a resume can hand to an unknown parser. #}
+   most conservative thing a resume can hand to an unknown parser.
+
+   The ed.* calls are inert unless edit_mode is set; see _edit.html. Paths match
+   _resume_body.html exactly, so one harvest function reads either. #}
+{%- import "_edit.html" as ed with context %}
 <header class="resume-header">
-  <h1 class="name">{{ resume.contact.name }}</h1>
-  <p class="headline">{{ resume.headline }}</p>
-  <p class="contact-line">
+  <h1 class="name"{{ ed.locked() }}>{{ resume.contact.name }}</h1>
+  <p class="headline"{{ ed.editable('headline') }}>{{ resume.headline }}</p>
+  <p class="contact-line"{{ ed.locked() }}>
     {{ [resume.contact.email, resume.contact.phone, resume.contact.location] | select | join(" | ") }}
   </p>
   {%- for link in resume.contact.links %}
-  <p class="contact-line">{{ link.label }}: {{ link.url }}</p>
+  <p class="contact-line"{{ ed.locked() }}>{{ link.label }}: {{ link.url }}</p>
   {%- endfor %}
-  {% if resume.summary %}<p class="summary">{{ resume.summary }}</p>{% endif %}
+  {% if resume.summary or edit_mode %}<p class="summary"{{ ed.editable('summary') }}>{{ resume.summary }}</p>{% endif %}
 </header>
 
-{% for section in resume.sections %}
-<section class="section section-{{ section.type }}">
-  <h2 class="section-title">{{ section.title }}</h2>
+{% for section in resume.sections %}{% set spath = 'sections.' ~ loop.index0 %}
+<section class="section section-{{ section.type }}"{{ ed.node(spath) }}>
+  <h2 class="section-title">{{ ed.field(section.title, spath ~ '.title') }}{{ ed.remove(spath, 'section') }}</h2>
 
   {% if section.type == "experience" %}
-    {% for item in section.items %}
-    <div class="item">
-      <p class="primary">{{ item.role }}</p>
-      <p class="secondary">{{ item.company }}</p>
-      <p class="meta">{{ item.start }}–{{ item.end or "Present" }}{% if item.location %} | {{ item.location }}{% endif %}</p>
+    {% for item in section.items %}{% set ipath = spath ~ '.items.' ~ loop.index0 %}
+    <div class="item"{{ ed.node(ipath) }}>{{ ed.remove(ipath, 'entry') }}
+      <p class="primary"{{ ed.locked() }}>{{ item.role }}</p>
+      <p class="secondary"{{ ed.locked() }}>{{ item.company }}</p>
+      <p class="meta"{{ ed.locked() }}>{{ item.start }}–{{ item.end or "Present" }}{% if item.location %} | {{ item.location }}{% endif %}</p>
       {% if item.bullets %}
       <ul class="bullets">
-        {% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}
+        {% for bullet in item.bullets %}<li>{{ ed.line(bullet, ipath ~ '.bullets.' ~ loop.index0, 'bullet') }}</li>{% endfor %}
       </ul>
       {% endif %}
     </div>
     {% endfor %}
 
   {% elif section.type == "projects" %}
-    {% for item in section.items %}
-    <div class="item">
-      <p class="primary">{{ item.name }}</p>
-      {% if item.description %}<p class="secondary">{{ item.description }}</p>{% endif %}
-      {% if item.url %}<p class="meta">{{ item.url }}</p>{% endif %}
+    {% for item in section.items %}{% set ipath = spath ~ '.items.' ~ loop.index0 %}
+    <div class="item"{{ ed.node(ipath) }}>{{ ed.remove(ipath, 'entry') }}
+      <p class="primary"{{ ed.locked() }}>{{ item.name }}</p>
+      {% if item.description or edit_mode %}<p class="secondary"{{ ed.editable(ipath ~ '.description') }}>{{ item.description }}</p>{% endif %}
+      {% if item.url %}<p class="meta"{{ ed.locked() }}>{{ item.url }}</p>{% endif %}
       {% if item.bullets %}
       <ul class="bullets">
-        {% for bullet in item.bullets %}<li>{{ bullet }}</li>{% endfor %}
+        {% for bullet in item.bullets %}<li>{{ ed.line(bullet, ipath ~ '.bullets.' ~ loop.index0, 'bullet') }}</li>{% endfor %}
       </ul>
       {% endif %}
     </div>
     {% endfor %}
 
   {% elif section.type == "skills" %}
-    {% for group in section.groups %}
-    <div class="item skill-group">
-      <p><span class="skill-label">{{ group.label }}:</span> <span class="skill-items">{{ group.items | join(", ") }}</span></p>
+    {% for group in section.groups %}{% set gpath = spath ~ '.groups.' ~ loop.index0 %}
+    <div class="item skill-group"{{ ed.node(gpath) }}>
+      <p><span class="skill-label">{{ ed.field(group.label, gpath ~ '.label') }}:</span> <span class="skill-items">{{ ed.field(group.items | join(", "), gpath ~ '.items') }}</span>{{ ed.remove(gpath, 'group') }}</p>
     </div>
     {% endfor %}
 
   {% elif section.type == "education" %}
-    {% for item in section.items %}
-    <div class="item">
-      <p class="primary">{{ item.credential }}</p>
-      <p class="secondary">{{ item.institution }}</p>
-      {% if item.year %}<p class="meta">{{ item.year }}</p>{% endif %}
-      {% if item.detail %}<p class="detail">{{ item.detail }}</p>{% endif %}
+    {% for item in section.items %}{% set ipath = spath ~ '.items.' ~ loop.index0 %}
+    <div class="item"{{ ed.node(ipath) }}>{{ ed.remove(ipath, 'entry') }}
+      <p class="primary"{{ ed.locked() }}>{{ item.credential }}</p>
+      <p class="secondary"{{ ed.locked() }}>{{ item.institution }}</p>
+      {% if item.year %}<p class="meta"{{ ed.locked() }}>{{ item.year }}</p>{% endif %}
+      {% if item.detail or edit_mode %}<p class="detail"{{ ed.editable(ipath ~ '.detail') }}>{{ item.detail or "" }}</p>{% endif %}
     </div>
     {% endfor %}
 
   {% elif section.type == "certifications" %}
-    {% for item in section.items %}
-    <div class="item">
-      <p class="primary">{{ item.name }}</p>
-      {% if item.issuer %}<p class="secondary">{{ item.issuer }}</p>{% endif %}
-      {% if item.year %}<p class="meta">{{ item.year }}</p>{% endif %}
+    {% for item in section.items %}{% set ipath = spath ~ '.items.' ~ loop.index0 %}
+    <div class="item"{{ ed.node(ipath) }}>{{ ed.remove(ipath, 'entry') }}
+      <p class="primary"{{ ed.locked() }}>{{ item.name }}</p>
+      {% if item.issuer %}<p class="secondary"{{ ed.locked() }}>{{ item.issuer }}</p>{% endif %}
+      {% if item.year %}<p class="meta"{{ ed.locked() }}>{{ item.year }}</p>{% endif %}
     </div>
     {% endfor %}
 
   {% elif section.type == "extras" %}
     <ul class="bullets extras">
-      {% for item in section.items %}<li>{{ item }}</li>{% endfor %}
+      {% for item in section.items %}<li>{{ ed.line(item, spath ~ '.items.' ~ loop.index0, 'item') }}</li>{% endfor %}
     </ul>
   {% endif %}
 </section>

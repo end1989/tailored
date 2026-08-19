@@ -241,6 +241,22 @@ date range, degree, and certification on the generated resume must match your Ma
 Profile exactly, or the application lands in an error state instead of shipping a
 fabrication. Regenerations are versioned, so earlier outputs are never lost.
 
+## Editing by hand
+
+Open an application and the resume preview is the editor: click any line and
+type. It is the real template at real size, so what you change is what prints.
+The facts the truthfulness check guards - company, role, dates, institution,
+credential, certification name - are locked and carry a note saying they live
+in your Master Profile, which means a hand edit cannot break that contract. A
+small x beside each bullet, entry and section removes it. The cover letter is
+edited the same way, in place, on its own tab.
+
+Save rewrites all five export files immediately. There is no AI call and no
+cost. The voice check then runs over what you wrote and reports what it found
+instead of refusing the save, since it is your own writing: curly quotes, the
+ellipsis character and invisible spaces can be fixed for you in one click, and
+judgment calls like an em dash are highlighted where they sit and left to you.
+
 ## Voice
 
 Generated text that carries the mechanical tells of machine writing (em dashes,
@@ -323,7 +339,6 @@ tailored/
 ## Known limitations
 
 - Dashboard polling stops until refresh if one status fetch fails.
-- Regenerating while the resume editor is open can let a stale Save overwrite the new version.
 - Project bullets aren't editable in the profile editor (preserved on save).
 - Browser-printing an exported resume.html always uses Letter (PDF exports honor the page-size setting).
 - Standard-depth research is domain-restricted only when a company domain was detected in the posting.

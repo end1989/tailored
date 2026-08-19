@@ -1,5 +1,6 @@
 import type {
   ApplicationDetail,
+  ContentSaveResult,
   ApplicationEvent,
   ApplicationSummary,
   Contact,
@@ -181,9 +182,22 @@ export function pasteJobText(id: number, text: string): Promise<ApplicationDetai
 
 export function updateContent(
   id: number,
-  patch: { resume?: ResumeDoc; cover_letter_md?: string }
-): Promise<ApplicationDetail> {
-  return request<ApplicationDetail>(`/applications/${id}/content`, jsonInit("PUT", patch));
+  patch: { resume?: ResumeDoc; cover_letter_md?: string; clean?: boolean }
+): Promise<ContentSaveResult> {
+  return request<ContentSaveResult>(`/applications/${id}/content`, jsonInit("PUT", patch));
+}
+
+/**
+ * The preview HTML with the inline editing vocabulary in it.
+ *
+ * Fetched as text and handed to the iframe as srcdoc rather than pointed at
+ * with src: a srcdoc frame inherits this origin, so the parent can read its
+ * contentDocument to harvest the edits back out.
+ */
+export async function fetchEditPreview(id: number): Promise<string> {
+  const res = await fetch(`${API}/applications/${id}/preview?edit=1`);
+  if (!res.ok) throw new Error(`API ${res.status}: ${res.statusText}`);
+  return res.text();
 }
 
 export function regenerate(id: number, feedback: string): Promise<ApplicationDetail> {
