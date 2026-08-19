@@ -11,10 +11,11 @@ from backend.app.models import (
     Job,
     Profile,
     ResearchBrief,
+    SourceDocument,
     set_contact,
     set_master_profile,
 )
-from backend.app.schemas import FetchResult
+from backend.app.schemas import FetchResult, UsageInfo
 from backend.app.services import fetcher, pipeline, render
 from backend.app.services.claude import ClaudeService
 from backend.app.services.intake import IntakeResult
@@ -54,6 +55,24 @@ class RecordingClaude(ClaudeService):
 @pytest.fixture()
 def claude_fake() -> RecordingClaude:
     return RecordingClaude(FIXTURES_DIR)
+
+
+class BilledClaude(RecordingClaude):
+    """Fake-mode ClaudeService stand-in that reports nonzero usage.
+
+    Fake mode otherwise reports UsageInfo(0, 0, 0.0) for every call, which
+    makes accumulated usage indistinguishable between one and two attempts.
+    This stand-in reports fixed nonzero usage per call so a test can assert
+    that a retry's accumulated usage is strictly greater than a clean run's.
+    """
+
+    def structured(self, *, task, system, user_content, schema_model,
+                   tools=None, max_tokens=16000):
+        model, _usage = super().structured(
+            task=task, system=system, user_content=user_content,
+            schema_model=schema_model, tools=tools, max_tokens=max_tokens,
+        )
+        return model, UsageInfo(input_tokens=1000, output_tokens=200, cost_usd=0.01)
 
 
 @pytest.fixture()
@@ -297,3 +316,253 @@ def test_regenerate_bumps_version_and_snapshots(
     tailor_calls = [c for c in claude_fake.calls if c["task"] == "tailor"]
     assert len(tailor_calls) == 2
     assert "Lead with the migration project" in tailor_calls[-1]["user_content"]
+
+
+def _style_failure_once():
+    """A check_style stand-in that fails the first call and passes after."""
+    calls = {"n": 0}
+
+    def _check(resume, cover_md):
+        calls["n"] += 1
+        return ["Summary: em dash. Rewrite the sentence."] if calls["n"] == 1 else []
+
+    return _check, calls
+
+
+def test_a_style_failure_retries_tailoring_once_and_succeeds(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    check, calls = _style_failure_once()
+    monkeypatch.setattr(pipeline, "check_style", check)
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "ready"
+    assert calls["n"] == 2, "expected exactly one retry"
+
+
+def test_the_retry_passes_the_violations_back_to_the_model(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """A retry that does not say what was wrong is just a second dice roll."""
+    check, _calls = _style_failure_once()
+    monkeypatch.setattr(pipeline, "check_style", check)
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    tailor_calls = [c for c in claude_fake.calls if c.get("task") == "tailor"]
+    assert len(tailor_calls) == 2
+    assert "em dash" in tailor_calls[-1]["user_content"]
+    assert "em dash" not in tailor_calls[0]["user_content"]
+
+
+def test_two_style_failures_mark_the_application_error(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    monkeypatch.setattr(
+        pipeline,
+        "check_style",
+        lambda resume, cover_md: ["Summary: em dash. Rewrite the sentence."],
+    )
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        assert "Style check failed" in (app.error_message or "")
+        assert "em dash" in (app.error_message or "")
+
+
+def test_a_style_failure_never_loops(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """Exactly two tailoring calls, never three. Burning tokens in a cycle is
+    worse than surfacing the problem."""
+    monkeypatch.setattr(
+        pipeline, "check_style", lambda resume, cover_md: ["Summary: em dash."]
+    )
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    assert len([c for c in claude_fake.calls if c.get("task") == "tailor"]) == 2
+
+
+def test_the_retry_is_billed(
+    engine, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """Two API calls cost two API calls. A cost that hides the retry is a lie."""
+    claude = BilledClaude(FIXTURES_DIR)
+    check, _calls = _style_failure_once()
+    monkeypatch.setattr(pipeline, "check_style", check)
+    retried_id = seed_application(engine, claude)
+    pipeline.process_application(retried_id, engine=engine, claude=claude)
+
+    monkeypatch.setattr(pipeline, "check_style", lambda resume, cover_md: [])
+    clean_id = seed_application(engine, claude)
+    pipeline.process_application(clean_id, engine=engine, claude=claude)
+
+    with Session(engine) as session:
+        retried = session.get(Application, retried_id)
+        clean = session.get(Application, clean_id)
+        assert retried.input_tokens > clean.input_tokens
+        assert retried.cost_usd > clean.cost_usd
+
+
+def test_failed_attempts_are_still_billed(
+    engine, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """Tokens spent are spent. A run that ends in error must still show them,
+    or the cost of a failed generation silently disappears from the ledger."""
+    claude = BilledClaude(FIXTURES_DIR)
+    monkeypatch.setattr(
+        pipeline, "check_style", lambda resume, cover_md: ["Summary: em dash."]
+    )
+    app_id = seed_application(engine, claude)
+    pipeline.process_application(app_id, engine=engine, claude=claude)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        # Parse and research are committed as they go, so they land either way;
+        # the two tailoring attempts are the ones the rollback used to discard.
+        assert app.input_tokens >= 4000, "parse, research, and two tailoring calls"
+        assert app.cost_usd > 0
+
+
+def test_truthfulness_is_still_never_retried(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    monkeypatch.setattr(
+        pipeline, "verify_truthfulness", lambda resume, profile: ["invented Fake Corp"]
+    )
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        assert "Truthfulness" in (app.error_message or "")
+    assert len([c for c in claude_fake.calls if c.get("task") == "tailor"]) == 1
+
+
+def test_a_retry_that_becomes_untruthful_is_rejected(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """Both gates run on the retry, not just the one that failed."""
+    style_calls = {"n": 0}
+
+    def _style(resume, cover_md):
+        style_calls["n"] += 1
+        return ["Summary: em dash."] if style_calls["n"] == 1 else []
+
+    truth_calls = {"n": 0}
+
+    def _truth(resume, profile):
+        truth_calls["n"] += 1
+        return [] if truth_calls["n"] == 1 else ["invented Fake Corp"]
+
+    monkeypatch.setattr(pipeline, "check_style", _style)
+    monkeypatch.setattr(pipeline, "verify_truthfulness", _truth)
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        assert "Truthfulness" in (app.error_message or "")
+
+
+def test_a_clean_generation_makes_exactly_one_tailoring_call(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked
+):
+    """The retry must not fire on the happy path."""
+    app_id = seed_application(engine, claude_fake)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        assert session.get(Application, app_id).status == "ready"
+    assert len([c for c in claude_fake.calls if c.get("task") == "tailor"]) == 1
+
+
+def test_the_pipeline_passes_voice_notes_to_the_model(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked
+):
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        profile = session.get(Profile, app.profile_id)
+        profile.voice_notes = "Plain and direct. Short sentences."
+        session.add(profile)
+        session.commit()
+
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+    tailor_calls = [c for c in claude_fake.calls if c.get("task") == "tailor"]
+    assert "Plain and direct. Short sentences." in tailor_calls[-1]["user_content"]
+
+
+def test_the_pipeline_passes_the_most_recent_source_document_as_voice(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked
+):
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        session.add(
+            SourceDocument(
+                profile_id=app.profile_id, filename="old.txt", kind="txt",
+                text="OLDER WRITING SAMPLE",
+            )
+        )
+        session.commit()
+        session.add(
+            SourceDocument(
+                profile_id=app.profile_id, filename="new.txt", kind="txt",
+                text="NEWER WRITING SAMPLE",
+            )
+        )
+        session.commit()
+
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+    content = [c for c in claude_fake.calls if c.get("task") == "tailor"][-1]["user_content"]
+    assert "NEWER WRITING SAMPLE" in content
+    assert "OLDER WRITING SAMPLE" not in content
+
+
+def test_a_voice_sample_cannot_smuggle_in_an_employer(
+    engine, claude_fake, pipeline_settings, fetched_ok, pdf_faked, monkeypatch
+):
+    """The voice sample is style-only, and truthfulness is what makes that true.
+
+    A model that lifts an employer out of the sample is rejected by the existing
+    structural guard, which is the argument for having built it structurally.
+    """
+    app_id = seed_application(engine, claude_fake)
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        session.add(
+            SourceDocument(
+                profile_id=app.profile_id, filename="v.txt", kind="txt",
+                text="At Nonexistent Holdings I ran the whole platform.",
+            )
+        )
+        session.commit()
+
+    # Simulate the model taking the bait.
+    real = pipeline.verify_truthfulness
+
+    def _tempted(resume, profile):
+        for section in resume.sections:
+            if section.type == "experience" and section.items:
+                section.items[0].company = "Nonexistent Holdings"
+                break
+        return real(resume, profile)
+
+    monkeypatch.setattr(pipeline, "verify_truthfulness", _tempted)
+    pipeline.process_application(app_id, engine=engine, claude=claude_fake)
+
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.status == "error"
+        assert "Nonexistent Holdings" in (app.error_message or "")

@@ -115,6 +115,17 @@ def test_workflow_guide_contents():
     assert "user's own browser" in guide
     assert "report_fetch_blocked" in guide
 
+    assert "em dash" in guide.lower()
+    assert "passionate about" in guide
+    # The gate allows an intra-word U+2019 so Macy’s survives; an agent told
+    # only "never use curly quotes" respells the employer and then fails the
+    # truthfulness check, which compares employers verbatim.
+    assert "Macy’s" in guide
+    assert "apostrophe" in guide.lower()
+    # The guide has to point at the candidate's own direction, not just at the
+    # ban list, or an agent never asks for it.
+    assert "voice_notes" in guide
+
     # The explicit refusal to help with evasion is part of the deliverable.
     lowered = guide.lower()
     assert "do not attempt to disguise automated traffic" in lowered
@@ -145,6 +156,19 @@ def test_get_master_profile_sole_and_explicit(engine, profile_id):
     listing = mcp_ops.list_profiles(engine)
     assert [p["id"] for p in listing] == [profile_id]
     assert listing[0]["has_master_profile"] is True
+
+
+def test_get_master_profile_returns_voice_notes(engine, profile_id):
+    """The candidate's explicit direction has to reach MCP agents too, or the
+    two generation paths write in different voices."""
+    with Session(engine) as session:
+        profile = session.get(Profile, profile_id)
+        profile.voice_notes = "Plain and direct. Short sentences."
+        session.add(profile)
+        session.commit()
+
+    data = mcp_ops.get_master_profile(engine, profile_id)
+    assert data["voice_notes"] == "Plain and direct. Short sentences."
 
 
 def test_get_master_profile_ambiguous_and_missing(engine, profile_id):
@@ -1062,3 +1086,77 @@ def test_report_fetch_blocked_requires_a_reason(engine, profile_id):
     queued = mcp_ops.queue_jobs(engine, profile_id, ["https://jobs.example.com/a"])
     with pytest.raises(mcp_ops.McpOpsError):
         mcp_ops.report_fetch_blocked(engine, queued[0]["application_id"], "   ")
+
+
+def test_save_tailored_resume_rejects_an_em_dash(engine, profile_id, tmp_path, pdf_faked):
+    app_id = _create_app(engine, profile_id)
+    tailor = _fixture("tailor")
+    resume = tailor["resume"]
+    resume["summary"] = "Eight years building payment systems — mostly in Python."
+
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.save_tailored_resume(
+            engine, tmp_path, app_id, resume, tailor["cover_letter_md"], ""
+        )
+    message = str(exc.value)
+    assert "Style check failed" in message
+    assert "em dash" in message.lower()
+    assert "Summary" in message
+
+
+def test_a_style_rejection_persists_nothing(engine, profile_id, tmp_path, pdf_faked):
+    app_id = _create_app(engine, profile_id)
+    tailor = _fixture("tailor")
+    resume = tailor["resume"]
+    resume["summary"] = "I am passionate about payment systems."
+
+    with pytest.raises(mcp_ops.McpOpsError):
+        mcp_ops.save_tailored_resume(
+            engine, tmp_path, app_id, resume, tailor["cover_letter_md"], ""
+        )
+    with Session(engine) as session:
+        app = session.get(Application, app_id)
+        assert app.resume_json is None
+        assert app.cover_letter_md is None
+        assert app.status == "tailoring", "the agent must be able to correct and retry"
+
+
+def test_truthfulness_is_reported_before_style(engine, profile_id, tmp_path, pdf_faked):
+    """A resume that invents an employer should be reported as inventing an
+    employer, not as having an em dash in the invented employer's bullet."""
+    app_id = _create_app(engine, profile_id)
+    tailor = _fixture("tailor")
+    resume = tailor["resume"]
+    resume["summary"] = "Built things — quickly."
+    for section in resume["sections"]:
+        if section["type"] == "experience":
+            section["items"][0]["company"] = "Totally Invented Corp"
+            break
+
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.save_tailored_resume(
+            engine, tmp_path, app_id, resume, tailor["cover_letter_md"], ""
+        )
+    message = str(exc.value)
+    assert "Truthfulness check failed" in message
+    assert "Style check failed" not in message
+
+
+def test_a_style_rejection_tells_the_agent_what_to_do(engine, profile_id, tmp_path, pdf_faked):
+    app_id = _create_app(engine, profile_id)
+    tailor = _fixture("tailor")
+    resume = tailor["resume"]
+    resume["summary"] = "Built things — quickly."
+
+    with pytest.raises(mcp_ops.McpOpsError) as exc:
+        mcp_ops.save_tailored_resume(
+            engine, tmp_path, app_id, resume, tailor["cover_letter_md"], ""
+        )
+    assert "call this tool again" in str(exc.value)
+
+
+def test_the_clean_fixture_still_saves(engine, profile_id, tmp_path, pdf_faked):
+    """The style gate must not block the sample data the whole suite relies on."""
+    app_id = _create_app(engine, profile_id)
+    result = _save_tailor(engine, tmp_path, app_id, _fixture("tailor"))
+    assert result["status"] == "ready"

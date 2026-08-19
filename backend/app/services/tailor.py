@@ -27,6 +27,20 @@ RESUME:
 - summary: two to four sentences specific to this candidate and this posting - no generic filler.
 - Respect the template structural hint given in the input: when the hint is "projects-forward", a Projects section leads, before Experience; when it is "experience-first", Experience leads. Include Skills and Education sections whenever the master profile has content for them.
 
+WRITING VOICE (this text must read as the candidate's own writing):
+- Plain, concrete, specific. Prefer short sentences to long ones.
+- No superlatives, no throat-clearing, no summarising what you just said.
+- Prefer the vocabulary of the candidate's field to the vocabulary of recruitment.
+- Never use an em dash (—). Use a comma, a colon, or a full stop.
+- Never use an en dash (–) except between two years, as in 2020–2023.
+- Never use emoji, curly quotation marks (“ ” ‘), or the ellipsis
+  character (…). Straight quotes and three periods are correct.
+- A curly apostrophe inside a word is fine and is not a violation. Copy names
+  such as Macy’s or O’Brien exactly as the master profile spells them:
+  respelling one breaks the truthfulness check, which compares them verbatim.
+- Never write: passionate about, proven track record, results-driven, results-oriented, results-focused, wealth of experience, seamlessly, testament to, delve, tapestry, "I am/I'm excited to", "in today's ... world".
+- These rules are checked server-side and a violation is rejected, so follow them the first time.
+
 COVER LETTER (markdown, 3-5 short paragraphs):
 - Open specific. When research findings are provided, the first paragraph must reference a concrete finding (mission, product, news item, or culture language). When no research is provided, the first paragraph must reference specific language from the posting itself.
 - No boilerplate openings ("I am writing to apply...", "I was excited to see...").
@@ -52,6 +66,8 @@ def tailor_application(
     template: str,
     claude: ClaudeService,
     feedback: str | None = None,
+    voice_sample: str | None = None,
+    voice_notes: str | None = None,
 ) -> tuple[TailorResult, UsageInfo]:
     parts = [
         "MASTER PROFILE (single source of truth - the only facts you may use):\n"
@@ -66,6 +82,19 @@ def tailor_application(
     if feedback:
         parts.append(
             "REGENERATION FEEDBACK (apply within the truthfulness rubric):\n" + feedback
+        )
+    if voice_notes:
+        parts.append(
+            "VOICE DIRECTION FROM THE CANDIDATE (highest-priority style "
+            "instruction; explicit direction beats anything inferred below):\n"
+            + voice_notes[:2000]
+        )
+    if voice_sample:
+        parts.append(
+            "REGISTER REFERENCE - the candidate's own writing, provided so you "
+            "can match their register, sentence length, and vocabulary. It is "
+            "NOT a source of facts. Every fact must still come from the master "
+            "profile:\n" + voice_sample[:2000]
         )
     result, usage = claude.structured(
         task="tailor",

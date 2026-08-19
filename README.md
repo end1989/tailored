@@ -9,11 +9,18 @@ and emphasizes* from it per job. It never invents anything
 ## Highlights
 
 - **Truthfulness enforced in the data layer, not the prompt.** Most AI resume tools ask the model nicely not to exaggerate. Tailored rejects any generated resume that contains an employer, title, date, degree, or certification not present in your Master Profile — a structural check on the write path, so the guarantee holds no matter which AI produced the text.
+- **Voice enforced the same way.** Generated text is rejected if it carries the
+mechanical tells of machine writing: em dashes, emoji, curly quotes, the
+ellipsis character, invisible spaces, and a short curated list of recruitment
+cliches. The check runs on the write path, so it holds for both the built-in
+pipeline and any MCP agent, whichever model produced the text. The API pipeline
+retries once with the violations attached; an agent gets the list back and
+corrects it.
 - **Two ways to supply the intelligence, one contract.** Use the built-in Anthropic API pipeline (paste a batch of job URLs and walk away), or connect your own agent over MCP — a from-scratch MCP server (14 tools) that lets Claude Code, Codex, or any MCP-capable client do the work on its own subscription, no API key, and read login-walled postings its browser can reach. The same truthfulness guard applies to both.
 - **Your codebase becomes resume evidence.** A portfolio-scan prompt plus an MCP write tool let an agent read the repos in your workspace and write evidence-backed, skill-tagged project entries straight into your profile (additive-only, validated, never destructive).
 - **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, eight print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
 - **It tracks the job hunt, not just the generation.** Stages from Saved through Offer, a dated timeline for callbacks, interviews and notes, archive and permanent delete, and saved jobs you can park for free and generate later.
-- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 596 automated tests (526 backend including real headless-Chromium PDF rendering and text extraction, 70 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
+- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 667 automated tests (593 backend including real headless-Chromium PDF rendering and text extraction, 74 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
 
 Job URLs can be queued for immediate generation or parked as a saved job to
 generate later at no cost. For each job URL you choose to generate, it runs a
@@ -233,6 +240,23 @@ in the prompt rubric, and structurally after every generation — each employer,
 date range, degree, and certification on the generated resume must match your Master
 Profile exactly, or the application lands in an error state instead of shipping a
 fabrication. Regenerations are versioned, so earlier outputs are never lost.
+
+## Voice
+
+Generated text that carries the mechanical tells of machine writing (em dashes,
+emoji, curly quotes, the ellipsis character, invisible spaces, and a short
+curated list of recruitment cliches) is rejected on the write path, for both
+the built-in pipeline and MCP agents; the pipeline retries once with the
+violations attached, and an agent gets the list back to correct.
+The list is deliberately short. Words with real, common, pre-LLM use in resumes - leverage, robust, scale, spearheaded - are not banned, because a false
+positive blocks a truthful resume and that is worse than an occasional
+stylistic miss.
+
+Set **Voice notes** on your profile to direct the writing explicitly, for
+example "Plain and direct. No salesmanship. Short sentences." Tailored also
+reads the register of the documents you uploaded during intake, as style only:
+every fact still has to come from your Master Profile, and the truthfulness
+check is what guarantees it.
 
 ## Development
 
