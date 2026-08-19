@@ -12,10 +12,10 @@ Windows venv interpreter is `.venv\Scripts\python.exe` (macOS/Linux: `.venv/bin/
 
 ```
 # setup (what Tailored.bat / start_tailored.sh automate)
-python -m venv .venv && .venv\Scripts\activate
+python -m venv .venv && .venv\Scripts\activate   # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium          # PDF rendering + the `pdf` test marker
-copy .env.example .env               # set ANTHROPIC_API_KEY, or run demo mode
+copy .env.example .env               # macOS/Linux: cp; then set ANTHROPIC_API_KEY, or run demo mode
 
 # run
 python run.py                        # http://127.0.0.1:8547, opens browser
