@@ -117,6 +117,11 @@ def test_workflow_guide_contents():
 
     assert "em dash" in guide.lower()
     assert "passionate about" in guide
+    # The gate allows an intra-word U+2019 so Macy’s survives; an agent told
+    # only "never use curly quotes" respells the employer and then fails the
+    # truthfulness check, which compares employers verbatim.
+    assert "Macy’s" in guide
+    assert "apostrophe" in guide.lower()
     # The guide has to point at the candidate's own direction, not just at the
     # ban list, or an agent never asks for it.
     assert "voice_notes" in guide

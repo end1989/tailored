@@ -89,7 +89,7 @@ def _run_from_research(session: Session, app: Application, job: Job,
         session.add(app)
         session.commit()
 
-    _tailor_and_render(session, app, master, contact, parsed, findings,
+    _tailor_and_render(session, app, profile, master, contact, parsed, findings,
                        claude, feedback=None)
 
 
@@ -123,7 +123,7 @@ def _voice_for(session: Session, profile: Profile) -> tuple[str | None, str | No
     return sample, (profile.voice_notes or None)
 
 
-def _tailor_and_render(session: Session, app: Application,
+def _tailor_and_render(session: Session, app: Application, profile: Profile,
                        master: MasterProfile, contact: Contact,
                        parsed: ParsedPosting,
                        findings: ResearchFindings | None,
@@ -134,7 +134,10 @@ def _tailor_and_render(session: Session, app: Application,
     # the rules or the model, and burning tokens in a cycle is worse than
     # surfacing it. Both gates run on every attempt: a retry that fixes an em
     # dash but invents an employer must still be rejected for inventing one.
-    voice_sample, voice_notes = _voice_for(session, session.get(Profile, app.profile_id))
+    #
+    # The profile is passed in rather than looked up again: both callers have
+    # already fetched it and already raised a clear error if it was missing.
+    voice_sample, voice_notes = _voice_for(session, profile)
     attempt_feedback = feedback
     result = None
     for attempt in (0, 1):
@@ -295,7 +298,7 @@ def regenerate_application(app_id: int, feedback: str, engine=None,
             session.add(app)
             session.commit()
             session.refresh(app)
-            _tailor_and_render(session, app, master, contact, parsed,
+            _tailor_and_render(session, app, profile, master, contact, parsed,
                                findings, claude, feedback=feedback)
         except Exception as exc:  # noqa: BLE001
             _mark_error(session, app, str(exc))

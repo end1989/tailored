@@ -227,3 +227,17 @@ def test_the_system_prompt_carries_the_baseline_style_rules():
     assert "passionate about" in lowered
     assert "straight quote" in lowered
     assert "i'm excited to" in lowered
+
+
+def test_the_prompt_states_the_apostrophe_carve_out_the_gate_actually_makes():
+    """The gate allows an intra-word U+2019 so Macy’s and O’Brien survive. A
+    prompt that says "never use curly quotes" without that exception pushes the
+    model to respell an employer, and verify_truthfulness compares employers
+    verbatim, so the respelling fails the truthfulness check and burns the
+    retry. The instruction has to match the rule it is a mechanism for."""
+    from backend.app.services.tailor import TAILOR_SYSTEM
+
+    assert "Macy’s" in TAILOR_SYSTEM
+    assert "apostrophe" in TAILOR_SYSTEM.lower()
+    # The gate side of this pair is test_style.py's
+    # test_a_curly_apostrophe_inside_a_word_is_allowed.

@@ -199,8 +199,11 @@ COVER LETTER (markdown, 3-5 short paragraphs):
 WRITING VOICE (enforced server-side, like truthfulness):
 - Plain, concrete, specific. Prefer short sentences to long ones.
 - No superlatives, no throat-clearing, no summarising what you just said.
-- Never use an em dash. Never use an en dash except between two years.
-- Never use emoji, curly quotes, or the ellipsis character.
+- Never use an em dash (—). Never use an en dash (–) except between two years.
+- Never use emoji, curly quotation marks (“ ” ‘), or the ellipsis character (…).
+  A curly apostrophe inside a word is fine: copy names such as Macy’s or
+  O’Brien exactly as the master profile spells them, because the truthfulness
+  check compares them verbatim and a respelling fails it.
 - Never write: passionate about, proven track record, results-driven,
   results-oriented, results-focused, wealth of experience, seamlessly,
   testament to, delve, tapestry, "I am/I'm excited to", "in today's ... world".

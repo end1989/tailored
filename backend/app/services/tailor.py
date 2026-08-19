@@ -31,9 +31,13 @@ WRITING VOICE (this text must read as the candidate's own writing):
 - Plain, concrete, specific. Prefer short sentences to long ones.
 - No superlatives, no throat-clearing, no summarising what you just said.
 - Prefer the vocabulary of the candidate's field to the vocabulary of recruitment.
-- Never use an em dash. Use a comma, a colon, or a full stop.
-- Never use an en dash except between two years, as in 2020-2023.
-- Never use emoji, curly quotes, or the ellipsis character. Straight quotes and three periods are correct.
+- Never use an em dash (—). Use a comma, a colon, or a full stop.
+- Never use an en dash (–) except between two years, as in 2020–2023.
+- Never use emoji, curly quotation marks (“ ” ‘), or the ellipsis
+  character (…). Straight quotes and three periods are correct.
+- A curly apostrophe inside a word is fine and is not a violation. Copy names
+  such as Macy’s or O’Brien exactly as the master profile spells them:
+  respelling one breaks the truthfulness check, which compares them verbatim.
 - Never write: passionate about, proven track record, results-driven, results-oriented, results-focused, wealth of experience, seamlessly, testament to, delve, tapestry, "I am/I'm excited to", "in today's ... world".
 - These rules are checked server-side and a violation is rejected, so follow them the first time.
 
