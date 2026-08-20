@@ -5,7 +5,10 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 set "SETUP_ONLY=0"
+set "FORCE_CLEAN=0"
 if /i "%~1"=="setup" set "SETUP_ONLY=1"
+if /i "%~1"=="--clean" set "FORCE_CLEAN=1"
+if /i "%~1"=="clean" set "FORCE_CLEAN=1"
 
 rem ---------------------------------------------------------------------
 rem 1. Find a Python 3.11+ interpreter.
@@ -34,21 +37,52 @@ if not defined PYTHON_EXE (
 )
 
 rem ---------------------------------------------------------------------
-rem 2. Create the virtual environment if it doesn't exist yet.
+rem 2. Create or recover the virtual environment.
 rem ---------------------------------------------------------------------
+set "VENV_CORRUPT=0"
+if exist ".venv\Scripts\python.exe" (
+    rem Test if venv is usable by trying to import a basic module
+    ".venv\Scripts\python.exe" -c "import sys; sys.exit(0)" >nul 2>&1
+    if errorlevel 1 (
+        set "VENV_CORRUPT=1"
+        echo.
+        echo WARNING: Virtual environment appears to be corrupted. Rebuilding...
+        echo.
+    )
+)
+
+if "%FORCE_CLEAN%"=="1" (
+    echo Removing old virtual environment...
+    rmdir /s /q ".venv" 2>nul
+    set "VENV_CORRUPT=0"
+)
+
+if "%VENV_CORRUPT%"=="1" (
+    echo Removing corrupted virtual environment...
+    rmdir /s /q ".venv" 2>nul
+)
+
 if not exist ".venv\Scripts\python.exe" (
-    echo First-time setup - this takes a few minutes...
+    echo First-time setup - creating Python virtual environment...
+    echo This takes a few moments...
+    echo.
     %PYTHON_EXE% -m venv ".venv"
     if errorlevel 1 (
         echo.
-        echo Failed to create the Python virtual environment.
+        echo ERROR: Failed to create the Python virtual environment.
+        echo.
+        echo Troubleshooting steps:
+        echo   1. Make sure Python 3.11+ is properly installed
+        echo   2. Try running as Administrator
+        echo   3. Run: %PYTHON_EXE% -m venv ".venv" for more details
+        echo.
         if "%SETUP_ONLY%"=="0" pause
         exit /b 1
     )
 )
 
 rem ---------------------------------------------------------------------
-rem 3. Install/update dependencies if requirements.txt changed.
+rem 3. Upgrade pip and install/update dependencies.
 rem ---------------------------------------------------------------------
 set "NEED_DEPS=0"
 if not exist ".venv\.deps-installed" (
@@ -59,31 +93,54 @@ if not exist ".venv\.deps-installed" (
 )
 
 if "%NEED_DEPS%"=="1" (
-    echo Installing dependencies - this can take a few minutes on first run...
+    echo.
+    echo Upgrading pip and installing dependencies...
+    echo This can take a few minutes on first run...
+    echo.
+
+    rem Upgrade pip first to avoid conflicts
+    ".venv\Scripts\python.exe" -m pip install --upgrade pip setuptools wheel >nul 2>&1
+
+    rem Install requirements
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt
     if errorlevel 1 (
         echo.
-        echo Failed to install dependencies. Check the error above, then re-run Tailored.bat.
+        echo ERROR: Failed to install dependencies.
+        echo.
+        echo Troubleshooting:
+        echo   1. Check the error message above for details
+        echo   2. Try running: Tailored.bat --clean
+        echo   3. If that fails, try running as Administrator
+        echo   4. Or manually run:
+        echo      ".venv\Scripts\python.exe" -m pip install -r requirements.txt
+        echo.
         if "%SETUP_ONLY%"=="0" pause
         exit /b 1
     )
     copy /y "requirements.txt" ".venv\.deps-installed" >nul
+    echo Dependencies installed successfully.
 )
 
 rem ---------------------------------------------------------------------
 rem 4. Install the Chromium browser used for PDF export (best-effort).
 rem ---------------------------------------------------------------------
 if not exist ".venv\.chromium-installed" (
-    echo Installing the Chromium browser for PDF export - this can take a minute...
-    ".venv\Scripts\python.exe" -m playwright install chromium
+    echo.
+    echo Installing the Chromium browser for PDF export...
+    echo This can take a minute on first run...
+    echo.
+    ".venv\Scripts\python.exe" -m playwright install chromium >nul 2>&1
     if errorlevel 1 (
         echo.
-        echo WARNING: Chromium install failed - PDF export won't work until you run:
+        echo WARNING: Chromium install failed - PDF export won't work until fixed.
+        echo You can install it manually later by running:
         echo   ".venv\Scripts\python.exe" -m playwright install chromium
-        echo Continuing without it...
+        echo.
+        echo Continuing without it for now...
         echo.
     ) else (
         echo done > ".venv\.chromium-installed"
+        echo Chromium installed successfully.
     )
 )
 
@@ -150,11 +207,19 @@ rem 6. Launch.
 rem ---------------------------------------------------------------------
 echo.
 echo Starting Tailored...
+echo.
 ".venv\Scripts\python.exe" "run.py"
 set "RC=%errorlevel%"
 if not "%RC%"=="0" (
     echo.
-    echo Tailored stopped with an error - see the message above.
+    echo ERROR: Tailored stopped with an error. Check the message above.
+    echo.
+    echo Quick troubleshooting:
+    echo   - Try running: Tailored.bat --clean
+    echo   - Check that .env has a valid ANTHROPIC_API_KEY, or delete .env to use demo mode
+    echo   - Try running as Administrator
+    echo   - Check Python 3.11+ is installed: python --version
+    echo.
     if "%SETUP_ONLY%"=="0" pause
 )
 exit /b %RC%

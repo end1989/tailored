@@ -62,6 +62,9 @@ few minutes. Every launch after that starts in a couple of seconds.
 If you don't have an [Anthropic API key](https://console.anthropic.com/) yet, the
 launcher offers a **demo mode** with sample data — no key or network access needed.
 
+**Having issues?** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common solutions.
+Or try: `Tailored.bat --clean` to rebuild the environment from scratch.
+
 ## Quickstart (macOS / Linux)
 
 You need **Python 3.11+** (check with `python3 --version`, or install via your
@@ -76,6 +79,9 @@ bash start_tailored.sh
 Same idea as Windows: the first run sets everything up (a few minutes), later runs
 are instant, and the script offers a no-key **demo mode** if you don't have an API
 key yet.
+
+**Having issues?** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common solutions.
+Or try: `bash start_tailored.sh --clean` to rebuild the environment from scratch.
 
 ## Manual setup (developers)
 
