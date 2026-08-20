@@ -28,7 +28,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv(PROJECT_ROOT / ".env")
 
 import anyio.to_thread  # noqa: E402
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.server import MCPServer  # noqa: E402
 
 from backend import mcp_ops  # noqa: E402
 from backend.app.config import get_settings  # noqa: E402
@@ -38,7 +38,7 @@ _settings = get_settings()  # honors TAILORED_DATA_DIR from the env / .env
 _engine = get_engine()      # <data_dir>/tailored.db
 init_db(_engine)
 
-mcp = FastMCP(
+mcp = MCPServer(
     "tailored",
     instructions=(
         "Tailored resume and cover-letter builder. Call get_workflow_guide "
@@ -51,11 +51,11 @@ mcp = FastMCP(
 async def _run(fn, /, *args):
     """Run a sync mcp_ops function in a worker thread.
 
-    The installed mcp package (1.28.x) executes sync tools directly on the
-    event loop (mcp.server.fastmcp.utilities.func_metadata calls the function
-    inline), and export rendering uses Playwright's *sync* API, which refuses
-    to run inside a running asyncio loop. Off-loading every tool body keeps
-    Playwright (and SQLite I/O) off the loop.
+    The mcp package runs a sync tool body directly on the event loop, and
+    export rendering uses Playwright's *sync* API, which refuses to run inside
+    a running asyncio loop. Off-loading every tool body keeps Playwright (and
+    SQLite I/O) off the loop, independent of how any mcp version schedules
+    sync tools.
     """
     return await anyio.to_thread.run_sync(partial(fn, *args))
 

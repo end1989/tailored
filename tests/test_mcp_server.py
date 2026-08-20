@@ -61,7 +61,7 @@ def _tool_docstrings() -> dict[str, str]:
 
     Parsed with ast rather than imported: importing backend/mcp_server.py runs
     its module-level engine/database setup against the real data directory.
-    FastMCP serves each docstring verbatim as the tool's description, which is
+    MCPServer serves each docstring verbatim as the tool's description, which is
     what the connected agent actually reads (the description channel is
     asserted end-to-end in the pdf-marked flow test below)."""
     tree = ast.parse(SERVER_PATH.read_text(encoding="utf-8"))
@@ -139,8 +139,8 @@ def _seed_profile(data_dir: Path) -> int:
 
 def _payload(result) -> dict:
     """Extract a tool result's dict payload (structured or JSON text content)."""
-    assert not result.isError, f"tool error: {result.content}"
-    structured = getattr(result, "structuredContent", None)
+    assert not result.is_error, f"tool error: {result.content}"
+    structured = getattr(result, "structured_content", None)
     if structured:
         if isinstance(structured, dict) and set(structured) == {"result"}:
             return structured["result"]
@@ -176,7 +176,7 @@ async def _flow(tmp_path: Path, profile_id: int) -> None:
             assert "null" in described["next_pending_job"]
 
             guide = await session.call_tool("get_workflow_guide", {})
-            assert not guide.isError
+            assert not guide.is_error
             guide_text = guide.content[0].text
             assert "NEVER invent" in guide_text
             assert '"additionalProperties"' in guide_text
@@ -234,7 +234,7 @@ async def _flow(tmp_path: Path, profile_id: int) -> None:
 
             # --- the batch-queue trio, through the same protocol layer ---
             # queue_jobs / next_pending_job / report_fetch_blocked cross
-            # FastMCP's argument and result (de)serialization here, not just
+            # MCPServer's argument and result (de)serialization here, not just
             # the plain-Python layer test_mcp_ops.py exercises.
             queued = _payload(
                 await session.call_tool(
@@ -293,8 +293,8 @@ async def _flow(tmp_path: Path, profile_id: int) -> None:
             empty = await session.call_tool(
                 "next_pending_job", {"profile_id": profile_id}
             )
-            assert not empty.isError, f"tool error: {empty.content}"
-            assert empty.structuredContent == {"result": None}
+            assert not empty.is_error, f"tool error: {empty.content}"
+            assert empty.structured_content == {"result": None}
             assert _payload(empty) is None
 
 
