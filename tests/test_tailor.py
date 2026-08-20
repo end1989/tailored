@@ -159,3 +159,85 @@ def test_single_changed_company_yields_exactly_one_violation(claude_fake):
     violations = verify_truthfulness(bad, intake.master_profile)
     assert len(violations) == 1
     assert "Fake Corp" in violations[0]
+
+
+def test_voice_sample_reaches_the_model_labelled_as_style_only(claude_fake):
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_sample="I fix things that are broken. I do not oversell.",
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert "I fix things that are broken" in content
+    assert "NOT a source of facts" in content
+
+
+def test_voice_notes_reach_the_model(claude_fake):
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_notes="Plain and direct. Short sentences.",
+    )
+    assert "Plain and direct. Short sentences." in claude_fake.calls[-1]["user_content"]
+
+
+def test_voice_notes_are_marked_as_taking_precedence(claude_fake):
+    """Explicit instruction beats inference, and the prompt has to say so."""
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_sample="Some earlier writing.",
+        voice_notes="Short sentences.",
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert content.index("Short sentences.") < content.index("Some earlier writing.")
+
+
+def test_no_voice_information_leaves_the_input_unchanged(claude_fake):
+    tailor_application(PROFILE, CONTACT, PARSED, None, "slate", claude_fake)
+    content = claude_fake.calls[-1]["user_content"]
+    assert "register reference" not in content.lower()
+    assert "VOICE" not in content
+
+
+def test_the_voice_sample_is_truncated(claude_fake):
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_sample="x" * 10000,
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert content.count("x") <= 2100, "a whole resume would crowd out the real input"
+
+
+def test_the_voice_notes_are_truncated(claude_fake):
+    """Same cap as the sample: a pasted essay must not crowd out the input."""
+    tailor_application(
+        PROFILE, CONTACT, PARSED, None, "slate", claude_fake,
+        voice_notes="x" * 10000,
+    )
+    content = claude_fake.calls[-1]["user_content"]
+    assert content.count("x") <= 2100
+
+
+def test_the_system_prompt_carries_the_baseline_style_rules():
+    """Enforcement is the backstop; the prompt is the mechanism, so most runs
+    pass first time and the retry rarely fires."""
+    from backend.app.services.tailor import TAILOR_SYSTEM
+
+    lowered = TAILOR_SYSTEM.lower()
+    assert "em dash" in lowered
+    assert "emoji" in lowered
+    assert "passionate about" in lowered
+    assert "straight quote" in lowered
+    assert "i'm excited to" in lowered
+
+
+def test_the_prompt_states_the_apostrophe_carve_out_the_gate_actually_makes():
+    """The gate allows an intra-word U+2019 so Macy’s and O’Brien survive. A
+    prompt that says "never use curly quotes" without that exception pushes the
+    model to respell an employer, and verify_truthfulness compares employers
+    verbatim, so the respelling fails the truthfulness check and burns the
+    retry. The instruction has to match the rule it is a mechanism for."""
+    from backend.app.services.tailor import TAILOR_SYSTEM
+
+    assert "Macy’s" in TAILOR_SYSTEM
+    assert "apostrophe" in TAILOR_SYSTEM.lower()
+    # The gate side of this pair is test_style.py's
+    # test_a_curly_apostrophe_inside_a_word_is_allowed.

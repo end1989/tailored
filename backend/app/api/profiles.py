@@ -33,6 +33,7 @@ class ProfileUpdate(BaseModel):
     name: Optional[str] = None
     contact: Optional[Contact] = None
     master_profile: Optional[MasterProfile] = None
+    voice_notes: Optional[str] = None
 
 
 def _has_master_profile(profile: Profile) -> bool:
@@ -49,6 +50,7 @@ def profile_detail(session: Session, profile: Profile) -> dict[str, Any]:
         "name": profile.name,
         "contact": get_contact(profile).model_dump(),
         "master_profile": get_master_profile(profile).model_dump(),
+        "voice_notes": profile.voice_notes,
         "documents": [
             {"id": d.id, "filename": d.filename, "kind": d.kind} for d in docs
         ],
@@ -108,6 +110,8 @@ def update_profile(
         set_contact(profile, body.contact)
     if body.master_profile is not None:
         set_master_profile(profile, body.master_profile)
+    if body.voice_notes is not None:
+        profile.voice_notes = body.voice_notes
     profile.updated_at = _utcnow()
     session.add(profile)
     session.commit()

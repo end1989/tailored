@@ -37,6 +37,7 @@ from .app.schemas import MPProject, ParsedPosting, ResearchFindings, ResumeDoc, 
 from .app.services import render
 from .app.services.claude import strict_schema
 from .app.services.pipeline import _mark_error, _set_status
+from .app.services.style import check_style
 from .app.services.tailor import verify_truthfulness
 
 
@@ -195,6 +196,23 @@ COVER LETTER (markdown, 3-5 short paragraphs):
 - No boilerplate openings ("I am writing to apply...", "I was excited to see...").
 - Ground every claim in facts from the master profile.
 
+WRITING VOICE (enforced server-side, like truthfulness):
+- Plain, concrete, specific. Prefer short sentences to long ones.
+- No superlatives, no throat-clearing, no summarising what you just said.
+- Never use an em dash (—). Never use an en dash (–) except between two years.
+- Never use emoji, curly quotation marks (“ ” ‘), or the ellipsis character (…).
+  A curly apostrophe inside a word is fine: copy names such as Macy’s or
+  O’Brien exactly as the master profile spells them, because the truthfulness
+  check compares them verbatim and a respelling fails it.
+- Never write: passionate about, proven track record, results-driven,
+  results-oriented, results-focused, wealth of experience, seamlessly,
+  testament to, delve, tapestry, "I am/I'm excited to", "in today's ... world".
+- If get_master_profile returns a non-empty voice_notes, follow it. It is the
+  candidate's explicit direction on how their writing should sound and takes
+  precedence over anything you infer.
+- save_tailored_resume rejects violations and returns the list, exactly as it
+  does for truthfulness. Follow these the first time and you will not see it.
+
 JSON SHAPES (strict: every object level carries "additionalProperties": false -
 send exactly these fields, no extras):
 
@@ -265,6 +283,7 @@ def get_master_profile(engine, profile_id: int | None = None) -> dict:
             "profile_id": profile.id,
             "name": profile.name,
             "contact": get_contact(profile).model_dump(),
+            "voice_notes": profile.voice_notes,
             "master_profile": _master_profile_of(profile).model_dump(),
         }
 
@@ -757,10 +776,11 @@ def save_tailored_resume(
     cover_letter_md: str,
     tailoring_notes: str = "",
 ) -> dict:
-    """The truthfulness-gated write: validate, verify, snapshot, render, export.
+    """The truthfulness- and style-gated write: validate, verify, snapshot,
+    render, export.
 
-    Validation or truthfulness failures raise before any state change - the
-    application stays in "tailoring" so the agent can correct and retry.
+    Validation, truthfulness, or style failures raise before any state change -
+    the application stays in "tailoring" so the agent can correct and retry.
     After the gate passes, any crash (e.g. during rendering) lands the
     application in status "error" (pipeline's _mark_error pattern), never a
     stuck "rendering".
@@ -787,6 +807,15 @@ def save_tailored_resume(
                 + "\n- ".join(violations)
                 + "\nCorrect the resume to use only entries from the master "
                 "profile and call this tool again."
+            )
+
+        style_violations = check_style(resume_doc, cover_letter_md)
+        if style_violations:
+            raise McpOpsError(
+                "Style check failed:\n- "
+                + "\n- ".join(style_violations)
+                + "\nRewrite the flagged text in the candidate's own plain "
+                "voice and call this tool again."
             )
 
         try:

@@ -1,0 +1,46 @@
+{#- Edit-mode markup helpers, shared by both resume body partials.
+
+   Every macro emits the empty string unless `edit_mode` is true, so the
+   exported HTML stays byte-identical to what it was before inline editing
+   existed (tests/test_inline_edit.py holds golden copies of both partials).
+   Imported `with context` so `edit_mode` is visible inside the macros.
+
+   Three vocabularies, read by the frontend harvest in frontend/src/inlineEdit.ts:
+
+     data-edit-path    this element's text IS the value at that path
+     data-node-path    this container corresponds to that object; harvest
+                       rebuilds arrays from the containers still in the DOM,
+                       which is what makes deletion work
+     data-delete-path  clicking this marker removes the enclosing container
+-#}
+
+{%- macro editable(path) -%}
+{%- if edit_mode %} contenteditable="plaintext-only" data-edit-path="{{ path }}"{% endif -%}
+{%- endmacro -%}
+
+{%- macro locked() -%}
+{%- if edit_mode %} data-locked title="From your Master Profile. Edit it there."{% endif -%}
+{%- endmacro -%}
+
+{%- macro node(path) -%}
+{%- if edit_mode %} data-node-path="{{ path }}"{% endif -%}
+{%- endmacro -%}
+
+{%- macro remove(path, label) -%}
+{%- if edit_mode %}<span class="edit-del" data-delete-path="{{ path }}" title="Remove this {{ label }}">&times;</span>{% endif -%}
+{%- endmacro -%}
+
+{#- Text whose surrounding element already carries a class the stylesheets
+    target, so the editable box has to be an inner span rather than the element
+    itself. Outside edit mode it emits the bare text and the markup is
+    unchanged. -#}
+{%- macro field(text, path) -%}
+{%- if edit_mode -%}<span{{ editable(path) }}>{{ text }}</span>{%- else -%}{{ text }}{%- endif -%}
+{%- endmacro -%}
+
+{#- Same, plus the delete marker. The marker must sit OUTSIDE the editable
+    element: harvest reads textContent, so an x inside a bullet would be saved
+    as part of the bullet. -#}
+{%- macro line(text, path, label) -%}
+{{- field(text, path) }}{{ remove(path, label) -}}
+{%- endmacro -%}

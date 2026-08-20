@@ -3,13 +3,18 @@
 #
 # Usage: bash start_tailored.sh
 #        bash start_tailored.sh setup   (runs setup only, no launch; for tests)
+#        bash start_tailored.sh --clean (rebuild venv from scratch)
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 SETUP_ONLY=0
+FORCE_CLEAN=0
 if [ "${1:-}" = "setup" ]; then
     SETUP_ONLY=1
+fi
+if [ "${1:-}" = "--clean" ] || [ "${1:-}" = "clean" ]; then
+    FORCE_CLEAN=1
 fi
 
 check_version() {
@@ -47,18 +52,52 @@ if [ -z "$PYTHON_BIN" ]; then
 fi
 
 # ---------------------------------------------------------------------
-# 2. Create the virtual environment if it doesn't exist yet.
+# 2. Create or recover the virtual environment.
 # ---------------------------------------------------------------------
 VENV_DIR=".venv"
 VENV_PY="$VENV_DIR/bin/python"
+VENV_CORRUPT=0
+
+if [ -x "$VENV_PY" ]; then
+    # Test if venv is usable
+    if ! "$VENV_PY" -c "import sys; sys.exit(0)" >/dev/null 2>&1; then
+        VENV_CORRUPT=1
+        echo ""
+        echo "WARNING: Virtual environment appears to be corrupted. Rebuilding..."
+        echo ""
+    fi
+fi
+
+if [ "$FORCE_CLEAN" = "1" ]; then
+    echo "Removing old virtual environment..."
+    rm -rf "$VENV_DIR" 2>/dev/null || true
+    VENV_CORRUPT=0
+fi
+
+if [ "$VENV_CORRUPT" = "1" ]; then
+    echo "Removing corrupted virtual environment..."
+    rm -rf "$VENV_DIR" 2>/dev/null || true
+fi
 
 if [ ! -x "$VENV_PY" ]; then
-    echo "First-time setup - this takes a few minutes..."
-    "$PYTHON_BIN" -m venv "$VENV_DIR"
+    echo "First-time setup - creating Python virtual environment..."
+    echo "This takes a few moments..."
+    echo ""
+    if ! "$PYTHON_BIN" -m venv "$VENV_DIR"; then
+        echo ""
+        echo "ERROR: Failed to create the Python virtual environment."
+        echo ""
+        echo "Troubleshooting steps:"
+        echo "  1. Make sure Python 3.11+ is properly installed"
+        echo "  2. Try running: $PYTHON_BIN -m venv $VENV_DIR for more details"
+        echo "  3. Check that you have write permissions in this directory"
+        echo ""
+        exit 1
+    fi
 fi
 
 # ---------------------------------------------------------------------
-# 3. Install/update dependencies if requirements.txt changed.
+# 3. Upgrade pip and install/update dependencies.
 # ---------------------------------------------------------------------
 DEPS_MARKER="$VENV_DIR/.deps-installed"
 NEED_DEPS=1
@@ -67,13 +106,32 @@ if [ -f "$DEPS_MARKER" ] && cmp -s "requirements.txt" "$DEPS_MARKER"; then
 fi
 
 if [ "$NEED_DEPS" = "1" ]; then
-    echo "Installing dependencies - this can take a few minutes on first run..."
+    echo ""
+    echo "Upgrading pip and installing dependencies..."
+    echo "This can take a few minutes on first run..."
+    echo ""
+
+    # Upgrade pip first to avoid conflicts
+    if ! "$VENV_PY" -m pip install --upgrade pip setuptools wheel >/dev/null 2>&1; then
+        echo "WARNING: Could not upgrade pip, continuing with current version..."
+    fi
+
+    # Install requirements
     if ! "$VENV_PY" -m pip install -r requirements.txt; then
         echo ""
-        echo "Failed to install dependencies. Check the error above, then re-run this script."
+        echo "ERROR: Failed to install dependencies."
+        echo ""
+        echo "Troubleshooting:"
+        echo "  1. Check the error message above for details"
+        echo "  2. Try running: bash start_tailored.sh --clean"
+        echo "  3. Try running with: PYTHONPATH= bash start_tailored.sh"
+        echo "  4. Or manually run:"
+        echo "     $VENV_PY -m pip install -r requirements.txt"
+        echo ""
         exit 1
     fi
     cp "requirements.txt" "$DEPS_MARKER"
+    echo "Dependencies installed successfully."
 fi
 
 # ---------------------------------------------------------------------
@@ -81,14 +139,20 @@ fi
 # ---------------------------------------------------------------------
 CHROMIUM_MARKER="$VENV_DIR/.chromium-installed"
 if [ ! -f "$CHROMIUM_MARKER" ]; then
-    echo "Installing the Chromium browser for PDF export - this can take a minute..."
-    if "$VENV_PY" -m playwright install chromium; then
+    echo ""
+    echo "Installing the Chromium browser for PDF export..."
+    echo "This can take a minute on first run..."
+    echo ""
+    if "$VENV_PY" -m playwright install chromium >/dev/null 2>&1; then
         echo "done" > "$CHROMIUM_MARKER"
+        echo "Chromium installed successfully."
     else
         echo ""
-        echo "WARNING: Chromium install failed - PDF export won't work until you run:"
+        echo "WARNING: Chromium install failed - PDF export won't work until fixed."
+        echo "You can install it manually later by running:"
         echo "  $VENV_PY -m playwright install chromium"
-        echo "Continuing without it..."
+        echo ""
+        echo "Continuing without it for now..."
         echo ""
     fi
 fi
@@ -162,9 +226,29 @@ if [ "$HAVE_KEY" = "0" ] && [ -t 0 ]; then
     done
 fi
 
+# If still no key and non-interactive, enable demo mode
+if [ "$HAVE_KEY" = "0" ]; then
+    export TAILORED_FAKE=1
+fi
+
 # ---------------------------------------------------------------------
 # 6. Launch.
 # ---------------------------------------------------------------------
 echo ""
 echo "Starting Tailored..."
-exec "$VENV_PY" run.py
+echo ""
+
+"$VENV_PY" run.py
+RC=$?
+if [ "$RC" -ne 0 ]; then
+    echo ""
+    echo "ERROR: Tailored stopped with an error. Check the message above."
+    echo ""
+    echo "Quick troubleshooting:"
+    echo "  - Try running: bash start_tailored.sh --clean"
+    echo "  - Check that .env has a valid ANTHROPIC_API_KEY, or delete .env to use demo mode"
+    echo "  - Check Python 3.11+ is installed: python3 --version"
+    echo "  - Try: PYTHONPATH= bash start_tailored.sh"
+    echo ""
+    exit $RC
+fi

@@ -222,14 +222,18 @@ async def save_tailored_resume(
     cover_letter_md: str,
     tailoring_notes: str = "",
 ) -> dict:
-    """The final, truthfulness-gated write. Save the tailored resume (ResumeDoc
-    JSON - schema in get_workflow_guide) plus the cover letter (markdown);
-    Tailored then renders and exports PDF, HTML, and ATS text. The resume is
-    verified server-side against the master profile: any experience, education,
-    or certification entry not present in the master profile is rejected and
-    you receive the exact violation list - correct the resume to use only
-    entries from the master profile and call this tool again. On success
-    returns status 'ready' with the export directory and files."""
+    """The final, truthfulness- and style-gated write. Save the tailored resume
+    (ResumeDoc JSON - schema in get_workflow_guide) plus the cover letter
+    (markdown); Tailored then renders and exports PDF, HTML, and ATS text. The
+    resume is verified server-side against the master profile: any experience,
+    education, or certification entry not present in the master profile is
+    rejected and you receive the exact violation list - correct the resume to
+    use only entries from the master profile and call this tool again. The
+    prose is also checked against the voice contract (no em dashes, emoji,
+    curly quotes, ellipsis characters, invisible spaces, or a short list of
+    recruitment cliches; see get_workflow_guide); a violation is rejected with
+    the same kind of correctable list. On success returns status 'ready' with
+    the export directory and files."""
     return await _run(
         mcp_ops.save_tailored_resume,
         _engine,
