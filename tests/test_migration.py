@@ -47,6 +47,32 @@ def _old_database(tmp_path):
     return engine
 
 
+# The `profile` table exactly as it existed before voice_notes.
+OLD_PROFILE_DDL = """
+CREATE TABLE profile (
+    id INTEGER NOT NULL PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    contact_json VARCHAR NOT NULL,
+    master_profile_json VARCHAR NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL
+)
+"""
+
+OLD_PROFILE_ROWS = """
+INSERT INTO profile VALUES
+    (1, 'Ada', '{}', '{}', '2026-01-01', '2026-01-01')
+"""
+
+
+def _old_profile_database(tmp_path):
+    engine = get_engine(tmp_path / "old_profile.db")
+    with engine.begin() as conn:
+        conn.execute(text(OLD_PROFILE_DDL))
+        conn.execute(text(OLD_PROFILE_ROWS))
+    return engine
+
+
 def _columns(engine, table: str) -> set[str]:
     with engine.begin() as conn:
         return {r[1] for r in conn.execute(text(f"PRAGMA table_info({table})"))}
@@ -92,3 +118,16 @@ def test_migration_creates_new_tables_normally(tmp_path):
 
     assert {"stage", "applied_at", "archived_at"} <= _columns(engine, "application")
     assert _columns(engine, "applicationevent")
+
+
+def test_voice_notes_is_added_to_a_pre_existing_profile_table(tmp_path):
+    """A database created before voice_notes existed must gain the column."""
+    engine = _old_profile_database(tmp_path)
+    assert "voice_notes" not in _columns(engine, "profile")
+
+    init_db(engine)
+
+    assert "voice_notes" in _columns(engine, "profile")
+    with engine.begin() as conn:
+        value = conn.execute(text("SELECT voice_notes FROM profile WHERE id=1")).scalar()
+    assert value == "", "the existing row must get the default, not NULL"

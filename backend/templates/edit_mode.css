@@ -1,0 +1,102 @@
+/* Edit-mode affordances for the live preview.
+ *
+ * Appended to the chosen template's stylesheet only when render_resume_html is
+ * called with edit_mode=True, which is only ever the on-screen preview. No
+ * exported file sees a byte of this, so the rules here are free to do things
+ * base.css forbids (absolute positioning) without touching the print contract.
+ *
+ * It has to sit on top of all eight template identities, so it states its own
+ * colours literally rather than reading template custom properties.
+ */
+
+[data-edit-path] {
+  cursor: text;
+  border-radius: 2px;
+  transition: background-color 90ms linear;
+}
+
+[data-edit-path]:hover {
+  background-color: rgba(37, 99, 235, 0.07);
+}
+
+[data-edit-path]:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.55);
+  outline-offset: 2px;
+  background-color: rgba(37, 99, 235, 0.05);
+}
+
+/* An emptied field keeps a click target, or it could never be refilled. */
+[data-edit-path]:empty::before {
+  content: "Click to write";
+  opacity: 0.35;
+}
+
+/* Facts carried from the Master Profile. Quiet until the cursor is near them;
+   the title attribute carries the explanation. */
+[data-locked] {
+  cursor: default;
+}
+
+[data-locked]:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  text-decoration: underline dotted rgba(0, 0, 0, 0.35);
+  text-underline-offset: 3px;
+}
+
+.edit-del {
+  cursor: pointer;
+  opacity: 0.22;
+  margin-left: 0.35em;
+  font-size: 0.85em;
+  line-height: 1;
+  color: #b91c1c;
+  user-select: none;
+  transition: opacity 90ms linear;
+}
+
+.edit-del:hover {
+  opacity: 1;
+}
+
+li:hover > .edit-del,
+h2:hover .edit-del {
+  opacity: 0.6;
+}
+
+/* An entry's marker cannot flow inline (it would push the first line of a
+   multi-line block down, and the preview has to match the print exactly), and
+   it cannot sit in the margin either: the resume body runs edge to edge,
+   because page margins come from @page rather than from padding. So it hovers
+   over the top-right corner of the entry, drawn only while the pointer is on
+   that entry, and costs no layout at all. */
+.item[data-node-path] {
+  position: relative;
+}
+
+.item[data-node-path] > .edit-del {
+  position: absolute;
+  /* The entry's own top-right corner. It does clip the last few pixels of the
+     dates line while that entry is hovered, and that is the better trade: the
+     gap above an entry is ~7px, too small to clear the line, so lifting it out
+     would only put it on top of the previous entry's last line instead. */
+  top: 0;
+  right: 0;
+  margin-left: 0;
+  opacity: 0;
+  padding: 0 0.3em;
+  border-radius: 3px;
+  /* Rendered resumes are paper-white in every template, so this is safe. */
+  background: #ffffff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
+}
+
+.item[data-node-path]:hover > .edit-del {
+  opacity: 1;
+}
+
+/* Style-gate hits, marked by the parent after a save. */
+.edit-violation {
+  background-color: rgba(185, 28, 28, 0.13);
+  box-shadow: 0 0 0 1px rgba(185, 28, 28, 0.35);
+  border-radius: 2px;
+}

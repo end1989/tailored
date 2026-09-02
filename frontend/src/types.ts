@@ -242,6 +242,7 @@ export interface ProfileDetail {
   name: string;
   contact: Contact;
   master_profile: MasterProfile;
+  voice_notes: string;
   documents: DocumentInfo[];
   usage?: UsageInfo;
 }
@@ -273,6 +274,25 @@ export interface ApplicationDetail extends ApplicationSummary {
   parsed: ParsedPosting | null;
   raw_text_present: boolean;
   events: ApplicationEvent[];
+}
+
+/** One voice-contract hit, addressed to the field it sits in. */
+export interface StyleViolation {
+  /** Human label, e.g. "Experience 'Travelport' bullet 2". */
+  field: string;
+  /** data-edit-path of the offending field; "" for the cover letter. */
+  path: string;
+  rule: string;
+  excerpt: string;
+  advice: string;
+  /** True when the fix has exactly one right answer and can be applied for you. */
+  mechanical: boolean;
+  message: string;
+}
+
+/** A content save always succeeds; the style gate reports rather than refuses. */
+export interface ContentSaveResult extends ApplicationDetail {
+  style_violations: StyleViolation[];
 }
 
 export interface SettingsShape {

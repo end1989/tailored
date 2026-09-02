@@ -188,15 +188,33 @@ def _load_css(template: str) -> tuple[str, str]:
     return base_css, style_css
 
 
-def render_resume_html(resume: ResumeDoc, template: str) -> str:
-    """Render a ResumeDoc into a fully standalone HTML document."""
+@functools.lru_cache(maxsize=1)
+def _edit_css() -> str:
+    """Affordances for the editable preview. Never reaches an exported file."""
+    return (TEMPLATES_DIR / "edit_mode.css").read_text(encoding="utf-8")
+
+
+def render_resume_html(
+    resume: ResumeDoc, template: str, *, edit_mode: bool = False
+) -> str:
+    """Render a ResumeDoc into a fully standalone HTML document.
+
+    edit_mode is the on-screen preview only: it adds the data-edit-path /
+    data-node-path / data-delete-path vocabulary the frontend harvest reads,
+    marks Master Profile facts locked, and appends edit_mode.css. Every export
+    path leaves it off, and tests/test_inline_edit.py holds golden copies of
+    both body partials to prove the exported markup never moves.
+    """
     base_css, style_css = _load_css(template)
+    if edit_mode:
+        style_css = f"{style_css}\n\n{_edit_css()}"
     tpl = _env.get_template(f"{template}/template.html")
     return tpl.render(
         resume=resume,
         base_css=base_css,
         style_css=style_css,
         json_ld=_json_ld_payload(resume),
+        edit_mode=edit_mode,
     )
 
 

@@ -42,6 +42,11 @@ class Profile(SQLModel, table=True):
     name: str
     contact_json: str = "{}"
     master_profile_json: str = "{}"
+    # Free-text direction for the generated writing, e.g. "Plain and direct.
+    # No salesmanship. Short sentences." Takes precedence over the register
+    # inferred from the user's uploaded documents, because explicit
+    # instruction beats inference.
+    voice_notes: str = ""
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 

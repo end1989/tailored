@@ -94,7 +94,7 @@ profile contains `2020–2023` is never blocked by their own data.
 | Em dash `—` | The single most recognisable tell. Zero legitimate need; a comma, colon or full stop always works |
 | En dash `–` **not between two digits** | `2020–2023` inside a sentence is correct typography and passes; `work – life` does not |
 | Emoji and pictographs | No legitimate use in a resume or cover letter |
-| Curly quotes `“ ” ‘ ’` | Straight quotes are always acceptable and never a tell |
+| Curly quotes `“ ” ‘ ’` | Straight quotes are always acceptable and never a tell. Amendment 2026-08-17: a right single quotation mark between two word characters (Macy's, O'Brien as Word spells them) is allowed; it is carried from names and postings, and rejecting it would block truthful text on every generation for that user or employer. Curly double quotes and the left single quote are still rejected anywhere. |
 | Ellipsis character `…` | Use three periods or, better, finish the sentence |
 | Non-breaking space, zero-width characters | Invisible, machine-origin, and independently harmful — they corrupt ATS text extraction |
 
@@ -113,8 +113,13 @@ results-focused           wealth of experience
 seamlessly                testament to
 delve                     tapestry
 I am excited to           I was excited to
+I'm excited to
 in today's <...> world    in today's <...> landscape
 ```
+
+Amendment 2026-08-17: `I'm excited to` joins the two spelled-out forms, matched
+with either a straight or a curly apostrophe, because the contraction is the
+form the model reaches for most often.
 
 ### 4.4 What is deliberately *not* banned
 
@@ -206,6 +211,10 @@ screen with a placeholder showing that example.
 
 When present it takes precedence over the inferred register, because explicit
 instruction beats inference.
+
+Amendment 2026-08-17: voice_notes is also returned by the MCP
+`get_master_profile` tool and the workflow guide tells agents to follow it, so
+both generation paths receive it.
 
 ### 6.3 Baseline style rules
 

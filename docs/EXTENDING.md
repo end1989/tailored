@@ -11,7 +11,12 @@ resume design with three files and no code).
 lives in `backend/mcp_ops.py` as plain functions. Any MCP-capable agent that
 registers the server (see the README's MCP mode section) can drive the full
 workflow. The truthfulness guard runs server-side inside
-`save_tailored_resume`, so no connected agent can save fabricated history.
+`save_tailored_resume`, so no connected agent can save fabricated history. The
+voice-contract style check (`backend/app/services/style.py`, `check_style`)
+runs beside it and rejects the mechanical tells of machine writing with the
+same kind of correctable list; the ban list is a module constant, and the
+governing rule is to hard-fail only what has near-zero legitimate use in a
+resume.
 
 | Tool | What it does |
 |------|--------------|
@@ -26,7 +31,7 @@ workflow. The truthfulness guard runs server-side inside
 | `report_fetch_blocked(application_id, reason)` | Record that a posting could not be read, and why. Marks the job blocked, moves a queued application to `needs_paste` (out of the queue, with a paste box on the dashboard), and puts the reason on its timeline. |
 | `save_parsed_posting(application_id, parsed)` | Store the agent's `ParsedPosting` analysis (dashboard shows company/title from it). |
 | `save_research(application_id, findings)` | Optionally store agent-performed research as a `ResearchFindings` brief (tokens/cost 0). |
-| `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
+| `save_tailored_resume(application_id, resume, cover_letter_md, tailoring_notes?)` | The gated write: validates `ResumeDoc`, verifies truthfulness against the master profile and the prose against the voice contract (violations are returned verbatim for correction), snapshots a version, renders and exports; returns `ready` with the export files. |
 | `set_application_template(application_id, template)` | Re-render an application that already has a tailored resume in a different template. No model call, no cost, no new version; only presentation changes, and section order is not revisited. |
 | `get_application(application_id)` | Status / version / error_message / export files. |
 
