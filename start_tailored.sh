@@ -238,9 +238,12 @@ echo ""
 echo "Starting Tailored..."
 echo ""
 
-"$VENV_PY" run.py
-RC=$?
-if [ "$RC" -ne 0 ]; then
+# The script runs under set -e, so a plain "$VENV_PY" run.py followed by a
+# check of $? would never reach the check: the failed command exits the script
+# first. The || block is the failure handler and runs with $? still set to
+# run.py's exit code. Ctrl+C is not a failure: run.py catches it and returns 0.
+"$VENV_PY" run.py || {
+    RC=$?
     echo ""
     echo "ERROR: Tailored stopped with an error. Check the message above."
     echo ""
@@ -250,5 +253,5 @@ if [ "$RC" -ne 0 ]; then
     echo "  - Check Python 3.11+ is installed: python3 --version"
     echo "  - Try: PYTHONPATH= bash start_tailored.sh"
     echo ""
-    exit $RC
-fi
+    exit "$RC"
+}

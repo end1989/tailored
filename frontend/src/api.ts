@@ -190,9 +190,11 @@ export function updateContent(
 /**
  * The preview HTML with the inline editing vocabulary in it.
  *
- * Fetched as text and handed to the iframe as srcdoc rather than pointed at
- * with src: a srcdoc frame inherits this origin, so the parent can read its
- * contentDocument to harvest the edits back out.
+ * Fetched as text rather than pointed at with an iframe src. ApplicationScreen
+ * writes it into the frame's document (open, write, close), which keeps the
+ * frame same-origin so the parent can read its contentDocument and harvest the
+ * edits back out. srcdoc would do the same in a browser, but jsdom does not
+ * parse srcdoc, so the tests would not exercise the editing path.
  */
 export async function fetchEditPreview(id: number): Promise<string> {
   const res = await fetch(`${API}/applications/${id}/preview?edit=1`);
