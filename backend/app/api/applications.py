@@ -10,7 +10,7 @@ from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import func
 from sqlmodel import Session, select
 
@@ -224,7 +224,12 @@ class ContentUpdate(BaseModel):
 
 
 class ApplicationPatch(BaseModel):
+    # Unknown keys are rejected rather than dropped: a 200 on a field the API
+    # does not support is indistinguishable from a successful write.
+    model_config = ConfigDict(extra="forbid")
+
     stage: Optional[str] = None
+    applied_at: Optional[datetime] = None
 
 
 class TemplateChange(BaseModel):
@@ -350,6 +355,8 @@ def patch_application(
     """Update tracker fields. `stage` is the job-hunt funnel and is deliberately
     independent of `status`, which is the generation pipeline."""
     app_row, job = _get_app_and_job(session, application_id)
+    changed = False
+
     if body.stage is not None:
         if body.stage not in STAGES:
             raise HTTPException(
@@ -365,6 +372,17 @@ def patch_application(
         app_row.stage = body.stage
         if body.stage == "applied" and app_row.applied_at is None:
             app_row.applied_at = _utcnow()
+        changed = True
+
+    # An application is often logged days after it was sent, so the auto-stamp
+    # above records the wrong day. An explicit date overrides it, and applies
+    # regardless of stage: a row already at `interview` still has a submission
+    # date worth correcting. Explicit null clears a date that was never earned.
+    if "applied_at" in body.model_fields_set:
+        app_row.applied_at = _naive_utc(body.applied_at) if body.applied_at else None
+        changed = True
+
+    if changed:
         app_row.updated_at = _utcnow()
         session.add(app_row)
         session.commit()

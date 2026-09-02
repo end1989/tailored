@@ -189,6 +189,71 @@ def test_applied_at_is_stamped_once(client):
     assert again["applied_at"] == first["applied_at"]
 
 
+def test_applied_at_can_be_set_explicitly(client):
+    """An application logged days after it went out must carry the date it was
+    sent, not the date it was logged. The explicit value beats the auto-stamp."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    resp = client.patch(
+        f"/api/applications/{aid}",
+        json={"stage": "applied", "applied_at": "2026-08-28T18:00:00+00:00"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["applied_at"] == "2026-08-28T18:00:00+00:00"
+
+    detail = client.get(f"/api/applications/{aid}").json()
+    assert detail["applied_at"] == "2026-08-28T18:00:00+00:00"
+
+
+def test_applied_at_is_normalized_to_utc(client):
+    """Offsets are converted, not truncated: 12:00 MDT is 18:00 UTC."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    resp = client.patch(
+        f"/api/applications/{aid}", json={"applied_at": "2026-08-28T12:00:00-06:00"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["applied_at"] == "2026-08-28T18:00:00+00:00"
+
+
+def test_applied_at_can_be_set_without_touching_stage(client):
+    """A row already at `interview` still has a submission date to correct."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    client.patch(f"/api/applications/{aid}", json={"stage": "interview"})
+
+    resp = client.patch(
+        f"/api/applications/{aid}", json={"applied_at": "2026-08-18T18:00:00+00:00"}
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["stage"] == "interview"
+    assert resp.json()["applied_at"] == "2026-08-18T18:00:00+00:00"
+
+
+def test_applied_at_can_be_cleared(client):
+    """Explicit null clears a date stamped on a row that was never sent."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+    client.patch(f"/api/applications/{aid}", json={"stage": "applied"})
+    assert client.get(f"/api/applications/{aid}").json()["applied_at"] is not None
+
+    resp = client.patch(f"/api/applications/{aid}", json={"applied_at": None})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["applied_at"] is None
+
+
+def test_patch_rejects_unknown_fields(client):
+    """A silent 200 on a field the API does not support is indistinguishable
+    from a successful write."""
+    pid = make_profile(client)
+    aid = make_application(client, pid)
+
+    resp = client.patch(f"/api/applications/{aid}", json={"appliedat": "2026-08-28"})
+    assert resp.status_code == 422
+
+
 def test_stage_is_independent_of_status(client):
     """Regenerating a job you are interviewing for must not reset the funnel."""
     pid = make_profile(client)
