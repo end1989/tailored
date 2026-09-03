@@ -49,6 +49,34 @@ def make_bad_request_error(message: str) -> anthropic.BadRequestError:
     return anthropic.BadRequestError(message, response=response, body=body)
 
 
+
+def make_midstream_error(
+    message: str = "Invalid request data",
+) -> anthropic.APIStatusError:
+    """A transient error delivered *inside* a 200 stream body.
+
+    The Anthropic API accepts the request (HTTP 200, headers sent), then emits
+    an error event mid-stream. The SDK surfaces that as APIStatusError whose
+    status_code is 200, not 4xx/5xx - so neither the SDK's own max_retries nor
+    a status>=500 check covers it. Observed in production against
+    research_deep (request id req_011CefkPEaz21faB33ZSDP6t): identical
+    requests failed 1 in 6 times, always within ~13s, while successes ran
+    74-296s.
+    """
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    body = {
+        "type": "error",
+        "error": {
+            "details": None,
+            "type": "invalid_request_error",
+            "message": message,
+        },
+        "request_id": "req_test",
+    }
+    response = httpx.Response(200, request=request, json=body)
+    return anthropic.APIStatusError(str(body), response=response, body=body)
+
+
 def make_text_block(text: str) -> SimpleNamespace:
     return SimpleNamespace(type="text", text=text)
 
@@ -477,3 +505,95 @@ def test_non_oversized_bad_request_still_raises_claude_error():
     assert "parse_posting" in str(exc_info.value)
     assert len(stub_messages.calls) == 1
     assert "ParsedPosting" not in claude_module._OVERSIZED_SCHEMAS
+
+
+@pytest.fixture(autouse=True)
+def _no_retry_sleep(monkeypatch):
+    """Backoff is real seconds in production; zero it so the suite stays fast."""
+    monkeypatch.setattr(claude_module, "TRANSIENT_RETRY_BACKOFF_SECONDS", 0)
+
+
+def test_transient_midstream_error_is_retried():
+    """A 200-body error is transient: retry rather than killing the run.
+
+    This is the app-60 failure. Deep research spends real money on tool use
+    before the error lands, and the old behaviour threw all of it away and
+    parked the application in `error`.
+    """
+    ok = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block(json.dumps(VALID_POSTING))],
+        input_tokens=10,
+        output_tokens=5,
+    )
+    service, stub_messages = make_service([make_midstream_error(), ok])
+
+    parsed, _usage = service.structured(
+        task="research_deep",
+        system="sys",
+        user_content="u",
+        schema_model=ParsedPosting,
+    )
+
+    assert parsed == ParsedPosting(**VALID_POSTING)
+    assert len(stub_messages.calls) == 2
+    # The retry re-sends the original turn, not a grown conversation.
+    assert stub_messages.calls[1]["messages"] == [{"role": "user", "content": "u"}]
+
+
+def test_transient_midstream_error_gives_up_eventually():
+    """Retries are bounded - a persistent fault still surfaces as ClaudeError."""
+    service, stub_messages = make_service([make_midstream_error()] * 10)
+
+    with pytest.raises(ClaudeError) as exc_info:
+        service.structured(
+            task="research_deep",
+            system="sys",
+            user_content="u",
+            schema_model=ParsedPosting,
+        )
+
+    assert "research_deep" in str(exc_info.value)
+    assert len(stub_messages.calls) == 1 + claude_module.MAX_TRANSIENT_RETRIES
+
+
+def test_real_400_is_not_retried():
+    """A genuine client error is deterministic - retrying only wastes time."""
+    service, stub_messages = make_service(
+        [make_bad_request_error("messages.0: invalid role")]
+    )
+
+    with pytest.raises(ClaudeError):
+        service.structured(
+            task="parse_posting",
+            system="sys",
+            user_content="u",
+            schema_model=ParsedPosting,
+        )
+
+    assert len(stub_messages.calls) == 1
+
+
+def test_oversized_grammar_still_intercepted_not_retried():
+    """The oversized-grammar 400 keeps its existing fallback path."""
+    ok = make_message(
+        stop_reason="end_turn",
+        content=[make_text_block(json.dumps(VALID_POSTING))],
+        input_tokens=1,
+        output_tokens=1,
+    )
+    service, stub_messages = make_service(
+        [make_bad_request_error(GRAMMAR_TOO_LARGE_MESSAGE), ok]
+    )
+
+    parsed, _usage = service.structured(
+        task="parse_posting",
+        system="sys",
+        user_content="u",
+        schema_model=ParsedPosting,
+    )
+
+    assert parsed == ParsedPosting(**VALID_POSTING)
+    assert len(stub_messages.calls) == 2
+    # Second attempt drops output_config and embeds the schema in the prompt.
+    assert "output_config" not in stub_messages.calls[1]
