@@ -7,6 +7,7 @@ every call on .calls so tests can assert on prompts/tools.
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,27 @@ MODEL_ID = "claude-opus-4-8"
 COST_INPUT_PER_MTOK = 5.00
 COST_OUTPUT_PER_MTOK = 25.00
 MAX_PAUSE_TURN_CONTINUATIONS = 5
+
+# A mid-stream failure arrives *after* the API has returned HTTP 200 and begun
+# streaming, so the SDK's own max_retries never sees it and neither does a
+# status>=400 check. Measured against research_deep on 2026-09-02: the same
+# request failed 1 in 6 times with {"type":"invalid_request_error","message":
+# "Invalid request data"} at status 200, always within ~13s, while successes
+# ran 74-296s. Retrying costs one more request; not retrying throws away an
+# entire application run plus the tool-use tokens already billed.
+MAX_TRANSIENT_RETRIES = 2
+TRANSIENT_RETRY_BACKOFF_SECONDS = 1.0
+
+
+def _is_transient_status(exc) -> bool:
+    """True for errors worth re-sending an identical request for.
+
+    status 200 => the error came from inside the stream body, not the HTTP
+    layer. 5xx => server-side. 429 is deliberately excluded: the SDK already
+    retries it, and hammering a rate limit makes it worse.
+    """
+    status = getattr(exc, "status_code", None)
+    return status == 200 or (status is not None and status >= 500)
 
 
 def compute_cost(input_tokens: int, output_tokens: int) -> float:
@@ -175,6 +197,28 @@ class ClaudeService:
             ) from exc
         return model, UsageInfo(input_tokens=0, output_tokens=0, cost_usd=0.0)
 
+    def _stream_once(self, *, client, kwargs):
+        """One streamed request, retrying transient failures in place.
+
+        Retries re-send the identical request - the failed attempt produced no
+        message, so there is no usage to count and no turn to append. A
+        BadRequestError is re-raised untouched: 400s are deterministic, and the
+        caller still needs to intercept the oversized-grammar case.
+        """
+        import anthropic
+
+        for attempt in range(1 + MAX_TRANSIENT_RETRIES):
+            try:
+                with client.messages.stream(**kwargs) as stream:
+                    return stream.get_final_message()
+            except anthropic.BadRequestError:
+                raise
+            except anthropic.APIStatusError as exc:
+                if attempt == MAX_TRANSIENT_RETRIES or not _is_transient_status(exc):
+                    raise
+                time.sleep(TRANSIENT_RETRY_BACKOFF_SECONDS * (attempt + 1))
+        raise AssertionError("unreachable: loop either returns or raises")
+
     def _run_request_loop(
         self,
         *,
@@ -208,8 +252,7 @@ class ClaudeService:
             kwargs = dict(base_kwargs)
             kwargs["messages"] = messages
             try:
-                with client.messages.stream(**kwargs) as stream:
-                    message = stream.get_final_message()
+                message = self._stream_once(client=client, kwargs=kwargs)
             except anthropic.RateLimitError as exc:
                 raise ClaudeError(
                     f"[{task}] Anthropic rate limit reached - wait a minute "
