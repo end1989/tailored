@@ -212,6 +212,25 @@ async def add_document(
     return {"id": doc.id, "filename": doc.filename, "kind": doc.kind}
 
 
+@router.delete("/profiles/{profile_id}/documents/{doc_id}")
+def delete_document(
+    profile_id: int, doc_id: int, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    """Remove one uploaded document, e.g. a resume uploaded to the wrong person.
+
+    The built master profile is left as it is; the next Build reads only the
+    documents that remain. The voice sample changes at once: generation uses
+    the newest remaining document, or none (pipeline._voice_for).
+    """
+    _get_profile_or_404(session, profile_id)
+    doc = session.get(SourceDocument, doc_id)
+    if doc is None or doc.profile_id != profile_id:
+        raise HTTPException(status_code=404, detail="document not found")
+    session.delete(doc)
+    session.commit()
+    return {"deleted": doc_id}
+
+
 @router.post("/profiles/{profile_id}/build")
 def build_profile(
     profile_id: int, request: Request, session: Session = Depends(get_session)
