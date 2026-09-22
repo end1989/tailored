@@ -19,7 +19,6 @@ from ..db import get_session
 from ..models import (
     Application,
     ApplicationEvent,
-    ApplicationVersion,
     EVENT_KINDS,
     Job,
     Profile,
@@ -34,6 +33,7 @@ from ..models import (
 )
 from ..schemas import ResumeDoc
 from ..services import pipeline, render
+from ..services.removal import delete_application_rows
 from ..services.render import TEMPLATES
 from ..services.style import clean_mechanical, style_report
 
@@ -717,8 +717,9 @@ def delete_application(
     request: Request,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Permanent, unrecoverable delete: rows, versions, timeline, and the
-    exported files on disk. The reversible path is /archive."""
+    """Permanent, unrecoverable delete: the application, its job and research
+    briefs, versions, timeline, and the exported files on disk. The
+    reversible path is /archive."""
     app_row, _job = _get_app_and_job(session, application_id)
     if app_row.status in PROCESSING_STATUSES:
         raise HTTPException(
@@ -732,16 +733,7 @@ def delete_application(
     # rows vanish lets a future application inherit a deleted one's exports.
     _remove_export_dir(request.app.state.settings.data_dir, application_id)
 
-    for event in session.exec(
-        select(ApplicationEvent).where(ApplicationEvent.application_id == application_id)
-    ).all():
-        session.delete(event)
-    for version in session.exec(
-        select(ApplicationVersion)
-        .where(ApplicationVersion.application_id == application_id)
-    ).all():
-        session.delete(version)
-    session.delete(app_row)
+    delete_application_rows(session, app_row)
     session.commit()
 
     return {"deleted": application_id}
