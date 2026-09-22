@@ -121,6 +121,23 @@ describe("McpSetup", () => {
     );
   });
 
+  it("shows no prompt when the person list failed to load", async () => {
+    // With several people on the server, a "my profile" prompt would call
+    // get_master_profile() without an id and hit the ambiguity error.
+    renderWithPerson(<McpSetup />, {
+      people: [],
+      personId: null,
+      overrides: { error: "Failed to fetch" },
+    });
+    // The register command does not depend on the person, so it still shows.
+    expect(await screen.findByText(SETUP.mcp_command)).toBeInTheDocument();
+    expect(screen.queryByText("2. Ask your agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Or hand it a whole list")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy prompt" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy batch prompt" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/my profile/)).not.toBeInTheDocument();
+  });
+
   it("shows no prompt while the person list is still loading", async () => {
     renderWithPerson(<McpSetup />, { people: [], personId: null, loading: true });
     // The register command does not depend on the person, so it still shows.

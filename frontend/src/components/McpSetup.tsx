@@ -28,7 +28,7 @@ function batchPrompt(p: PromptPerson): string {
 }
 
 export default function McpSetup() {
-  const { person, loading } = usePerson();
+  const { person, loading, error } = usePerson();
   const [setup, setSetup] = useState<SetupShape | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -64,8 +64,10 @@ export default function McpSetup() {
         <pre className="code-block mono">{command}</pre>
         <CopyButton text={command} label="Copy command" />
       </div>
-      {/* The prompts name the person, so they wait for the person list. */}
-      {!loading && (
+      {/* The prompts name the person, so they wait for the person list. After
+          a failed load nobody is known, and a "my profile" prompt would fail
+          as soon as several people exist, so none is shown. */}
+      {!loading && !error && (
         <>
           <div className="field">
             <label className="field-label">2. Ask your agent</label>
