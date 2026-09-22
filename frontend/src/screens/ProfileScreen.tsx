@@ -278,6 +278,9 @@ function PersonEditor({ person }: { person: ProfileSummary }) {
   const [removeOpen, setRemoveOpen] = useState(false);
   const [confirmName, setConfirmName] = useState("");
   const [savedJobs, setSavedJobs] = useState<number | null>(null);
+  // Counts re-read when the removal panel opens; `detail` was loaded at
+  // mount and is not reloaded here, because it is the dirty-check baseline.
+  const [removalCounts, setRemovalCounts] = useState<{ documents: number; applications: number } | null>(null);
   const [removeProblem, setRemoveProblem] = useState<RemovalProblem | null>(null);
   const building = busy === "build";
   const saving = busy === "save-profile";
@@ -626,6 +629,17 @@ function PersonEditor({ person }: { person: ProfileSummary }) {
     setConfirmName("");
     setRemoveProblem(null);
     setSavedJobs(null);
+    setRemovalCounts(null);
+    // Agents may have queued jobs since the editor loaded; the panel states
+    // exactly what goes, so it reads the counts afresh.
+    getProfile(id)
+      .then((d) => {
+        if (!alive.current) return;
+        setRemovalCounts({ documents: d.documents.length, applications: d.application_count });
+      })
+      .catch(() => {
+        // Fall back to the counts loaded with the editor.
+      });
     // An agent working a queued job leaves no status trace, so the panel says
     // how many not-yet-built jobs go with this person, archived ones included.
     Promise.all([listApplications(id), listApplications(id, { archived: true })])
@@ -657,11 +671,13 @@ function PersonEditor({ person }: { person: ProfileSummary }) {
     }
   }
 
+  const removalDocuments = removalCounts?.documents ?? detail?.documents.length ?? 0;
+  const removalApplications = removalCounts?.applications ?? detail?.application_count ?? 0;
   const removalSummary =
     detail === null
       ? ""
-      : `This permanently deletes ${label}'s profile, ${count(detail.documents.length, "document")} ` +
-        `and ${count(detail.application_count, "application")} (archived included), ` +
+      : `This permanently deletes ${label}'s profile, ${count(removalDocuments, "document")} ` +
+        `and ${count(removalApplications, "application")} (archived included), ` +
         "plus their exported files. It cannot be undone.";
 
   return (

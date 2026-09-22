@@ -632,6 +632,28 @@ describe("ProfileScreen: Remove this person", () => {
     expect(api.listApplications).toHaveBeenCalledWith(1, { archived: true });
   });
 
+  it("re-reads the counts when the panel opens and leaves unsaved edits alone", async () => {
+    renderWithPerson(<ProfileScreen />);
+    const box = await screen.findByLabelText(/voice notes/i);
+    fireEvent.change(box, { target: { value: "Unsaved voice edit" } });
+    // An agent queued jobs and a document was added since the editor loaded.
+    vi.mocked(api.getProfile).mockResolvedValueOnce({
+      ...baseProfileDetail,
+      documents: [...baseProfileDetail.documents, { id: 6, filename: "cv.txt", kind: "txt" }],
+      application_count: 3,
+    });
+    await openRemovePanel();
+    expect(
+      await screen.findByText(
+        "This permanently deletes Jordan Rivera's profile, 2 documents and 3 applications " +
+          "(archived included), plus their exported files. It cannot be undone.",
+      ),
+    ).toBeInTheDocument();
+    expect(api.getProfile).toHaveBeenCalledTimes(2);
+    expect(screen.getByLabelText(/voice notes/i)).toHaveValue("Unsaved voice edit");
+    expect(screen.queryByText("cv.txt")).not.toBeInTheDocument();
+  });
+
   it("enables Remove only for the exact name, and Cancel closes the panel", async () => {
     renderWithPerson(<ProfileScreen />);
     await openRemovePanel();
