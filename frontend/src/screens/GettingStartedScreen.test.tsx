@@ -30,7 +30,14 @@ describe("GettingStartedScreen", () => {
       page_size: "Letter",
     });
     vi.mocked(api.listProfiles).mockResolvedValue([
-      { id: 1, name: "Me", contact, has_master_profile: true },
+      {
+        id: 1,
+        name: "Me",
+        contact,
+        has_master_profile: true,
+        created_at: "2026-01-01T00:00:00+00:00",
+        inbox_url: null,
+      },
     ]);
     renderScreen();
     expect(
@@ -64,7 +71,14 @@ describe("GettingStartedScreen", () => {
       page_size: "Letter",
     });
     vi.mocked(api.listProfiles).mockResolvedValue([
-      { id: 1, name: "Me", contact, has_master_profile: true },
+      {
+        id: 1,
+        name: "Me",
+        contact,
+        has_master_profile: true,
+        created_at: "2026-01-01T00:00:00+00:00",
+        inbox_url: null,
+      },
     ]);
     renderScreen();
     expect(
@@ -82,7 +96,14 @@ describe("GettingStartedScreen", () => {
       page_size: "Letter",
     });
     vi.mocked(api.listProfiles).mockResolvedValue([
-      { id: 1, name: "Me", contact, has_master_profile: true },
+      {
+        id: 1,
+        name: "Me",
+        contact,
+        has_master_profile: true,
+        created_at: "2026-01-01T00:00:00+00:00",
+        inbox_url: null,
+      },
     ]);
     renderScreen();
     await screen.findByText("You're ready to tailor your first job");

@@ -28,6 +28,9 @@ const { baseProfileDetail } = vi.hoisted(() => {
     },
     voice_notes: "",
     documents: [{ id: 5, filename: "resume.pdf", kind: "pdf" }],
+    created_at: "2026-01-01T00:00:00+00:00",
+    inbox_url: null,
+    application_count: 0,
   };
   return { baseProfileDetail };
 });

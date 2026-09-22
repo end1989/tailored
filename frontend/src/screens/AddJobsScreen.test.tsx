@@ -23,7 +23,14 @@ function renderScreen() {
 describe("AddJobsScreen", () => {
   beforeEach(() => {
     vi.mocked(api.listProfiles).mockResolvedValue([
-      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
+      {
+        id: 1,
+        name: "Jordan Rivera",
+        contact,
+        has_master_profile: true,
+        created_at: "2026-01-01T00:00:00+00:00",
+        inbox_url: null,
+      },
     ]);
     vi.mocked(api.createApplications).mockResolvedValue([]);
     vi.mocked(api.listTemplates).mockResolvedValue([

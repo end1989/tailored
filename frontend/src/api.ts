@@ -90,6 +90,28 @@ export function buildProfile(id: number): Promise<ProfileDetail> {
   return request<ProfileDetail>(`/profiles/${id}/build`, { method: "POST" });
 }
 
+export function deleteDocument(profileId: number, docId: number): Promise<{ deleted: number }> {
+  return request<{ deleted: number }>(`/profiles/${profileId}/documents/${docId}`, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * Removes a person and everything of theirs. The server refuses (422) unless
+ * confirmName is exactly the person's name, and refuses (409) while any of
+ * their applications is actively generating or an export file is locked; the
+ * 409 error message carries the JSON body, `{"detail":{"message","blocking"}}`.
+ */
+export function deleteProfile(
+  profileId: number,
+  confirmName: string
+): Promise<{ deleted: number; applications: number; documents: number }> {
+  return request<{ deleted: number; applications: number; documents: number }>(
+    `/profiles/${profileId}?confirm_name=${encodeURIComponent(confirmName)}`,
+    { method: "DELETE" }
+  );
+}
+
 // ---- applications ----
 
 export function createApplications(
@@ -215,16 +237,25 @@ export async function retryApplication(id: number): Promise<ApplicationDetail> {
 
 // ---- settings ----
 
-export function getSettings(): Promise<SettingsShape> {
-  return request<SettingsShape>("/settings");
+// With a profileId these read and write that person's settings; without one,
+// the app-wide defaults in data/settings.json, exactly as before.
+function settingsPath(profileId?: number): string {
+  return profileId === undefined ? "/settings" : `/settings?profile_id=${profileId}`;
 }
 
-export function updateSettings(patch: {
-  default_template?: TemplateName;
-  default_depth?: Depth;
-  page_size?: PageSize;
-}): Promise<SettingsShape> {
-  return request<SettingsShape>("/settings", jsonInit("PUT", patch));
+export function getSettings(profileId?: number): Promise<SettingsShape> {
+  return request<SettingsShape>(settingsPath(profileId));
+}
+
+export function updateSettings(
+  patch: {
+    default_template?: TemplateName;
+    default_depth?: Depth;
+    page_size?: PageSize;
+  },
+  profileId?: number
+): Promise<SettingsShape> {
+  return request<SettingsShape>(settingsPath(profileId), jsonInit("PUT", patch));
 }
 
 // ---- setup ----
