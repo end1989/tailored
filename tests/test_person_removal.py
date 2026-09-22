@@ -353,3 +353,63 @@ def test_a_leftover_staging_directory_is_cleared_first(client, engine, fake_sett
     assert resp.status_code == 200, resp.text
     assert not _staging(fake_settings.data_dir, ada).exists()
     assert not (Path(fake_settings.data_dir) / "exports" / str(app_id)).exists()
+
+
+# --- rollback ----------------------------------------------------------
+
+
+def test_a_row_delete_failure_rolls_back_and_moves_files_back(
+        engine, fake_settings, monkeypatch):
+    ada = _person(engine, "Ada")
+    first = _application(engine, ada)
+    second = _application(engine, ada)
+    first_dir = _export_dir(fake_settings.data_dir, first)
+    second_dir = _export_dir(fake_settings.data_dir, second)
+    before = _snapshot(engine, ada)
+
+    real_delete = removal.delete_application_rows
+    calls = {"n": 0}
+
+    def flaky(session, app_row):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_delete(session, app_row)
+
+    monkeypatch.setattr(removal, "delete_application_rows", flaky)
+
+    with Session(engine) as s:
+        profile = s.get(Profile, ada)
+        with pytest.raises(RuntimeError, match="boom"):
+            removal.remove_person(s, fake_settings.data_dir, profile)
+
+    assert _surviving(engine, before) == before
+    assert (first_dir / "resume.pdf").is_file()
+    assert (second_dir / "resume.pdf").is_file()
+    assert not _staging(fake_settings.data_dir, ada).exists()
+
+
+def test_a_commit_failure_rolls_back_and_moves_files_back(
+        engine, fake_settings, monkeypatch):
+    ada = _person(engine, "Ada")
+    first = _application(engine, ada)
+    second = _application(engine, ada)
+    first_dir = _export_dir(fake_settings.data_dir, first)
+    second_dir = _export_dir(fake_settings.data_dir, second)
+    before = _snapshot(engine, ada)
+
+    with Session(engine) as s:
+        profile = s.get(Profile, ada)
+
+        def failing_commit():
+            raise RuntimeError("commit boom")
+
+        monkeypatch.setattr(s, "commit", failing_commit)
+
+        with pytest.raises(RuntimeError, match="commit boom"):
+            removal.remove_person(s, fake_settings.data_dir, profile)
+
+    assert _surviving(engine, before) == before
+    assert (first_dir / "resume.pdf").is_file()
+    assert (second_dir / "resume.pdf").is_file()
+    assert not _staging(fake_settings.data_dir, ada).exists()
