@@ -1,11 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import App from "../App";
 import ProfileScreen from "./ProfileScreen";
 import * as api from "../api";
 import { PersonProvider } from "../person";
 import { deferred, makePerson, renderWithPerson } from "../test-utils";
-import type { ProfileDetail } from "../types";
+import type { AppStatus, ApplicationSummary, ProfileDetail } from "../types";
 
 vi.mock("../api", () => ({
   listProfiles: vi.fn(),
@@ -15,6 +15,8 @@ vi.mock("../api", () => ({
   uploadDocument: vi.fn(),
   buildProfile: vi.fn(),
   deleteDocument: vi.fn(),
+  deleteProfile: vi.fn(),
+  listApplications: vi.fn(),
 }));
 
 const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
@@ -569,5 +571,216 @@ describe("ProfileScreen", () => {
       name: "Jordan Rivera",
       contact: { ...contact, email: gmail },
     });
+  });
+});
+
+type Removed = { deleted: number; applications: number; documents: number };
+
+function appRow(id: number, status: AppStatus, archived: boolean): ApplicationSummary {
+  return {
+    id,
+    profile_id: 1,
+    status,
+    version: 1,
+    template: "slate",
+    depth: "standard",
+    url: `https://jobs.example.com/${id}`,
+    company: null,
+    title: null,
+    cost_usd: 0,
+    created_at: "2026-09-01T00:00:00+00:00",
+    stage: "saved",
+    applied_at: null,
+    archived_at: archived ? "2026-09-02T00:00:00+00:00" : null,
+    last_activity_at: "2026-09-01T00:00:00+00:00",
+  };
+}
+
+async function openRemovePanel() {
+  fireEvent.click(await screen.findByRole("button", { name: "Remove this person" }));
+}
+
+function typeConfirmName(value: string) {
+  fireEvent.change(screen.getByLabelText("Type Jordan Rivera to confirm"), { target: { value } });
+}
+
+describe("ProfileScreen: Remove this person", () => {
+  beforeEach(() => {
+    vi.mocked(api.deleteProfile).mockReset();
+    vi.mocked(api.listApplications).mockReset().mockResolvedValue([]);
+  });
+
+  it("states what will be deleted, with counts from the server", async () => {
+    vi.mocked(api.getProfile).mockResolvedValue({ ...baseProfileDetail, application_count: 4 });
+    vi.mocked(api.listApplications).mockImplementation(async (_profileId, opts) =>
+      opts?.archived
+        ? [appRow(9, "not_started", true)]
+        : [appRow(7, "not_started", false), appRow(8, "ready", false)],
+    );
+    renderWithPerson(<ProfileScreen />);
+    await openRemovePanel();
+    expect(
+      screen.getByText(
+        "This permanently deletes Jordan Rivera's profile, 1 document and 4 applications " +
+          "(archived included), plus their exported files. It cannot be undone.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText("2 saved jobs, including any an agent is working on, will be removed."),
+    ).toBeInTheDocument();
+    expect(api.listApplications).toHaveBeenCalledWith(1);
+    expect(api.listApplications).toHaveBeenCalledWith(1, { archived: true });
+  });
+
+  it("enables Remove only for the exact name, and Cancel closes the panel", async () => {
+    renderWithPerson(<ProfileScreen />);
+    await openRemovePanel();
+    await waitFor(() => expect(api.listApplications).toHaveBeenCalledTimes(2));
+    await act(async () => {});
+    // No not-built jobs, so no warning about agent work.
+    expect(screen.queryByText(/saved job/)).not.toBeInTheDocument();
+
+    const remove = screen.getByRole("button", { name: "Remove Jordan Rivera" });
+    expect(remove).toBeDisabled();
+    for (const attempt of ["Jordan", "jordan rivera", "Jordan Rivera "]) {
+      typeConfirmName(attempt);
+      expect(remove).toBeDisabled();
+    }
+    typeConfirmName("Jordan Rivera");
+    expect(remove).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByLabelText("Type Jordan Rivera to confirm")).not.toBeInTheDocument();
+    expect(api.deleteProfile).not.toHaveBeenCalled();
+  });
+
+  it("removes the person, clearing the guard before refreshing people", async () => {
+    const calls: string[] = [];
+    const setSwitchGuard = vi.fn((message: string | null) => {
+      calls.push(`guard:${message}`);
+    });
+    const refreshPeople = vi.fn(async (selectId?: number) => {
+      calls.push(`refresh:${selectId ?? ""}`);
+    });
+    let finish: (r: Removed) => void = () => {};
+    vi.mocked(api.deleteProfile).mockReturnValueOnce(
+      new Promise<Removed>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderWithPerson(<ProfileScreen />, { overrides: { setSwitchGuard, refreshPeople } });
+    await openRemovePanel();
+    typeConfirmName("Jordan Rivera");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Jordan Rivera" }));
+
+    expect(api.deleteProfile).toHaveBeenCalledWith(1, "Jordan Rivera");
+    expect(setSwitchGuard).toHaveBeenLastCalledWith("Jordan Rivera's profile is removing.");
+    expect(screen.getByRole("button", { name: "Removing..." })).toBeDisabled();
+
+    await act(async () => {
+      finish({ deleted: 1, applications: 0, documents: 1 });
+    });
+    await waitFor(() => expect(refreshPeople).toHaveBeenCalledTimes(1));
+    expect(refreshPeople).toHaveBeenCalledWith();
+    expect(calls[calls.indexOf("refresh:") - 1]).toBe("guard:null");
+  });
+
+  it("a 409 lists the blocking applications as links and removes nothing", async () => {
+    const refreshPeople = vi.fn().mockResolvedValue(undefined);
+    const body = {
+      detail: {
+        message: "Jordan Rivera has work in progress.",
+        blocking: [
+          { id: 3, label: "Acme", status: "fetching" },
+          { id: 4, label: "https://jobs.example.com/4", status: "tailoring" },
+        ],
+      },
+    };
+    // api.ts's request() puts a non-string detail into the message as the whole body.
+    vi.mocked(api.deleteProfile).mockRejectedValueOnce(
+      new Error(`API 409: ${JSON.stringify(body)}`),
+    );
+    renderWithPerson(<ProfileScreen />, { overrides: { refreshPeople } });
+    await openRemovePanel();
+    typeConfirmName("Jordan Rivera");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Jordan Rivera" }));
+
+    const alert = await screen.findByRole("alert");
+    expect(within(alert).getByText("Jordan Rivera has work in progress.")).toBeInTheDocument();
+    expect(within(alert).getByRole("link", { name: "Acme" })).toHaveAttribute(
+      "href",
+      "/applications/3",
+    );
+    expect(within(alert).getByRole("link", { name: "https://jobs.example.com/4" })).toHaveAttribute(
+      "href",
+      "/applications/4",
+    );
+    expect(within(alert).getByText("(Fetching posting)")).toBeInTheDocument();
+    expect(within(alert).getByText("(Writing)")).toBeInTheDocument();
+    expect(refreshPeople).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Remove Jordan Rivera" })).toBeEnabled();
+  });
+
+  it("shows any other failure as it came back", async () => {
+    vi.mocked(api.deleteProfile).mockRejectedValueOnce(
+      new Error("API 422: confirm_name must equal the person's name"),
+    );
+    renderWithPerson(<ProfileScreen />);
+    await openRemovePanel();
+    typeConfirmName("Jordan Rivera");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Jordan Rivera" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "API 422: confirm_name must equal the person's name",
+    );
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("a removal that finishes after a switch leaves the new person's guard alone", async () => {
+    vi.mocked(api.getProfile).mockImplementation(async (id: number) =>
+      id === 2 ? samDetail : baseProfileDetail,
+    );
+    const remove = deferred<Removed>();
+    vi.mocked(api.deleteProfile).mockReturnValueOnce(remove.promise);
+    const { switchTo, ctx } = renderWithPerson(<ProfileScreen />, { people: [JORDAN, SAM] });
+    await openRemovePanel();
+    typeConfirmName("Jordan Rivera");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Jordan Rivera" }));
+
+    // The user confirmed the switch the guard asked about.
+    act(() => switchTo(2));
+    expect(await screen.findByDisplayValue("Sam's notes")).toBeInTheDocument();
+    vi.mocked(ctx.setSwitchGuard).mockClear();
+
+    await act(async () => {
+      remove.resolve({ deleted: 1, applications: 0, documents: 1 });
+    });
+    // Jordan is gone, so the list is refreshed; Sam's editor owns the guard now.
+    await waitFor(() => expect(ctx.refreshPeople).toHaveBeenCalledWith());
+    expect(ctx.setSwitchGuard).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Remove this person" })).toBeEnabled();
+  });
+
+  it("a 409 that comes back after a switch shows nothing on the new person's screen", async () => {
+    vi.mocked(api.getProfile).mockImplementation(async (id: number) =>
+      id === 2 ? samDetail : baseProfileDetail,
+    );
+    const remove = deferred<Removed>();
+    vi.mocked(api.deleteProfile).mockReturnValueOnce(remove.promise);
+    const { switchTo, ctx } = renderWithPerson(<ProfileScreen />, { people: [JORDAN, SAM] });
+    await openRemovePanel();
+    typeConfirmName("Jordan Rivera");
+    fireEvent.click(screen.getByRole("button", { name: "Remove Jordan Rivera" }));
+
+    act(() => switchTo(2));
+    expect(await screen.findByDisplayValue("Sam's notes")).toBeInTheDocument();
+
+    const body = { detail: { message: "Jordan Rivera has work in progress.", blocking: [] } };
+    await act(async () => {
+      remove.reject(new Error(`API 409: ${JSON.stringify(body)}`));
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/to confirm$/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove this person" })).toBeEnabled();
+    expect(ctx.refreshPeople).not.toHaveBeenCalled();
   });
 });

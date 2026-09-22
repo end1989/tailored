@@ -1,16 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   buildProfile,
   createProfile,
   deleteDocument,
+  deleteProfile,
   getProfile,
+  listApplications,
   updateProfile,
   uploadDocument,
 } from "../api";
 import { usePerson } from "../person";
+import { STATUS_LABELS } from "../statuses";
 import type {
+  AppStatus,
   Contact,
   MasterProfile,
   MPCertification,
@@ -62,7 +66,13 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 /** Every request the editor makes that a person switch would cut short. */
-type Action = "build" | "save-profile" | "save-identity" | "upload" | "remove-document";
+type Action =
+  | "build"
+  | "save-profile"
+  | "save-identity"
+  | "upload"
+  | "remove-document"
+  | "remove-person";
 
 /** How the switch guard words each one: "{label}'s profile is building." */
 const BUSY_WORD: Record<Action, string> = {
@@ -71,7 +81,54 @@ const BUSY_WORD: Record<Action, string> = {
   "save-identity": "saving",
   upload: "uploading",
   "remove-document": "removing",
+  "remove-person": "removing",
 };
+
+/** "1 document", "4 applications". */
+function count(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/** The Dashboard's words for a status; a locked export file reads "locked". */
+function statusLabel(status: string): string {
+  return Object.prototype.hasOwnProperty.call(STATUS_LABELS, status)
+    ? STATUS_LABELS[status as AppStatus]
+    : status;
+}
+
+/** One application, or one locked export file, standing in the way of a removal. */
+interface RemovalBlocking {
+  id: number;
+  label: string;
+  status: string;
+}
+
+interface RemovalProblem {
+  message: string;
+  blocking: RemovalBlocking[];
+}
+
+/**
+ * Reads a failed DELETE /profiles/{id}. A 409's detail is an object
+ * ({message, blocking}), and api.ts's request() puts a non-string detail into
+ * the Error message as the whole JSON body ("API 409: {"detail": {...}}"), so
+ * the blocking list is recovered from there. Anything else is shown as is.
+ */
+function removalProblem(err: unknown): RemovalProblem {
+  const text = err instanceof Error ? err.message : String(err);
+  const match = /^API 409: ([\s\S]*)$/.exec(text);
+  if (match) {
+    try {
+      const detail = JSON.parse(match[1])?.detail;
+      if (detail && typeof detail.message === "string" && Array.isArray(detail.blocking)) {
+        return { message: detail.message, blocking: detail.blocking as RemovalBlocking[] };
+      }
+    } catch {
+      // Not the structured body; fall through to the raw message.
+    }
+  }
+  return { message: String(err), blocking: [] };
+}
 
 /** Editor fields that take the server's value when a write comes back. */
 type Part = "mp" | "voice" | "identity";
@@ -218,6 +275,10 @@ function PersonEditor({ person }: { person: ProfileSummary }) {
   const [busy, setBusy] = useState<Action | null>(null);
   const [confirmDocId, setConfirmDocId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [confirmName, setConfirmName] = useState("");
+  const [savedJobs, setSavedJobs] = useState<number | null>(null);
+  const [removeProblem, setRemoveProblem] = useState<RemovalProblem | null>(null);
   const building = busy === "build";
   const saving = busy === "save-profile";
 
@@ -558,6 +619,50 @@ function PersonEditor({ person }: { person: ProfileSummary }) {
       (d) => applyResponse(d, prev, ["identity"])
     );
   }
+
+  function openRemovePanel() {
+    const id = person.id;
+    setRemoveOpen(true);
+    setConfirmName("");
+    setRemoveProblem(null);
+    setSavedJobs(null);
+    // An agent working a queued job leaves no status trace, so the panel says
+    // how many not-yet-built jobs go with this person, archived ones included.
+    Promise.all([listApplications(id), listApplications(id, { archived: true })])
+      .then(([active, archived]) => {
+        if (!alive.current) return;
+        setSavedJobs([...active, ...archived].filter((a) => a.status === "not_started").length);
+      })
+      .catch(() => {
+        // The count is a warning, not a precondition: without it the panel
+        // still states everything the server will delete.
+      });
+  }
+
+  async function handleRemovePerson() {
+    if (confirmName !== person.name) return;
+    const id = person.id;
+    setBusy("remove-person");
+    setRemoveProblem(null);
+    try {
+      await deleteProfile(id, confirmName);
+      // This person is gone. Clear the guard before refreshPeople(), which
+      // falls back to the first remaining person, or to the create form.
+      if (alive.current) setSwitchGuard(null);
+      await refreshPeople();
+    } catch (err) {
+      if (alive.current) setRemoveProblem(removalProblem(err));
+    } finally {
+      if (alive.current) setBusy(null);
+    }
+  }
+
+  const removalSummary =
+    detail === null
+      ? ""
+      : `This permanently deletes ${label}'s profile, ${count(detail.documents.length, "document")} ` +
+        `and ${count(detail.application_count, "application")} (archived included), ` +
+        "plus their exported files. It cannot be undone.";
 
   return (
     <div>
@@ -943,6 +1048,67 @@ function PersonEditor({ person }: { person: ProfileSummary }) {
                 {saving ? "Saving..." : "Save master profile"}
               </button>
             </div>
+          </div>
+
+          <div className="card">
+            <div className="card-title">Remove this person</div>
+            {!removeOpen ? (
+              <button className="btn btn-danger" onClick={openRemovePanel} disabled={busy !== null}>
+                Remove this person
+              </button>
+            ) : (
+              <>
+                <p>{removalSummary}</p>
+                {savedJobs !== null && savedJobs > 0 && (
+                  <p>
+                    {`${count(savedJobs, "saved job")}, including any an agent is working on, will be removed.`}
+                  </p>
+                )}
+                <div className="field">
+                  <label className="field-label" htmlFor="confirm-remove-name">
+                    Type {person.name} to confirm
+                  </label>
+                  <input
+                    id="confirm-remove-name"
+                    className="input"
+                    autoComplete="off"
+                    value={confirmName}
+                    onChange={(e) => setConfirmName(e.target.value)}
+                  />
+                </div>
+                {removeProblem && (
+                  <div className="alert alert-error" role="alert">
+                    <p>{removeProblem.message}</p>
+                    {removeProblem.blocking.length > 0 && (
+                      <ul>
+                        {removeProblem.blocking.map((b) => (
+                          <li key={`${b.id}-${b.label}`}>
+                            <Link to={`/applications/${b.id}`}>{b.label}</Link>{" "}
+                            <span className="muted">({statusLabel(b.status)})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+                <div className="row">
+                  <button
+                    className="btn btn-danger"
+                    onClick={handleRemovePerson}
+                    disabled={busy !== null || confirmName !== person.name}
+                  >
+                    {busy === "remove-person" ? "Removing..." : `Remove ${label}`}
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => setRemoveOpen(false)}
+                    disabled={busy === "remove-person"}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </>
       )}
