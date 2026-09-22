@@ -253,7 +253,25 @@ a { color: var(--accent); }
   font-size: var(--fs-sm); color: var(--muted); text-decoration: none;
 }
 .muted-link:hover { color: var(--accent); }
-.nav-theme-toggle { margin-left: auto; }
+/* ---- nav: person picker + theme toggle, kept together at the right ---- */
+.nav-end { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
+.person-picker { position: relative; display: flex; align-items: center; gap: 0.75rem; }
+.person-select { width: auto; max-width: 16rem; padding: 0.3rem 0.5rem; }
+/* The held-switch prompt and the notice hang under the picker instead of
+   pushing the nav taller. */
+.person-popovers {
+  position: absolute; top: calc(100% + 0.5rem); right: 0; z-index: 40;
+  display: flex; flex-direction: column; gap: 0.5rem;
+  width: max-content; max-width: min(22rem, calc(100vw - 2rem));
+}
+.person-popover {
+  display: flex; align-items: center; gap: 0.5rem;
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border); border-left: 4px solid var(--accent);
+  border-radius: var(--radius); box-shadow: 0 4px 12px var(--shadow-color);
+  padding: 0.6rem 0.75rem; font-size: var(--fs-sm);
+}
+.person-popover-message { flex: 1 1 auto; min-width: 0; }
 .template-grid {
   display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.25rem;
 }
@@ -298,6 +316,11 @@ a { color: var(--accent); }
 
 @media (max-width: 640px) {
   .nav-inner { flex-wrap: wrap; gap: 0.75rem; }
+  .nav-end, .person-picker { flex-wrap: wrap; }
+  .person-select { max-width: 11rem; }
+  /* On a phone the prompt joins the flow on its own line, full width,
+     rather than hanging off an edge of the screen. */
+  .person-popovers { position: static; flex-basis: 100%; width: auto; max-width: none; }
   .row { flex-direction: column; align-items: stretch; }
 }
 

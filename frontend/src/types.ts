@@ -235,6 +235,10 @@ export interface ProfileSummary {
   name: string;
   contact: Contact;
   has_master_profile: boolean;
+  /** ISO timestamp. With the id it identifies a person: SQLite reuses a removed person's id. */
+  created_at: string;
+  /** Webmail link for the contact email's provider; null when the provider is unknown. */
+  inbox_url: string | null;
 }
 
 export interface ProfileDetail {
@@ -244,6 +248,10 @@ export interface ProfileDetail {
   master_profile: MasterProfile;
   voice_notes: string;
   documents: DocumentInfo[];
+  created_at: string;
+  inbox_url: string | null;
+  /** Every application of this person, archived included. */
+  application_count: number;
   usage?: UsageInfo;
 }
 

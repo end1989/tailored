@@ -18,7 +18,6 @@ from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from .app.api.templates import TEMPLATE_META
-from .app.config import load_user_settings
 from .app.models import (
     Application,
     ApplicationEvent,
@@ -26,6 +25,7 @@ from .app.models import (
     Job,
     Profile,
     ResearchBrief,
+    _utcnow,
     get_contact,
     get_master_profile as _master_profile_of,
     get_parsed,
@@ -36,6 +36,8 @@ from .app.models import (
 from .app.schemas import MPProject, ParsedPosting, ResearchFindings, ResumeDoc, SkillGroup
 from .app.services import render
 from .app.services.claude import strict_schema
+from .app.services.inbox import inbox_url
+from .app.services.person_settings import settings_for
 from .app.services.pipeline import _mark_error, _set_status
 from .app.services.style import check_style
 from .app.services.tailor import verify_truthfulness
@@ -213,6 +215,17 @@ WRITING VOICE (enforced server-side, like truthfulness):
 - save_tailored_resume rejects violations and returns the list, exactly as it
   does for truthfulness. Follow these the first time and you will not see it.
 
+CANDIDATE'S INBOX (only when the user asks you to work in their mail):
+- get_master_profile returns inbox_url when the candidate's email is on a
+  provider Tailored recognises. Open that URL in the user's own browser. Never
+  pick an account by position (such as /mail/u/1/).
+- Before reading anything, confirm the mailbox address shown on the page is
+  the candidate's contact email. If it differs, stop and say which account is
+  open.
+- A sign-in page means that account is not signed in in this browser: say so
+  and stop. Never sign in on the user's behalf.
+- If inbox_url is null, open no inbox. Ask the user which one to use.
+
 JSON SHAPES (strict: every object level carries "additionalProperties": false -
 send exactly these fields, no extras):
 
@@ -252,10 +265,12 @@ def list_profiles(engine) -> list[dict]:
 
 
 def get_master_profile(engine, profile_id: int | None = None) -> dict:
-    """Contact + master profile for one profile.
+    """Contact + master profile for one profile, plus the derived inbox_url.
 
     profile_id None resolves to the sole profile; ambiguous (multiple profiles)
-    raises with a listing so the agent can pick one.
+    raises with a listing so the agent can pick one. inbox_url is the
+    candidate's webmail link from services/inbox.py, or None when the contact
+    email's provider is not one Tailored recognises.
     """
     with Session(engine) as session:
         if profile_id is None:
@@ -279,12 +294,16 @@ def get_master_profile(engine, profile_id: int | None = None) -> dict:
                     f"Profile {profile_id} not found. "
                     "Call list_profiles to see what exists."
                 )
+        contact = get_contact(profile)
         return {
             "profile_id": profile.id,
             "name": profile.name,
-            "contact": get_contact(profile).model_dump(),
+            "contact": contact.model_dump(),
             "voice_notes": profile.voice_notes,
             "master_profile": _master_profile_of(profile).model_dump(),
+            # Derived on every call, never stored, so it follows the contact
+            # email when the user edits it on the Profiles screen.
+            "inbox_url": inbox_url(contact.email),
         }
 
 
@@ -658,7 +677,8 @@ def set_application_template(
         profile = session.get(Profile, app.profile_id)
         contact = get_contact(profile)
 
-        user_settings = load_user_settings(Path(data_dir))
+        # The owner's page size, whoever is picked in any browser (spec 5.2).
+        user_settings = settings_for(Path(data_dir), profile)
         # Render before committing anything: a row claiming a template its
         # exports were never rendered in would hand the agent the old PDF
         # under the new label.
@@ -673,6 +693,7 @@ def set_application_template(
         )
         app.template = template
         app.export_dir = str(export_dir)
+        app.updated_at = _utcnow()
         session.add(app)
         session.commit()
         session.refresh(app)
@@ -729,7 +750,9 @@ def save_parsed_posting(engine, application_id: int, parsed: dict) -> dict:
         app, job = _get_app_and_job(session, application_id)
         _reject_if_pipeline_active(app, application_id)
         set_parsed(job, posting)
+        app.updated_at = _utcnow()  # a live agent run, not an abandoned row
         session.add(job)
+        session.add(app)
         session.commit()
         return {
             "application_id": application_id,
@@ -758,7 +781,9 @@ def save_research(engine, application_id: int, findings: dict) -> dict:
             output_tokens=0,
             cost_usd=0.0,
         )
+        app.updated_at = _utcnow()  # a live agent run, not an abandoned row
         session.add(brief)
+        session.add(app)
         session.commit()
         session.refresh(brief)
         return {
@@ -840,7 +865,8 @@ def save_tailored_resume(
             session.commit()
 
             _set_status(session, app, "rendering")
-            user_settings = load_user_settings(Path(data_dir))
+            # The owner's page size, whoever is picked in any browser (spec 5.2).
+            user_settings = settings_for(Path(data_dir), profile)
             export_dir = render.export_application(
                 app.id, resume_doc, cover_letter_md, contact,
                 app.template, Path(data_dir),

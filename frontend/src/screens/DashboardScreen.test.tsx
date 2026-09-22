@@ -1,14 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import DashboardScreen from "./DashboardScreen";
 import * as api from "../api";
+import { makePerson, renderWithPerson } from "../test-utils";
+import type { ApplicationDetail, ApplicationSummary } from "../types";
 
+// listProfiles is deliberately absent. The screen reads the person from
+// PersonContext; vitest throws on any access to an export this factory does
+// not define, so a screen that fetched its own profile list would fail here.
 vi.mock("../api", () => {
-  const contact = { name: "Jordan Rivera", email: "e@example.com", phone: null, location: null, links: [] };
   return {
-    listProfiles: vi.fn().mockResolvedValue([
-      { id: 1, name: "Jordan Rivera", contact, has_master_profile: true },
-    ]),
     listApplications: vi.fn().mockResolvedValue([
       {
         id: 10,
@@ -74,6 +74,38 @@ const BASE_APP = {
   last_activity_at: "2026-07-22T10:30:00+00:00",
 };
 
+const JORDAN = makePerson();
+const SAM = makePerson({
+  id: 2,
+  name: "Sam Lee",
+  contact: { name: "Sam Lee", email: "sam@example.com", links: [] },
+  created_at: "2026-02-01T00:00:00+00:00",
+});
+
+// One row per person, both on the default "To apply" tab (stage drafted) and
+// both terminal (status ready), so no poll timer is left running.
+const JORDAN_ROW: ApplicationSummary = {
+  ...BASE_APP,
+  id: 10,
+  profile_id: 1,
+  company: "JordanCo",
+  stage: "drafted",
+  applied_at: null,
+};
+const SAM_ROW: ApplicationSummary = {
+  ...BASE_APP,
+  id: 20,
+  profile_id: 2,
+  company: "SamCo",
+  stage: "drafted",
+  applied_at: null,
+};
+
+beforeEach(() => {
+  // Call history only; the implementations set with mockResolvedValue stay.
+  vi.clearAllMocks();
+});
+
 /**
  * Renders on the All tab, where every fixture row is visible whatever its
  * stage. The screen opens on "To apply", which deliberately hides anything
@@ -81,7 +113,7 @@ const BASE_APP = {
  * say "All" explicitly rather than depending on the default.
  */
 async function renderOnAllTab() {
-  render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+  renderWithPerson(<DashboardScreen />);
   fireEvent.click(await screen.findByRole("button", { name: /^all/i }));
 }
 
@@ -108,7 +140,7 @@ describe("DashboardScreen", () => {
       { ...BASE_APP, id: 4, company: "Interviewing", stage: "interview" },
       { ...BASE_APP, id: 5, company: "TurnedDown", stage: "rejected" },
     ]);
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    renderWithPerson(<DashboardScreen />);
 
     // Opens on "To apply": only the two that have not gone out.
     expect(await screen.findByText("NotSentYet")).toBeInTheDocument();
@@ -137,7 +169,7 @@ describe("DashboardScreen", () => {
       { ...BASE_APP, id: 3, company: "C", stage: "offer" },
       { ...BASE_APP, id: 4, company: "D", stage: "rejected" },
     ]);
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    renderWithPerson(<DashboardScreen />);
 
     expect(await screen.findByRole("button", { name: /to apply 1/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /applied 2/i })).toBeInTheDocument();
@@ -147,11 +179,7 @@ describe("DashboardScreen", () => {
 
   it("shows Getting Started and profile links in the empty state", async () => {
     vi.mocked(api.listApplications).mockResolvedValue([]);
-    render(
-      <MemoryRouter>
-        <DashboardScreen />
-      </MemoryRouter>
-    );
+    renderWithPerson(<DashboardScreen />);
     expect(
       await screen.findByRole("link", { name: /Getting Started/ })
     ).toHaveAttribute("href", "/getting-started");
@@ -169,7 +197,7 @@ describe("DashboardScreen", () => {
       { ...BASE_APP, id: 1, status: "not_started", stage: "saved" },
     ]);
 
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    renderWithPerson(<DashboardScreen />);
     await vi.advanceTimersByTimeAsync(0);
     const callsAfterFirstTick = vi.mocked(api.listApplications).mock.calls.length;
 
@@ -181,7 +209,7 @@ describe("DashboardScreen", () => {
 
   it("filters to archived applications when the tab is selected", async () => {
     vi.mocked(api.listApplications).mockResolvedValue([{ ...BASE_APP, id: 1 }]);
-    render(<MemoryRouter><DashboardScreen /></MemoryRouter>);
+    renderWithPerson(<DashboardScreen />);
 
     fireEvent.click(await screen.findByRole("button", { name: /archived/i }));
 
@@ -258,9 +286,9 @@ describe("DashboardScreen", () => {
     //
     // Asserted via an observable outcome, not a call count: swapping what the
     // API returns AFTER the screen has settled means the new company name can
-    // only appear if a refetch happened following the failed action. Counting
-    // listApplications calls does NOT work here -- profileId resolving async
-    // triggers its own refetch, so the count rises with or without the fix.
+    // only appear if a refetch happened following the failed action. A call
+    // count would only say a request went out, not that its rows replaced
+    // the stale ones.
     vi.mocked(api.listApplications).mockResolvedValue([
       { ...BASE_APP, id: 5, company: "Before Co" },
     ]);
@@ -304,5 +332,157 @@ describe("DashboardScreen", () => {
       expect(screen.getByText(/2 of 3 could not be archived/i)).toBeInTheDocument()
     );
     expect(vi.mocked(api.archiveApplication)).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("DashboardScreen and the current person", () => {
+  it("lists the current person's applications, not the first person's", async () => {
+    vi.mocked(api.listApplications).mockResolvedValue([SAM_ROW]);
+    renderWithPerson(<DashboardScreen />, { people: [JORDAN, SAM], personId: 2 });
+
+    expect(await screen.findByText("SamCo")).toBeInTheDocument();
+    const ids = vi.mocked(api.listApplications).mock.calls.map(([id]) => id);
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.every((id) => id === 2)).toBe(true);
+  });
+
+  it("makes no request while there is no person, then lists the person once there is one", async () => {
+    vi.mocked(api.listApplications).mockResolvedValue([JORDAN_ROW]);
+    const { switchTo } = renderWithPerson(<DashboardScreen />, {
+      people: [JORDAN],
+      personId: null,
+    });
+
+    // Regression for the unfiltered first poll: with no person the screen
+    // must not fetch every person's applications.
+    expect(api.listApplications).not.toHaveBeenCalled();
+
+    act(() => switchTo(1));
+
+    expect(await screen.findByText("JordanCo")).toBeInTheDocument();
+    expect(api.listApplications).toHaveBeenCalledWith(1, undefined);
+    expect(api.listApplications).not.toHaveBeenCalledWith(undefined, undefined);
+  });
+
+  it("makes no request with no people and still points at the first steps", async () => {
+    renderWithPerson(<DashboardScreen />, { people: [], personId: null });
+
+    expect(await screen.findByRole("link", { name: /Getting Started/ })).toHaveAttribute(
+      "href",
+      "/getting-started"
+    );
+    expect(api.listApplications).not.toHaveBeenCalled();
+  });
+
+  it("makes no request and shows no first steps while the people list is loading", () => {
+    // Jordan is in the list, but the provider has not settled: no person yet.
+    renderWithPerson(<DashboardScreen />, { people: [JORDAN], loading: true });
+
+    expect(screen.getByText("Loading...")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /create your Master Profile/ })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Getting Started/ })).not.toBeInTheDocument();
+    expect(api.listApplications).not.toHaveBeenCalled();
+  });
+
+  it("shows why there is nothing to list when the people list failed to load", () => {
+    renderWithPerson(<DashboardScreen />, {
+      people: [],
+      personId: null,
+      overrides: { error: "API 500: boom" },
+    });
+
+    expect(screen.getByText("API 500: boom")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /create your Master Profile/ })
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/No applications yet/)).not.toBeInTheDocument();
+    expect(api.listApplications).not.toHaveBeenCalled();
+  });
+
+  it("clears the previous person's rows the moment the person changes", async () => {
+    vi.mocked(api.listApplications).mockImplementation((profileId) =>
+      profileId === 1
+        ? Promise.resolve([JORDAN_ROW])
+        : new Promise<ApplicationSummary[]>(() => {}) // Sam's list never arrives
+    );
+    const { switchTo } = renderWithPerson(<DashboardScreen />, { people: [JORDAN, SAM] });
+    expect(await screen.findByText("JordanCo")).toBeInTheDocument();
+
+    act(() => switchTo(2));
+
+    // Not after a fetch: straight away, while Sam's list is still pending.
+    expect(screen.queryByText("JordanCo")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/stage for row 1/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/select row 1/i)).not.toBeInTheDocument();
+    expect(api.listApplications).toHaveBeenLastCalledWith(2, undefined);
+  });
+
+  it("ignores a response for the previous person that arrives after a switch", async () => {
+    let resolveJordan!: (rows: ApplicationSummary[]) => void;
+    vi.mocked(api.listApplications).mockImplementation((profileId) =>
+      profileId === 1
+        ? new Promise<ApplicationSummary[]>((resolve) => {
+            resolveJordan = resolve;
+          })
+        : Promise.resolve([SAM_ROW])
+    );
+    const { switchTo } = renderWithPerson(<DashboardScreen />, { people: [JORDAN, SAM] });
+    expect(api.listApplications).toHaveBeenCalledWith(1, undefined);
+
+    act(() => switchTo(2));
+    expect(await screen.findByText("SamCo")).toBeInTheDocument();
+
+    await act(async () => {
+      resolveJordan([JORDAN_ROW]);
+    });
+
+    expect(screen.queryByText("JordanCo")).not.toBeInTheDocument();
+    expect(screen.getByText("SamCo")).toBeInTheDocument();
+  });
+
+  it("closes an open delete confirmation when the person changes", async () => {
+    vi.mocked(api.listApplications).mockImplementation((profileId) =>
+      Promise.resolve(profileId === 1 ? [JORDAN_ROW] : [])
+    );
+    const { switchTo } = renderWithPerson(<DashboardScreen />, { people: [JORDAN, SAM] });
+    fireEvent.click(await screen.findByLabelText(/select row 1/i));
+    fireEvent.click(screen.getByRole("button", { name: /delete permanently/i }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("JordanCo");
+
+    act(() => switchTo(2));
+
+    // The dialog listed Jordan's row and its button would still delete it.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(api.deleteApplication).not.toHaveBeenCalled();
+  });
+
+  it("drops an action's error when the action settles after a switch", async () => {
+    vi.mocked(api.listApplications).mockImplementation((profileId) =>
+      Promise.resolve(profileId === 1 ? [JORDAN_ROW] : [SAM_ROW])
+    );
+    let rejectPatch!: (reason: Error) => void;
+    vi.mocked(api.patchApplication).mockReturnValueOnce(
+      new Promise<ApplicationDetail>((_resolve, reject) => {
+        rejectPatch = reject;
+      })
+    );
+    const { switchTo } = renderWithPerson(<DashboardScreen />, { people: [JORDAN, SAM] });
+    fireEvent.change(await screen.findByLabelText(/stage for row 1/i), {
+      target: { value: "applied" },
+    });
+    expect(api.patchApplication).toHaveBeenCalledWith(10, { stage: "applied" });
+
+    act(() => switchTo(2));
+    expect(await screen.findByText("SamCo")).toBeInTheDocument();
+
+    await act(async () => {
+      rejectPatch(new Error("API 409: busy"));
+    });
+
+    // Jordan's failure is not reported on Sam's dashboard.
+    expect(screen.queryByText(/API 409: busy/)).not.toBeInTheDocument();
+    expect(screen.getByText("SamCo")).toBeInTheDocument();
   });
 });

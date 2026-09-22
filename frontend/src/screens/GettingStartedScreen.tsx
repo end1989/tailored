@@ -1,24 +1,25 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { getSettings, listProfiles } from "../api";
-import type { ProfileSummary, SettingsShape } from "../types";
+import { getSettings } from "../api";
+import { usePerson } from "../person";
+import type { SettingsShape } from "../types";
 import CopyButton from "../components/CopyButton";
 import McpSetup from "../components/McpSetup";
 
 const ENV_LINE = "ANTHROPIC_API_KEY=sk-ant-...";
 
 export default function GettingStartedScreen() {
+  const { person, loading: peopleLoading, error: peopleError, labelFor } = usePerson();
   const [settings, setSettings] = useState<SettingsShape | null>(null);
-  const [profiles, setProfiles] = useState<ProfileSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Only the app-wide fields (api_key_set, fake_mode) are read here, so the
+  // request carries no person and is not repeated on a switch.
   useEffect(() => {
     let alive = true;
-    Promise.all([getSettings(), listProfiles()])
-      .then(([s, p]) => {
-        if (!alive) return;
-        setSettings(s);
-        setProfiles(p);
+    getSettings()
+      .then((s) => {
+        if (alive) setSettings(s);
       })
       .catch((e) => {
         if (alive) setError(String(e));
@@ -28,9 +29,11 @@ export default function GettingStartedScreen() {
     };
   }, []);
 
-  // Until both requests land we know nothing — never report "empty"/"not set" from that.
-  const loaded = settings !== null && profiles !== null;
-  const hasProfile = (profiles ?? []).some((p) => p.has_master_profile);
+  // Until the settings and the person list have both landed we know nothing,
+  // so never report "empty" or "not set" from that.
+  const shownError = error ?? peopleError;
+  const loaded = settings !== null && !peopleLoading;
+  const hasProfile = Boolean(person?.has_master_profile);
   const canGenerateWebApp = Boolean(settings?.api_key_set || settings?.fake_mode);
   const ready = hasProfile && canGenerateWebApp;
 
@@ -44,14 +47,14 @@ export default function GettingStartedScreen() {
 
       <div className="card">
         <div className="card-title">Your setup at a glance</div>
-        {error ? (
-          <div className="alert alert-error">Couldn't check your setup — {error}</div>
+        {shownError ? (
+          <div className="alert alert-error">Couldn't check your setup: {shownError}</div>
         ) : !loaded ? (
           <p className="muted">Checking…</p>
         ) : (
           <>
             <p>
-              Master Profile:{" "}
+              Master Profile{person ? ` for ${labelFor(person)}` : ""}:{" "}
               {hasProfile ? (
                 <span className="pill pill-ok">created</span>
               ) : (

@@ -4,7 +4,9 @@ Tailored is a local web app that turns job-posting URLs into customized,
 well-structured resumes and cover letters. You maintain one **Master Profile** —
 everything you have ever done, structured as JSON — and Tailored *selects, reorders,
 and emphasizes* from it per job. It never invents anything
-(see [Truthfulness](#truthfulness)).
+(see [Truthfulness](#truthfulness)). Several people can share one install,
+each with their own profile, applications and settings; see
+[Several people, one install](#several-people-one-install).
 
 ## Highlights
 
@@ -20,7 +22,7 @@ corrects it.
 - **Your codebase becomes resume evidence.** A portfolio-scan prompt plus an MCP write tool let an agent read the repos in your workspace and write evidence-backed, skill-tagged project entries straight into your profile (additive-only, validated, never destructive).
 - **Built to be handed to a non-engineer.** Double-click launcher (Windows `.bat` + Unix `.sh`) that self-installs on first run, a fully offline demo mode needing no API key, eight print-tuned templates exporting PDF / HTML / ATS plain text, dark mode, and a committed frontend build so cloning needs only Python.
 - **It tracks the job hunt, not just the generation.** Stages from Saved through Offer, a dated timeline for callbacks, interviews and notes, archive and permanent delete, and saved jobs you can park for free and generate later.
-- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 667 automated tests (593 backend including real headless-Chromium PDF rendering and text extraction, 74 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
+- **Engineered, not vibe-coded.** Spec → implementation plan → test-driven development, every task independently reviewed. 1119 automated tests (851 backend including real headless-Chromium PDF rendering and text extraction, 268 frontend), and validated end to end against the live Anthropic API — two API-only bugs were found and fixed that way.
 
 Job URLs can be queued for immediate generation or parked as a saved job to
 generate later at no cost. For each job URL you choose to generate, it runs a
@@ -138,6 +140,11 @@ Then ask your agent to read Tailored's workflow guide (the
 
 > tailor my profile for &lt;job url&gt;
 
+When several people share the install, say whose profile to use. The
+copyable prompts on the Getting Started page name the person selected in the
+nav for you, and an agent never follows the picker by itself (see
+[Several people, one install](#several-people-one-install)).
+
 The agent reads your master profile, fetches and analyzes the posting,
 optionally researches the company, and writes the tailored resume and cover
 letter back into Tailored, which renders the same PDF/HTML/ATS exports as the
@@ -195,11 +202,16 @@ TAILORED_FAKE=1 python run.py
 ```
 
 Demo mode seeds a sample profile plus one finished application and answers every AI
-call from offline fixtures. Every screen is clickable end to end.
+call from offline fixtures. Every screen is clickable end to end. To try the
+person picker, add a second person with **Add a person** in the nav's person
+list. The sample is seeded whenever the database has no people at all, so
+removing the last person in demo mode brings the sample person and
+application back on the next start.
 
 ## Research depth = cost dial
 
-Research depth is chosen per job when you add it. Approximate cost per application
+Research depth is chosen per job when you add it, and the Add Jobs form starts
+on the selected person's default depth from Settings. Approximate cost per application
 (Claude Opus 4.8; real token usage and cost are recorded per application and shown on
 each application's page):
 
@@ -279,7 +291,88 @@ Set **Voice notes** on your profile to direct the writing explicitly, for
 example "Plain and direct. No salesmanship. Short sentences." Tailored also
 reads the register of the documents you uploaded during intake, as style only:
 every fact still has to come from your Master Profile, and the truthfulness
-check is what guarantees it.
+check is what guarantees it. The register comes from the newest document on
+the person's profile, so removing a document on the Profiles screen changes it
+from the next generation on: to the newest one left, or to none.
+
+## Several people, one install
+
+One install can serve several people, such as a household sharing a computer.
+Each person has their own Master Profile, applications and settings. The person
+picker in the nav bar, beside the theme toggle, chooses whose you are looking
+at, and every screen follows it: the dashboard lists that person's
+applications, Add Jobs adds jobs for them, Getting Started checks their
+profile, and Profiles, Settings and Templates show theirs. Switching is one
+click at any time, with no sign-in. To add someone, pick **Add a person** at
+the bottom of the list.
+
+**The choice is kept per browser.** Tailored remembers the last person picked
+in the browser's own storage, and each Chrome profile has its own storage. If
+everyone in the household uses their own Chrome profile, Tailored opens on the
+right person for each of them, and anyone can still switch. A web page cannot
+see which Chrome profile or Google account is signed in, so Tailored does not
+guess. The choice is never sent to the server and is not part of `data/`, and
+switching in one tab leaves other open tabs as they were.
+
+**Opening another person's application.** A link to someone else's
+application switches to its owner for that visit and says so. It does not
+change which person this browser opens on next time.
+
+**Unsaved work.** Switching while the Profiles screen has unsaved changes or a
+save, upload or Build still running, or while an application's editor has
+unsaved edits, asks first, with **Switch anyway** and **Stay**.
+
+**Settings are per person.** Default template, default research depth and page
+size belong to the person selected when you change them, and the Settings
+screen names that person in its heading. A new person starts from the
+install-wide defaults in `data/settings.json`. The API key and the theme are
+the same for everyone. An application always renders with the page size of
+the person it belongs to, whoever is selected in any browser, and that holds
+for renders an MCP agent triggers too. Jobs an agent registers over MCP do not
+pick up a person's default template or depth: they start on the Slate template
+unless the agent picks another, and a saved job an agent queued uses standard
+depth if you later generate it from the dashboard.
+
+**Name, email and documents.** The Profiles screen edits the selected person's
+name and email. Build fills in only the contact details that are still empty,
+so building over an old resume does not change a name, email or phone number
+already there. Each uploaded document has a **Remove** button, which is how to
+undo a resume uploaded to the wrong person. Removing a document leaves the
+built Master Profile as it is; the next Build reads only what is left.
+
+**The Inbox link.** When a person's email is at Gmail (`gmail.com`,
+`googlemail.com`), iCloud (`icloud.com`, `me.com`, `mac.com`) or Outlook.com
+(`outlook.com`, `hotmail.com`, `live.com`, `msn.com`), an **Inbox** link beside
+the picker opens their mailbox in a new tab. The Gmail link asks for that exact
+account; the other two open whichever account is signed in on that site. A
+custom domain, including Google Workspace, gets no link, because the domain
+does not say who hosts the mail. A connected agent gets the same link as
+`inbox_url` from `get_master_profile`, and the workflow guide tells it to
+confirm the mailbox on screen is the person's before reading anything and
+never to sign in for you.
+
+**Removing a person.** **Remove this person**, at the bottom of the Profiles
+screen, states what will be deleted: the person's profile, documents and
+applications (archived ones included), plus their exported files. The button
+stays disabled until you type the person's name exactly. Removal is permanent
+and leaves everyone else's rows and files alone. It is refused while any of the
+person's applications is being generated, or is parked for an agent, and has
+changed in the last 15 minutes; the refusal links to those applications. Rows
+stuck in those states for longer count as abandoned and go with the rest. It
+is also refused, with nothing deleted, while another program has one of the
+person's exported files open, since Windows will not move an open file; close
+it and try again. Saved jobs are removed too, including any an agent is
+working through, so stop an agent working for that person first. There is no
+MCP tool for removing a person.
+
+**Agents and profile ids.** An agent never follows the picker. Every MCP tool
+that works on a person takes an explicit `profile_id`, so name the person when
+you ask an agent for work; the copyable prompts on the Getting Started and
+Settings pages name the person selected in the nav. After a removal, the next
+person created can be given the removed person's `profile_id`. The picker
+guards against that by checking each person's creation time as well as the
+id, but an agent that kept an old id would act on the new person, so start
+each agent session from the person's name rather than a remembered id.
 
 ## Development
 
@@ -347,7 +440,7 @@ tailored/
 
 - Dashboard polling stops until refresh if one status fetch fails.
 - Project bullets aren't editable in the profile editor (preserved on save).
-- Browser-printing an exported resume.html always uses Letter (PDF exports honor the page-size setting).
+- Browser-printing an exported resume.html always uses Letter (PDF exports honor the page-size setting of the person the application belongs to).
 - Standard-depth research is domain-restricted only when a company domain was detected in the posting.
 - Token spend from a failed generation isn't counted into the displayed cost.
 

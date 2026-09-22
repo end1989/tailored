@@ -1,13 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { createApplications, getSettings, listProfiles, listTemplates } from "../api";
-import type {
-  Depth,
-  JobRequest,
-  ProfileSummary,
-  TemplateInfo,
-  TemplateName,
-} from "../types";
+import { createApplications, getSettings, listTemplates } from "../api";
+import { usePerson } from "../person";
+import type { Depth, JobRequest, TemplateInfo, TemplateName } from "../types";
 
 const DEPTHS: Depth[] = ["quick", "standard", "deep"];
 
@@ -18,8 +13,11 @@ interface RowOverride {
 
 export default function AddJobsScreen() {
   const navigate = useNavigate();
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
-  const [profileId, setProfileId] = useState<number | undefined>(undefined);
+  const { person, people, loading, error: peopleError, labelFor } = usePerson();
+  const personId = person?.id;
+  // Whose settings the defaults below came from. Submit waits until this is
+  // the current person, so jobs are never queued with someone else's defaults.
+  const [settingsFor, setSettingsFor] = useState<number | null>(null);
   const [defaultDepth, setDefaultDepth] = useState<Depth>("standard");
   const [defaultTemplate, setDefaultTemplate] = useState<TemplateName>("slate");
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
@@ -32,26 +30,35 @@ export default function AddJobsScreen() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    listProfiles()
-      .then((list) => {
-        setProfiles(list);
-        if (list.length > 0) {
-          setProfileId((cur) => cur ?? list[0].id);
-        }
-      })
-      .catch((e) => setError(String(e)));
-    getSettings()
-      .then((s) => {
-        setDefaultDepth(s.default_depth);
-        setDefaultTemplate(s.default_template);
-        setApiKeySet(s.api_key_set);
-        setFakeMode(s.fake_mode);
-      })
-      .catch(() => undefined);
     listTemplates()
       .then(setTemplates)
       .catch(() => setTemplates([]));
   }, []);
+
+  useEffect(() => {
+    setSettingsFor(null);
+    setError(null);
+    if (personId === undefined) return; // no person: nothing to load, submit stays disabled
+    let current = true;
+    getSettings(personId)
+      .then((s) => {
+        if (!current) return; // arrived after a switch: these are someone else's defaults
+        setDefaultDepth(s.default_depth);
+        setDefaultTemplate(s.default_template);
+        setApiKeySet(s.api_key_set);
+        setFakeMode(s.fake_mode);
+        setSettingsFor(personId);
+      })
+      .catch((e) => {
+        if (current) setError(String(e));
+      });
+    return () => {
+      current = false;
+    };
+  }, [personId]);
+
+  const noPeople = !loading && !peopleError && people.length === 0;
+  const settingsReady = person !== null && settingsFor === person.id;
 
   const urls = useMemo(
     () =>
@@ -67,7 +74,10 @@ export default function AddJobsScreen() {
   }
 
   async function handleSubmit() {
-    if (profileId === undefined || urls.length === 0) return;
+    if (person === null || !settingsReady || urls.length === 0) return;
+    // Captured at click: the jobs belong to the person shown when Submit was
+    // pressed, even if the picker changes while the request is in flight.
+    const profileId = person.id;
     setSubmitting(true);
     setError(null);
     const jobs: JobRequest[] = urls.map((url, i) => ({
@@ -90,21 +100,16 @@ export default function AddJobsScreen() {
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="card">
-        <div className="row">
-          <div className="field">
-            <label className="field-label">Profile</label>
-            <select
-              className="select"
-              value={profileId ?? ""}
-              onChange={(e) => setProfileId(Number(e.target.value))}
-            >
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+        {person !== null && (
+          <div className="card-title">{`Adding jobs for ${labelFor(person)}`}</div>
+        )}
+        {noPeople && (
+          <div className="callout">
+            <Link to="/profiles?new=1">Add a person first</Link>
           </div>
+        )}
+        {peopleError && <div className="alert alert-error">{peopleError}</div>}
+        <div className="row">
           <div className="field">
             <label className="field-label">Default depth</label>
             <select
@@ -212,9 +217,15 @@ export default function AddJobsScreen() {
           <button
             className="btn btn-primary"
             onClick={handleSubmit}
-            disabled={submitting || profileId === undefined}
+            disabled={submitting || !settingsReady}
           >
-            {submitting ? "Queueing..." : generate ? "Add and generate" : "Save for later"}
+            {noPeople
+              ? "Add a person first"
+              : submitting
+                ? "Queueing..."
+                : generate
+                  ? "Add and generate"
+                  : "Save for later"}
           </button>
         </div>
       )}

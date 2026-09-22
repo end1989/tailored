@@ -22,7 +22,7 @@ resume.
 |------|--------------|
 | `get_workflow_guide()` | Call first: returns the workflow order, the truthfulness contract, and the exact JSON schemas with a worked example. |
 | `list_profiles()` | List stored profiles (id, name, has_master_profile). |
-| `get_master_profile(profile_id?)` | Contact + master profile — the only facts an agent may use. Omitting `profile_id` resolves the sole profile; ambiguity returns an error listing the profiles. |
+| `get_master_profile(profile_id?)` | Contact + master profile: the only facts an agent may use. Omitting `profile_id` resolves the sole profile; ambiguity returns an error listing the profiles. Also returns `inbox_url`, the candidate's webmail link when the contact email is on Gmail, iCloud or Outlook, else null; the guide's CANDIDATE'S INBOX section says how an agent may use it. |
 | `add_profile_evidence(profile_id, projects?, skill_groups?, summary_note?)` | Import portfolio-scan findings into the master profile (`MPProject` + `SkillGroup` shapes). Additive and verified-evidence-only: never overwrites — new projects are appended (duplicate names skipped), same-label skill groups are merged, `summary_note` is appended; safe to call repeatedly. |
 | `list_templates()` | Every template in the registry (currently eight) with label/description/best_for metadata, read straight from the manifests. |
 | `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |
@@ -52,8 +52,26 @@ the agent run.
 `add_profile_evidence` and other profile writes have no such guard: they
 use last-writer-wins on the whole profile record, so don't hand-edit a
 profile in the web UI while an agent is writing to it (and vice-versa) -
-this is a single-user local app and simultaneous edits to the same profile
-are unsupported.
+this is a local app with no locking, and simultaneous edits to the same
+profile are unsupported.
+
+**Several people on one install.** The web app has a person picker, but it
+lives only in the user's browser and nothing on the server reads it, so no
+tool depends on who is selected there. Every tool that works on a person takes
+an explicit `profile_id`, and `get_master_profile()` without one still errors
+when several people exist. Renders use the settings of the person who owns the
+application (`settings_for` in `backend/app/services/person_settings.py`), so
+an agent's exports get the owner's page size. Rows made by `create_application`
+or `queue_jobs` do not take the person's default template or depth: the
+template is `slate` unless `create_application` is passed one. People can be
+removed in the web app, with no MCP tool for it, and SQLite can give a removed
+person's id to the next person created, so an agent should resolve the person
+with `list_profiles` or `get_master_profile` at the start of each session
+instead of reusing a remembered `profile_id`. When the user asks the agent to
+work in their mail, the guide's CANDIDATE'S INBOX section applies: open the
+`inbox_url` that `get_master_profile` returns, confirm the mailbox on the page
+is the candidate's contact email before reading anything, stop at a sign-in
+page, and never sign in on the user's behalf.
 
 ### Why Tailored does not fetch blocked postings itself
 

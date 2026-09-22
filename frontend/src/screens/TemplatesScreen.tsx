@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { getSettings, listTemplates, templatePreviewUrl, updateSettings } from "../api";
-import type { SettingsShape, TemplateInfo, TemplateName } from "../types";
+import { listTemplates, templatePreviewUrl } from "../api";
+import { usePerson } from "../person";
+import { usePersonSettings } from "../personSettings";
+import type { TemplateInfo, TemplateName } from "../types";
 
 // Letter page at 96dpi — the iframe renders at this real page size and gets
 // scaled down to fit the card, so the resume reflows exactly as it would on
@@ -43,11 +45,13 @@ function TemplateCard({
   template,
   isDefault,
   busy,
+  disabled,
   onMakeDefault,
 }: {
   template: TemplateInfo;
   isDefault: boolean;
   busy: boolean;
+  disabled: boolean;
   onMakeDefault: (name: TemplateName) => void;
 }) {
   const { ref, scale } = useThumbScale();
@@ -86,7 +90,7 @@ function TemplateCard({
           <button
             className="btn"
             onClick={() => onMakeDefault(template.name)}
-            disabled={busy}
+            disabled={busy || disabled}
           >
             {busy ? "Setting..." : "Set as default"}
           </button>
@@ -97,8 +101,9 @@ function TemplateCard({
 }
 
 export default function TemplatesScreen() {
+  const { person, labelFor } = usePerson();
+  const { settings, error: settingsError, save } = usePersonSettings();
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
-  const [settings, setSettings] = useState<SettingsShape | null>(null);
   const [busy, setBusy] = useState<TemplateName | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -106,23 +111,18 @@ export default function TemplatesScreen() {
     listTemplates()
       .then(setTemplates)
       .catch((e) => setError(String(e)));
-    getSettings()
-      .then(setSettings)
-      .catch((e) => setError(String(e)));
   }, []);
 
   async function makeDefault(name: TemplateName) {
     setBusy(name);
-    setError(null);
     try {
-      const s = await updateSettings({ default_template: name });
-      setSettings(s);
-    } catch (err) {
-      setError(String(err));
+      await save({ default_template: name });
     } finally {
       setBusy(null);
     }
   }
+
+  const shownError = error ?? settingsError;
 
   return (
     <div>
@@ -130,7 +130,17 @@ export default function TemplatesScreen() {
       <p className="muted">
         Every template renders the same data - pick the voice that fits the field.
       </p>
-      {error && <div className="alert alert-error">{error}</div>}
+      {shownError && <div className="alert alert-error">{shownError}</div>}
+
+      {person && (
+        <>
+          <h2>Settings for {labelFor(person)}</h2>
+          <p className="muted">
+            The Default badge marks {labelFor(person)}'s default template for jobs added on the
+            Add Jobs page. Changing it changes nobody else's.
+          </p>
+        </>
+      )}
 
       <div className="template-grid">
         {templates.map((t) => (
@@ -139,6 +149,8 @@ export default function TemplatesScreen() {
             template={t}
             isDefault={settings?.default_template === t.name}
             busy={busy === t.name}
+            // Nothing is written until the current person's default is known.
+            disabled={settings === null}
             onMakeDefault={makeDefault}
           />
         ))}

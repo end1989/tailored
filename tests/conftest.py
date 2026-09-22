@@ -16,6 +16,21 @@ from backend.app.db import get_engine, init_db
 from backend.app.main import create_app
 
 
+@pytest.fixture(autouse=True)
+def _fresh_live_run_registry():
+    """The pipeline's live-run registry is process-wide. A test that drops
+    scheduled tasks (test_e2e and test_mcp_ops patch BackgroundTasks.add_task
+    to a no-op) leaves the ids it scheduled registered, and ids restart at 1
+    in every test's database, so clear it around each test."""
+    from backend.app.services import pipeline
+
+    with pipeline._live_lock:
+        pipeline._live_counts.clear()
+    yield
+    with pipeline._live_lock:
+        pipeline._live_counts.clear()
+
+
 @pytest.fixture()
 def engine(tmp_path):
     """Fresh tmp SQLite file with all registered tables created."""

@@ -14,12 +14,10 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from ..config import load_user_settings
 from ..db import get_session
 from ..models import (
     Application,
     ApplicationEvent,
-    ApplicationVersion,
     EVENT_KINDS,
     Job,
     Profile,
@@ -34,6 +32,8 @@ from ..models import (
 )
 from ..schemas import ResumeDoc
 from ..services import pipeline, render
+from ..services.person_settings import settings_for
+from ..services.removal import delete_application_rows
 from ..services.render import TEMPLATES
 from ..services.style import clean_mechanical, style_report
 
@@ -258,7 +258,8 @@ def create_batch(
     if not body.jobs:
         raise HTTPException(status_code=422, detail="jobs must not be empty")
 
-    user_settings = load_user_settings(request.app.state.settings.data_dir)
+    # The person's own defaults, over the app-wide ones (spec 5.2).
+    user_settings = settings_for(request.app.state.settings.data_dir, profile)
     fallback_depth = body.default_depth or user_settings.get("default_depth", "standard")
     fallback_template = body.default_template or user_settings.get(
         "default_template", "slate"
@@ -296,10 +297,13 @@ def create_batch(
         session.add(app_row)
         session.commit()
         session.refresh(app_row)
-        if body.generate:
-            # Schedule through the module attribute so tests can monkeypatch pipeline.
-            background_tasks.add_task(pipeline.process_application, app_row.id)
         results.append(application_detail(session, app_row, job))
+    if body.generate:
+        # Scheduled last (see pipeline.schedule_run), through the module
+        # attribute so tests can monkeypatch pipeline.
+        for created in results:
+            pipeline.schedule_run(
+                background_tasks, pipeline.process_application, created["id"])
     return results
 
 
@@ -432,8 +436,10 @@ def paste_text(
         )
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty")
-    background_tasks.add_task(pipeline.resume_after_paste, app_row.id, body.text)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(
+        background_tasks, pipeline.resume_after_paste, app_row.id, body.text)
+    return detail
 
 
 @router.post("/applications/{application_id}/regenerate")
@@ -451,8 +457,10 @@ def regenerate(
         )
     if not body.feedback.strip():
         raise HTTPException(status_code=422, detail="feedback must not be empty")
-    background_tasks.add_task(pipeline.regenerate_application, app_row.id, body.feedback)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(
+        background_tasks, pipeline.regenerate_application, app_row.id, body.feedback)
+    return detail
 
 
 @router.patch("/applications/{application_id}/template")
@@ -493,7 +501,8 @@ def set_template(
 
     profile = session.get(Profile, app_row.profile_id)
     settings = request.app.state.settings
-    user_settings = load_user_settings(settings.data_dir)
+    # The owner's page size, never another person's (spec 5.2).
+    user_settings = settings_for(settings.data_dir, profile)
     # Render before committing anything: a row claiming a template its exports
     # were never rendered in would serve the old PDF under the new label.
     export_dir = render.export_application(
@@ -537,8 +546,9 @@ def retry(
     session.add(app_row)
     session.commit()
     session.refresh(app_row)
-    background_tasks.add_task(pipeline.process_application, app_row.id)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(background_tasks, pipeline.process_application, app_row.id)
+    return detail
 
 
 @router.post("/applications/{application_id}/generate")
@@ -561,8 +571,9 @@ def generate(
     session.add(app_row)
     session.commit()
     session.refresh(app_row)
-    background_tasks.add_task(pipeline.process_application, app_row.id)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(background_tasks, pipeline.process_application, app_row.id)
+    return detail
 
 
 @router.put("/applications/{application_id}/content")
@@ -606,7 +617,8 @@ def update_content(
         # module attribute so tests can monkeypatch export_application.
         profile = session.get(Profile, app_row.profile_id)
         settings = request.app.state.settings
-        user_settings = load_user_settings(settings.data_dir)
+        # The owner's page size, never another person's (spec 5.2).
+        user_settings = settings_for(settings.data_dir, profile)
         export_dir = render.export_application(
             app_row.id,
             resume_now,
@@ -717,13 +729,23 @@ def delete_application(
     request: Request,
     session: Session = Depends(get_session),
 ) -> dict[str, Any]:
-    """Permanent, unrecoverable delete: rows, versions, timeline, and the
-    exported files on disk. The reversible path is /archive."""
+    """Permanent, unrecoverable delete: the application, its job and research
+    briefs, versions, timeline, and the exported files on disk. The
+    reversible path is /archive."""
     app_row, _job = _get_app_and_job(session, application_id)
     if app_row.status in PROCESSING_STATUSES:
         raise HTTPException(
             status_code=409,
             detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
+    # A scheduled or running pipeline run holds the id whatever the row's
+    # status says (regenerate and paste leave it unchanged). SQLite reissues a
+    # deleted row's id, so that run's later writes would land on whichever
+    # application is created next.
+    if pipeline.is_live(application_id):
+        raise HTTPException(
+            status_code=409,
+            detail="application is currently being processed; wait for it to finish",
         )
 
     # Files first: if this raises, nothing below runs and nothing is
@@ -732,16 +754,7 @@ def delete_application(
     # rows vanish lets a future application inherit a deleted one's exports.
     _remove_export_dir(request.app.state.settings.data_dir, application_id)
 
-    for event in session.exec(
-        select(ApplicationEvent).where(ApplicationEvent.application_id == application_id)
-    ).all():
-        session.delete(event)
-    for version in session.exec(
-        select(ApplicationVersion)
-        .where(ApplicationVersion.application_id == application_id)
-    ).all():
-        session.delete(version)
-    session.delete(app_row)
+    delete_application_rows(session, app_row)
     session.commit()
 
     return {"deleted": application_id}

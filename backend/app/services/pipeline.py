@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import functools
+import threading
+from collections import Counter
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Any, Callable, Iterator
+
 from sqlmodel import Session, select
 
-from ..config import get_settings, load_user_settings
+from ..config import get_settings
 from ..db import get_engine
 from ..models import (
     Application,
@@ -27,9 +33,95 @@ from ..schemas import (
 )
 from . import fetcher, render
 from .claude import ClaudeError, ClaudeService, make_claude
+from .person_settings import settings_for
 from .research import parse_posting, research_company
 from .style import check_style
 from .tailor import tailor_application, verify_truthfulness
+
+if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
+
+# Application ids with a pipeline run scheduled or in progress in this
+# process, counted per id: two overlapping runs on one row (a retry on a row
+# that is already queued) each hold it, so the first to finish cannot release
+# the other. Person removal and single-application delete treat these as live
+# however long their row has sat in one status (a deep-research step can
+# outlast the staleness cutoff). A run killed by a restart is never here, so
+# its stale row still clears. Background tasks run in a threadpool, hence the
+# lock.
+_live_counts: Counter[int] = Counter()
+_live_lock = threading.Lock()
+
+
+def live_application_ids() -> frozenset[int]:
+    """Ids of applications with a pipeline run scheduled or in progress in
+    this process."""
+    with _live_lock:
+        return frozenset(i for i, n in _live_counts.items() if n > 0)
+
+
+def is_live(app_id: int) -> bool:
+    with _live_lock:
+        return _live_counts.get(app_id, 0) > 0
+
+
+def _register(app_id: int) -> None:
+    with _live_lock:
+        _live_counts[app_id] += 1
+
+
+def _release(app_id: int) -> None:
+    """Drop one registration of app_id; the key goes when the count reaches 0."""
+    with _live_lock:
+        remaining = _live_counts.get(app_id, 0) - 1
+        if remaining > 0:
+            _live_counts[app_id] = remaining
+        else:
+            _live_counts.pop(app_id, None)
+
+
+@contextmanager
+def live_run(app_id: int) -> Iterator[None]:
+    """Register app_id as live for the duration of the block, even if it raises."""
+    _register(app_id)
+    try:
+        yield
+    finally:
+        _release(app_id)
+
+
+def _run_then_release(func: Callable[..., Any], app_id: int, *args: Any) -> None:
+    try:
+        func(app_id, *args)
+    finally:
+        _release(app_id)
+
+
+def schedule_run(background_tasks: BackgroundTasks, func: Callable[..., Any],
+                 app_id: int, *args: Any) -> None:
+    """Schedule func(app_id, *args) as a background task, with app_id live
+    from now until the task finishes or raises.
+
+    The task starts only after the response is sent, so registering here, not
+    in the task, is what covers the gap in which a delete would otherwise see
+    nothing running. Call it last in a route, after anything that can raise:
+    a route that fails after scheduling never runs its tasks, and the id would
+    stay live until restart."""
+    _register(app_id)
+    try:
+        background_tasks.add_task(_run_then_release, func, app_id, *args)
+    except BaseException:
+        _release(app_id)
+        raise
+
+
+def _registers_live_run(func):
+    """Run a pipeline entry point (first argument: app_id) inside live_run."""
+    @functools.wraps(func)
+    def wrapper(app_id: int, *args, **kwargs):
+        with live_run(app_id):
+            return func(app_id, *args, **kwargs)
+    return wrapper
 
 
 def _set_status(session: Session, app: Application, status: str,
@@ -187,8 +279,8 @@ def _tailor_and_render(session: Session, app: Application, profile: Profile,
 
     _set_status(session, app, "rendering")
     settings = get_settings()
-    user_settings = load_user_settings(settings.data_dir)
-    page_size = (user_settings or {}).get("page_size", "Letter")
+    # The owner's page size (spec 5.2): `profile` is this application's owner.
+    page_size = settings_for(settings.data_dir, profile).get("page_size", "Letter")
     export_dir = render.export_application(
         app.id, result.resume, result.cover_letter_md, contact,
         app.template, settings.data_dir, page_size=page_size,
@@ -207,6 +299,7 @@ def _tailor_and_render(session: Session, app: Application, profile: Profile,
     _set_status(session, app, "ready")
 
 
+@_registers_live_run
 def process_application(app_id: int, engine=None,
                         claude: ClaudeService | None = None) -> None:
     """Run the full stage machine for one application (synchronous).
@@ -243,6 +336,7 @@ def process_application(app_id: int, engine=None,
             _mark_error(session, app, str(exc))
 
 
+@_registers_live_run
 def resume_after_paste(app_id: int, text: str, engine=None,
                        claude: ClaudeService | None = None) -> None:
     """User pasted the posting text: store it and continue from researching."""
@@ -265,6 +359,7 @@ def resume_after_paste(app_id: int, text: str, engine=None,
             _mark_error(session, app, str(exc))
 
 
+@_registers_live_run
 def regenerate_application(app_id: int, feedback: str, engine=None,
                            claude: ClaudeService | None = None) -> None:
     """Re-tailor with user feedback: version += 1, new snapshot, re-render."""
