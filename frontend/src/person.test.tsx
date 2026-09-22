@@ -310,6 +310,55 @@ describe("PersonProvider: refreshing", () => {
     expect(shown()).toHaveTextContent("2:Sam Lee");
     expect(screen.getByTestId("notice")).toHaveTextContent("");
   });
+
+  it("does not apply a selectId after that call failed", async () => {
+    await renderProvider([JORDAN]);
+    vi.mocked(api.listProfiles).mockRejectedValueOnce(new Error("API 500: boom"));
+    await act(() => latest.refreshPeople(2));
+    vi.mocked(api.listProfiles).mockResolvedValueOnce([JORDAN, SAM]);
+    await act(() => latest.refreshPeople());
+    expect(shown()).toHaveTextContent("1:Jordan Rivera");
+    expect(stored()).toEqual({ id: 1, created_at: JORDAN.created_at });
+  });
+
+  it("does not resolve a superseded call until the newer one has applied its list", async () => {
+    await renderProvider([JORDAN, SAM]);
+    const older = deferred<ProfileSummary[]>();
+    const newer = deferred<ProfileSummary[]>();
+    vi.mocked(api.listProfiles).mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
+
+    // A carries no selectId (nothing to observe from its own effect); B
+    // switches to Sam, which writes localStorage synchronously as part of
+    // applying B's list. That write can only be visible once B's own
+    // execution has fully run, so reading it from inside A's .then proves
+    // A waited for B rather than resolving with B's list unapplied - a
+    // Promise-ordering guarantee, unlike reading React state, which is only
+    // guaranteed current once React has re-rendered.
+    let storedWhenAResolved: unknown = "not yet resolved";
+    let a!: Promise<void>;
+    let b!: Promise<void>;
+    act(() => {
+      a = latest.refreshPeople();
+      b = latest.refreshPeople(2);
+    });
+    const aDone = a.then(() => {
+      storedWhenAResolved = stored();
+    });
+
+    await act(async () => {
+      older.resolve([JORDAN, SAM]);
+    });
+    // A's own response arrived, but the newer call (B) has not settled yet,
+    // so A must still be waiting rather than having resolved early.
+    expect(storedWhenAResolved).toBe("not yet resolved");
+
+    await act(async () => {
+      newer.resolve([JORDAN, SAM]);
+      await b;
+      await aDone;
+    });
+    expect(storedWhenAResolved).toEqual({ id: 2, created_at: SAM.created_at });
+  });
 });
 
 describe("PersonProvider: the switch guard", () => {

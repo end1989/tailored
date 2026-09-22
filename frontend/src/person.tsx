@@ -113,6 +113,12 @@ export function PersonProvider({ children }: { children: ReactNode }) {
   const loadedRef = useRef(false);
   const seqRef = useRef(0);
   const selectAfterLoadRef = useRef<number | undefined>(undefined);
+  // The most recently started refreshPeople() run. A superseded call awaits
+  // this (unless it IS this, which means nothing newer exists - only
+  // unmount advanced seqRef - and there is nothing to wait for) so its
+  // promise never resolves before the run that superseded it has applied
+  // its list.
+  const latestRunRef = useRef<Promise<void> | null>(null);
 
   const select = useCallback((p: ProfileSummary | null, remember: boolean) => {
     const key = p ? keyOf(p) : null;
@@ -165,25 +171,52 @@ export function PersonProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshPeople = useCallback(
-    async (selectId?: number): Promise<void> => {
+    (selectId?: number): Promise<void> => {
       const seq = ++seqRef.current;
       if (selectId !== undefined) selectAfterLoadRef.current = selectId;
-      try {
-        const list = await listProfiles();
-        if (seq !== seqRef.current) return;
-        const want = selectAfterLoadRef.current;
-        selectAfterLoadRef.current = undefined;
-        loadedRef.current = true;
-        setError(null);
-        applyList(list, want);
-      } catch (e) {
-        if (seq !== seqRef.current) return;
-        // After a good load, a failed refresh keeps the last list and person
-        // rather than blanking every screen over a blip.
-        if (!loadedRef.current) setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        if (seq === seqRef.current) setLoading(false);
-      }
+
+      let run: Promise<void>;
+
+      // Called once this call knows it was superseded (by a newer refresh,
+      // not merely by unmount - see latestRunRef's comment). Waits for the
+      // call that superseded us, so our own promise settles only once the
+      // list it resolves to is the one actually applied.
+      const waitForNewer = async () => {
+        const latest = latestRunRef.current;
+        if (latest && latest !== run) await latest;
+      };
+
+      run = (async () => {
+        try {
+          const list = await listProfiles();
+          if (seq !== seqRef.current) {
+            await waitForNewer();
+            return;
+          }
+          const want = selectAfterLoadRef.current;
+          selectAfterLoadRef.current = undefined;
+          loadedRef.current = true;
+          setError(null);
+          applyList(list, want);
+        } catch (e) {
+          if (seq !== seqRef.current) {
+            await waitForNewer();
+            return;
+          }
+          // This call owns whatever selectId is currently pending (nothing
+          // newer has claimed it): a switch that failed must not be granted
+          // later by some unrelated refresh that happens to succeed.
+          selectAfterLoadRef.current = undefined;
+          // After a good load, a failed refresh keeps the last list and person
+          // rather than blanking every screen over a blip.
+          if (!loadedRef.current) setError(e instanceof Error ? e.message : String(e));
+        } finally {
+          if (seq === seqRef.current) setLoading(false);
+        }
+      })();
+
+      latestRunRef.current = run;
+      return run;
     },
     [applyList]
   );
