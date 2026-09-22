@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   archiveApplication,
   deleteApplication,
   generateApplication,
   listApplications,
-  listProfiles,
   patchApplication,
   restoreApplication,
 } from "../api";
+import { usePerson } from "../person";
 import { STATUS_LABELS, TERMINAL_STATUSES } from "../statuses";
-import type { ApplicationSummary, ProfileSummary, Stage } from "../types";
+import type { ApplicationSummary, Stage } from "../types";
 
 const STAGES: Stage[] = [
   "saved", "drafted", "applied", "screening",
@@ -47,27 +47,41 @@ const TABS: { key: Tab; label: string }[] = [
   { key: "archived", label: "Archived" },
 ];
 
+const NO_APPS: ApplicationSummary[] = [];
+
 /**
- * Polls listApplications every 2000ms while any application status is outside
- * TERMINAL. Cleans up on unmount, on profile change, and on tab change.
+ * Polls listApplications(profileId) every 2000ms while any application status
+ * is outside TERMINAL. Makes no request at all while profileId is undefined
+ * (no person yet, or none exist). Cleans up on unmount, on person change, and
+ * on tab change; a response that lands after any of those is dropped.
+ *
+ * Rows are kept together with the person they were fetched for, and only the
+ * current person's rows are returned. On the very render where the person
+ * changes the list is already empty, before any effect has run, so the
+ * previous person's rows are never painted with live controls under the new
+ * person.
  */
 export function usePolling(
   profileId: number | undefined,
   archived: boolean,
   reloadKey: number
 ): ApplicationSummary[] {
-  const [apps, setApps] = useState<ApplicationSummary[]>([]);
+  const [fetched, setFetched] = useState<{ profileId: number; list: ApplicationSummary[] } | null>(
+    null
+  );
 
   useEffect(() => {
+    if (profileId === undefined) return;
+    const id = profileId;
     let stopped = false;
     let timer: number | undefined;
 
     async function tick() {
       let active = false;
       try {
-        const list = await listApplications(profileId, archived ? { archived: true } : undefined);
+        const list = await listApplications(id, archived ? { archived: true } : undefined);
         if (stopped) return;
-        setApps(list);
+        setFetched({ profileId: id, list });
         active = list.some((a) => !TERMINAL_STATUSES.includes(a.status));
       } catch {
         active = false; // stop polling on fetch error; navigating back restarts it
@@ -84,7 +98,7 @@ export function usePolling(
     };
   }, [profileId, archived, reloadKey]);
 
-  return apps;
+  return fetched !== null && fetched.profileId === profileId ? fetched.list : NO_APPS;
 }
 
 function StatusBadge({ app }: { app: ApplicationSummary }) {
@@ -130,36 +144,43 @@ const EMPTY_MESSAGE: Record<Tab, string> = {
 };
 
 export default function DashboardScreen() {
-  const [profiles, setProfiles] = useState<ProfileSummary[]>([]);
-  const [profileId, setProfileId] = useState<number | undefined>(undefined);
+  const { person, loading: peopleLoading, error: peopleError } = usePerson();
+  const personId = person?.id;
   const [tab, setTab] = useState<Tab>("to_apply");
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [confirming, setConfirming] = useState<ApplicationSummary[] | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
-  const apps = usePolling(profileId, tab === "archived", reloadKey);
+  const apps = usePolling(personId, tab === "archived", reloadKey);
   const rows = visible(apps, tab);
   const counts = tabCounts(apps, tab);
   const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
+  // The person shown now. An action compares it with the person it started
+  // for: one that settles after a switch reports on someone else's rows.
+  const personRef = useRef(personId);
   useEffect(() => {
-    listProfiles()
-      .then((list) => {
-        setProfiles(list);
-        if (list.length > 0) setProfileId((cur) => cur ?? list[0].id);
-      })
-      .catch(() => setProfiles([]));
-  }, []);
+    personRef.current = personId;
+  }, [personId]);
 
-  useEffect(() => setSelected(new Set()), [tab, profileId]);
+  useEffect(() => setSelected(new Set()), [tab, personId]);
+
+  // An open delete confirmation lists the previous person's rows and its
+  // button would still delete them; an error describes the previous person's
+  // action. Neither survives a switch.
+  useEffect(() => {
+    setConfirming(null);
+    setError(null);
+  }, [personId]);
 
   async function run(action: () => Promise<unknown>) {
+    const startedFor = personRef.current;
     setError(null);
     try {
       await action();
     } catch (e) {
-      setError(String(e));
+      if (personRef.current === startedFor) setError(String(e));
     } finally {
       // Always reload, including on failure. Showing rows the server has
       // already changed is worse than showing an error beside fresh data.
@@ -178,10 +199,11 @@ export default function DashboardScreen() {
     op: (id: number) => Promise<unknown>,
     pastTense: string
   ) {
+    const startedFor = personRef.current;
     setError(null);
     const results = await Promise.allSettled(ids.map(op));
     const failures = results.filter((r) => r.status === "rejected");
-    if (failures.length > 0) {
+    if (failures.length > 0 && personRef.current === startedFor) {
       const first = failures[0] as PromiseRejectedResult;
       setError(
         `${failures.length} of ${ids.length} could not be ${pastTense}. First error: ${String(first.reason)}`
@@ -205,21 +227,6 @@ export default function DashboardScreen() {
     <div>
       <h1>Dashboard</h1>
       {error && <div className="alert alert-error">{error}</div>}
-
-      {profiles.length > 1 && (
-        <div className="field" style={{ maxWidth: "20rem" }}>
-          <label className="field-label">Profile</label>
-          <select
-            className="select"
-            value={profileId ?? ""}
-            onChange={(e) => setProfileId(Number(e.target.value))}
-          >
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-      )}
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -334,7 +341,13 @@ export default function DashboardScreen() {
             {rows.length === 0 && (
               <tr>
                 <td colSpan={8} className="muted">
-                  {apps.length === 0 && tab !== "archived" ? (
+                  {/* Until the people list has loaded, neither the first steps
+                      nor a tab's "Nothing ..." line is true yet. */}
+                  {peopleLoading ? (
+                    "Loading..."
+                  ) : peopleError ? (
+                    peopleError
+                  ) : apps.length === 0 && tab !== "archived" ? (
                     <>
                       No applications yet. New here? Start with{" "}
                       <Link to="/getting-started">Getting Started</Link>, or{" "}
