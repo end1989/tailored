@@ -202,6 +202,7 @@ describe("ProfileScreen", () => {
     });
     const refreshPeople = vi.fn(async (selectId?: number) => {
       calls.push(`refresh:${selectId}`);
+      return true;
     });
     vi.mocked(api.createProfile).mockResolvedValueOnce({ ...samDetail, id: 7 });
     renderWithPerson(<ProfileScreen />, {
@@ -683,6 +684,7 @@ describe("ProfileScreen: Remove this person", () => {
     });
     const refreshPeople = vi.fn(async (selectId?: number) => {
       calls.push(`refresh:${selectId ?? ""}`);
+      return true;
     });
     let finish: (r: Removed) => void = () => {};
     vi.mocked(api.deleteProfile).mockReturnValueOnce(

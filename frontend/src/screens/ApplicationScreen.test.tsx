@@ -785,7 +785,8 @@ function personSpies() {
   return {
     setPersonId: vi.fn(),
     setNotice: vi.fn(),
-    refreshPeople: vi.fn(async () => undefined),
+    // true: the refresh applied a fresh list.
+    refreshPeople: vi.fn(async () => true),
     setSwitchGuard: vi.fn(),
   };
 }
@@ -926,6 +927,23 @@ describe("ApplicationScreen and the active person", () => {
     await settle();
     expect(spies.refreshPeople).toHaveBeenCalledTimes(1);
     expect(spies.refreshPeople).toHaveBeenCalledWith();
+    expect(spies.setPersonId).not.toHaveBeenCalled();
+    expect(spies.setNotice).not.toHaveBeenCalled();
+  });
+
+  it("says it couldn't check the owner, not that they are gone, when the refresh fails", async () => {
+    vi.mocked(api.getApplication).mockResolvedValue({ ...base, profile_id: 7, status: "ready" });
+    const spies = personSpies();
+    // false: the fetch failed, so the provider still holds the old list.
+    spies.refreshPeople.mockResolvedValue(false);
+    renderAt({ people: [JORDAN], personId: 1, overrides: spies });
+
+    const alert = await screen.findByText("Couldn't check who this application belongs to.");
+    expect(alert).toHaveAttribute("role", "status");
+    expect(alert).toHaveClass("alert");
+    await settle();
+    expect(screen.queryByText(ORPHAN_TEXT)).not.toBeInTheDocument();
+    expect(spies.refreshPeople).toHaveBeenCalledTimes(1);
     expect(spies.setPersonId).not.toHaveBeenCalled();
     expect(spies.setNotice).not.toHaveBeenCalled();
   });

@@ -43,7 +43,7 @@ export type PersonRenderResult = RenderResult & {
  * Renders `ui` with a static PersonContext value, inside a MemoryRouter at
  * `route`. Every context function is a vi.fn() (labelFor returns the name,
  * requestSwitch returns true, confirmSwitch returns null, refreshPeople
- * resolves), shared across switchTo so a test can assert calls made before
+ * resolves true), shared across switchTo so a test can assert calls made before
  * and after a switch. `ctx` always holds the value currently rendered.
  */
 export function renderWithPerson(ui: ReactElement, opts: PersonTestOptions = {}): PersonRenderResult {
@@ -57,7 +57,7 @@ export function renderWithPerson(ui: ReactElement, opts: PersonTestOptions = {})
     requestSwitch: vi.fn().mockReturnValue(true),
     confirmSwitch: vi.fn().mockReturnValue(null),
     cancelSwitch: vi.fn(),
-    refreshPeople: vi.fn().mockResolvedValue(undefined),
+    refreshPeople: vi.fn().mockResolvedValue(true),
     setSwitchGuard: vi.fn(),
     labelFor: vi.fn((p: ProfileSummary) => p.name),
   };

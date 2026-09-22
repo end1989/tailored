@@ -293,8 +293,8 @@ describe("PersonProvider: refreshing", () => {
     const older = deferred<ProfileSummary[]>();
     const newer = deferred<ProfileSummary[]>();
     vi.mocked(api.listProfiles).mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise);
-    let first!: Promise<void>;
-    let second!: Promise<void>;
+    let first!: Promise<boolean>;
+    let second!: Promise<boolean>;
     act(() => {
       first = latest.refreshPeople();
       second = latest.refreshPeople();
@@ -335,8 +335,8 @@ describe("PersonProvider: refreshing", () => {
     // Promise-ordering guarantee, unlike reading React state, which is only
     // guaranteed current once React has re-rendered.
     let storedWhenAResolved: unknown = "not yet resolved";
-    let a!: Promise<void>;
-    let b!: Promise<void>;
+    let a!: Promise<boolean>;
+    let b!: Promise<boolean>;
     act(() => {
       a = latest.refreshPeople();
       b = latest.refreshPeople(2);
@@ -358,6 +358,106 @@ describe("PersonProvider: refreshing", () => {
       await aDone;
     });
     expect(storedWhenAResolved).toEqual({ id: 2, created_at: SAM.created_at });
+  });
+});
+
+describe("PersonProvider: what refreshPeople resolves to", () => {
+  it("resolves true when it applied the list it fetched", async () => {
+    await renderProvider([JORDAN]);
+    vi.mocked(api.listProfiles).mockResolvedValueOnce([JORDAN, SAM]);
+    let result: boolean | undefined;
+    await act(async () => {
+      result = await latest.refreshPeople();
+    });
+    expect(result).toBe(true);
+  });
+
+  it("resolves false, and does not reject, when the fetch fails", async () => {
+    await renderProvider([JORDAN]);
+    vi.mocked(api.listProfiles).mockRejectedValueOnce(new Error("API 500: boom"));
+    let result: boolean | undefined;
+    await act(async () => {
+      result = await latest.refreshPeople();
+    });
+    expect(result).toBe(false);
+    expect(shown()).toHaveTextContent("1:Jordan Rivera");
+  });
+
+  it("resolves false when the first load failed and so does the retry", async () => {
+    vi.mocked(api.listProfiles).mockRejectedValueOnce(new Error("Failed to fetch"));
+    render(
+      <PersonProvider>
+        <Probe />
+      </PersonProvider>
+    );
+    await waitFor(() => expect(shown()).not.toHaveTextContent("loading"));
+    vi.mocked(api.listProfiles).mockRejectedValueOnce(new Error("Failed to fetch"));
+    let result: boolean | undefined;
+    await act(async () => {
+      result = await latest.refreshPeople();
+    });
+    expect(result).toBe(false);
+  });
+
+  it("gives a superseded call the result of the newer call it waited for", async () => {
+    await renderProvider([JORDAN, SAM]);
+    // A's own fetch succeeds but B's fails: A reports B's failure, because
+    // the list the provider holds when A resolves is not a fresh one.
+    const olderOk = deferred<ProfileSummary[]>();
+    const newerFails = deferred<ProfileSummary[]>();
+    vi.mocked(api.listProfiles)
+      .mockReturnValueOnce(olderOk.promise)
+      .mockReturnValueOnce(newerFails.promise);
+    let a!: Promise<boolean>;
+    let b!: Promise<boolean>;
+    act(() => {
+      a = latest.refreshPeople();
+      b = latest.refreshPeople();
+    });
+    await act(async () => {
+      olderOk.resolve([JORDAN, SAM]);
+      newerFails.reject(new Error("API 500: boom"));
+      await b;
+    });
+    await expect(a).resolves.toBe(false);
+    await expect(b).resolves.toBe(false);
+
+    // And the other way round: A's fetch fails, B applies a list.
+    const olderFails = deferred<ProfileSummary[]>();
+    const newerOk = deferred<ProfileSummary[]>();
+    vi.mocked(api.listProfiles)
+      .mockReturnValueOnce(olderFails.promise)
+      .mockReturnValueOnce(newerOk.promise);
+    act(() => {
+      a = latest.refreshPeople();
+      b = latest.refreshPeople();
+    });
+    await act(async () => {
+      olderFails.reject(new Error("API 500: boom"));
+      newerOk.resolve([JORDAN, SAM]);
+      await b;
+    });
+    await expect(a).resolves.toBe(true);
+    await expect(b).resolves.toBe(true);
+  });
+
+  it("resolves false when the provider unmounts before the list arrives", async () => {
+    vi.mocked(api.listProfiles).mockResolvedValueOnce([JORDAN]);
+    const { unmount } = render(
+      <PersonProvider>
+        <Probe />
+      </PersonProvider>
+    );
+    await waitFor(() => expect(shown()).not.toHaveTextContent("loading"));
+    const pending = deferred<ProfileSummary[]>();
+    vi.mocked(api.listProfiles).mockReturnValueOnce(pending.promise);
+    let run!: Promise<boolean>;
+    act(() => {
+      run = latest.refreshPeople();
+    });
+    unmount();
+    pending.resolve([JORDAN, SAM]);
+    await expect(run).resolves.toBe(false);
   });
 });
 

@@ -109,7 +109,7 @@ type PersonContext = {
   loading: boolean;              // true until the first listProfiles() settles
   error: string | null;          // the listProfiles() failure, if any
   setPersonId(id: number, opts?: { remember?: boolean }): void;
-  refreshPeople(selectId?: number): Promise<void>;
+  refreshPeople(selectId?: number): Promise<boolean>; // true: applied a fresh list
   setSwitchGuard(message: string | null): void;  // see 4.4
 };
 export function usePerson(): PersonContext;
@@ -176,7 +176,7 @@ arrives after the person has changed.
 | Profiles | Edits `person` only. The "Your profiles" button row is removed. Name and email become editable fields, saved through the existing `PUT /api/profiles/{id}` (`name`, `contact`); a blank name is rejected (§6.2). The create form (name, email) appears when there are no people or when opened from "Add a person…"; creating calls `refreshPeople(newId)`, which switches to the new person. Documents get Remove (§6.1); the page ends with "Remove this person" (§6.2). |
 | Getting Started | "Profile ready" reflects the current person's `has_master_profile`, not whether any person has one. |
 | McpSetup (Getting Started, Settings) | Both copyable prompts name the current person, e.g. "for {name} (profile_id {id})". With no people they keep "my profile". |
-| Application | Once per application id, after the provider has loaded: if `detail.profile_id !== person.id`, switch with `remember: false` and show "Switched to {label} to show this application." If the owner is not in `people`, call `refreshPeople()` first; if still absent, do not switch and show "This application's person no longer exists." Later polls never switch again. A manual picker switch while on this screen navigates to `/` for the chosen person. While the inline editor or the cover letter has unsaved edits (the screen's existing `dirty`/`coverDraft` state), the screen sets the switch guard. |
+| Application | Once per application id, after the provider has loaded: if `detail.profile_id !== person.id`, switch with `remember: false` and show "Switched to {label} to show this application." If the owner is not in `people`, call `refreshPeople()` first; if still absent, do not switch and show "This application's person no longer exists." If that refresh failed (it resolves false), do not switch and show "Couldn't check who this application belongs to." instead. Later polls never switch again. A manual picker switch while on this screen navigates to `/` for the chosen person. While the inline editor or the cover letter has unsaved edits (the screen's existing `dirty`/`coverDraft` state), the screen sets the switch guard. |
 | Settings, Templates | Read and write the current person's settings (§5), headed "Settings for {label}". API key status and theme stay in an app-wide section. With no people, they edit the app-wide defaults as today. |
 
 ### 4.4 The switch guard

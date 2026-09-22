@@ -261,8 +261,11 @@ export default function ApplicationScreen() {
   const ownerHandledFor = useRef<number | null>(null);
   // An owner missing from the list may have been created since the list
   // loaded, so the list is refreshed once before the person is called gone.
+  // A refresh that failed leaves the old list in place, which proves nothing,
+  // so it is reported as a failed check instead.
   const ownerRefreshStarted = useRef<number | null>(null);
   const [ownerRefreshedFor, setOwnerRefreshedFor] = useState<number | null>(null);
+  const [ownerCheckFailedFor, setOwnerCheckFailedFor] = useState<number | null>(null);
   const [ownerMissingFor, setOwnerMissingFor] = useState<number | null>(null);
 
   // Editing is offered once there is a resume and the pipeline has settled.
@@ -323,12 +326,17 @@ export default function ApplicationScreen() {
       if (ownerRefreshedFor === appId) {
         ownerHandledFor.current = appId;
         setOwnerMissingFor(appId);
+      } else if (ownerCheckFailedFor === appId) {
+        // No switch: the owner may well exist.
+        ownerHandledFor.current = appId;
       } else if (ownerRefreshStarted.current !== appId) {
         ownerRefreshStarted.current = appId;
-        // refreshPeople never rejects, and once it resolves the provider holds
-        // the newest list, so the next run of this effect sees the owner if
-        // the refresh found them.
-        void refreshPeople().then(() => setOwnerRefreshedFor(appId));
+        // refreshPeople never rejects. When it resolves true the provider
+        // holds a fresh list, so the next run of this effect sees the owner
+        // if the refresh found them; false means the list was not refreshed.
+        void refreshPeople().then((applied) =>
+          applied ? setOwnerRefreshedFor(appId) : setOwnerCheckFailedFor(appId)
+        );
       }
       return;
     }
@@ -347,6 +355,7 @@ export default function ApplicationScreen() {
     peopleLoading,
     peopleError,
     ownerRefreshedFor,
+    ownerCheckFailedFor,
     labelFor,
     setPersonId,
     setNotice,
@@ -649,6 +658,11 @@ export default function ApplicationScreen() {
       {ownerMissingFor === appId && (
         <div className="alert" role="status">
           This application's person no longer exists.
+        </div>
+      )}
+      {ownerCheckFailedFor === appId && (
+        <div className="alert" role="status">
+          Couldn't check who this application belongs to.
         </div>
       )}
 

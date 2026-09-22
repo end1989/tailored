@@ -34,8 +34,14 @@ export interface PersonContextValue {
   /** Performs the pending switch (remembered) and returns its target, or null if none. */
   confirmSwitch(): SwitchTarget | null;
   cancelSwitch(): void;
-  /** Reloads the list; with selectId, switches to (and remembers) that person. Never rejects. */
-  refreshPeople(selectId?: number): Promise<void>;
+  /**
+   * Reloads the list; with selectId, switches to (and remembers) that person.
+   * Resolves true when the provider applied a freshly fetched list (a call
+   * superseded by a newer one resolves to what the newest refresh it waited
+   * for resolved to), false when the fetch failed or the provider unmounted.
+   * Never rejects.
+   */
+  refreshPeople(selectId?: number): Promise<boolean>;
   /** A message while a screen holds work a switch would lose; null to clear. */
   setSwitchGuard(message: string | null): void;
   /** The name; for duplicate names "name (email)", or "name #id" without a distinct email. */
@@ -117,8 +123,8 @@ export function PersonProvider({ children }: { children: ReactNode }) {
   // this (unless it IS this, which means nothing newer exists - only
   // unmount advanced seqRef - and there is nothing to wait for) so its
   // promise never resolves before the run that superseded it has applied
-  // its list.
-  const latestRunRef = useRef<Promise<void> | null>(null);
+  // its list, and resolves to that run's result.
+  const latestRunRef = useRef<Promise<boolean> | null>(null);
 
   const select = useCallback((p: ProfileSummary | null, remember: boolean) => {
     const key = p ? keyOf(p) : null;
@@ -171,38 +177,34 @@ export function PersonProvider({ children }: { children: ReactNode }) {
   );
 
   const refreshPeople = useCallback(
-    (selectId?: number): Promise<void> => {
+    (selectId?: number): Promise<boolean> => {
       const seq = ++seqRef.current;
       if (selectId !== undefined) selectAfterLoadRef.current = selectId;
 
-      let run: Promise<void>;
+      let run: Promise<boolean>;
 
-      // Called once this call knows it was superseded (by a newer refresh,
-      // not merely by unmount - see latestRunRef's comment). Waits for the
-      // call that superseded us, so our own promise settles only once the
-      // list it resolves to is the one actually applied.
-      const waitForNewer = async () => {
+      // Called once this call knows it was superseded. Waits for the call
+      // that superseded us, so our own promise settles only once the list it
+      // resolves to is the one actually applied, and reports that call's
+      // result. Superseded by unmount alone (see latestRunRef's comment),
+      // nothing was applied: false.
+      const waitForNewer = async (): Promise<boolean> => {
         const latest = latestRunRef.current;
-        if (latest && latest !== run) await latest;
+        return latest && latest !== run ? await latest : false;
       };
 
       run = (async () => {
         try {
           const list = await listProfiles();
-          if (seq !== seqRef.current) {
-            await waitForNewer();
-            return;
-          }
+          if (seq !== seqRef.current) return await waitForNewer();
           const want = selectAfterLoadRef.current;
           selectAfterLoadRef.current = undefined;
           loadedRef.current = true;
           setError(null);
           applyList(list, want);
+          return true;
         } catch (e) {
-          if (seq !== seqRef.current) {
-            await waitForNewer();
-            return;
-          }
+          if (seq !== seqRef.current) return await waitForNewer();
           // This call owns whatever selectId is currently pending (nothing
           // newer has claimed it): a switch that failed must not be granted
           // later by some unrelated refresh that happens to succeed.
@@ -210,6 +212,7 @@ export function PersonProvider({ children }: { children: ReactNode }) {
           // After a good load, a failed refresh keeps the last list and person
           // rather than blanking every screen over a blip.
           if (!loadedRef.current) setError(e instanceof Error ? e.message : String(e));
+          return false;
         } finally {
           if (seq === seqRef.current) setLoading(false);
         }
