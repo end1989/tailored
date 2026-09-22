@@ -100,6 +100,26 @@ def profile_detail(session: Session, profile: Profile) -> dict[str, Any]:
     }
 
 
+def _blank(value: Optional[str]) -> bool:
+    return not (value or "").strip()
+
+
+def _merge_contact(existing: Contact, found: Contact) -> Contact:
+    """The person's contact, with only its empty fields filled from `found`.
+
+    Build reads whatever documents were uploaded, and an old resume carries an
+    old email and phone. What the person already has (typed on the Profiles
+    screen, or kept from an earlier Build) wins; the documents only fill gaps.
+    """
+    return Contact(
+        name=found.name if _blank(existing.name) else existing.name,
+        email=found.email if _blank(existing.email) else existing.email,
+        phone=found.phone if _blank(existing.phone) else existing.phone,
+        location=found.location if _blank(existing.location) else existing.location,
+        links=existing.links if existing.links else found.links,
+    )
+
+
 def _get_profile_or_404(session: Session, profile_id: int) -> Profile:
     profile = session.get(Profile, profile_id)
     if profile is None:
@@ -211,7 +231,7 @@ def build_profile(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"profile build failed: {exc}")
     set_master_profile(profile, master)
-    set_contact(profile, contact)
+    set_contact(profile, _merge_contact(get_contact(profile), contact))
     profile.updated_at = _utcnow()
     session.add(profile)
     session.commit()
