@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import functools
 import threading
+from collections import Counter
 from contextlib import contextmanager
-from typing import Iterator
+from typing import TYPE_CHECKING, Any, Callable, Iterator
 
 from sqlmodel import Session, select
 
@@ -37,36 +38,81 @@ from .research import parse_posting, research_company
 from .style import check_style
 from .tailor import tailor_application, verify_truthfulness
 
-# Application ids with a pipeline run in this process right now. Person
-# removal treats these as live however long their row has sat in one status
-# (a deep-research step can outlast the staleness cutoff). A run killed by a
-# restart is never here, so its stale row still clears. Background tasks run
-# in a threadpool, hence the lock.
-_live_ids: set[int] = set()
+if TYPE_CHECKING:
+    from fastapi import BackgroundTasks
+
+# Application ids with a pipeline run scheduled or in progress in this
+# process, counted per id: two overlapping runs on one row (a retry on a row
+# that is already queued) each hold it, so the first to finish cannot release
+# the other. Person removal and single-application delete treat these as live
+# however long their row has sat in one status (a deep-research step can
+# outlast the staleness cutoff). A run killed by a restart is never here, so
+# its stale row still clears. Background tasks run in a threadpool, hence the
+# lock.
+_live_counts: Counter[int] = Counter()
 _live_lock = threading.Lock()
 
 
 def live_application_ids() -> frozenset[int]:
-    """Ids of applications with a pipeline run in progress in this process."""
+    """Ids of applications with a pipeline run scheduled or in progress in
+    this process."""
     with _live_lock:
-        return frozenset(_live_ids)
+        return frozenset(i for i, n in _live_counts.items() if n > 0)
 
 
 def is_live(app_id: int) -> bool:
     with _live_lock:
-        return app_id in _live_ids
+        return _live_counts.get(app_id, 0) > 0
+
+
+def _register(app_id: int) -> None:
+    with _live_lock:
+        _live_counts[app_id] += 1
+
+
+def _release(app_id: int) -> None:
+    """Drop one registration of app_id; the key goes when the count reaches 0."""
+    with _live_lock:
+        remaining = _live_counts.get(app_id, 0) - 1
+        if remaining > 0:
+            _live_counts[app_id] = remaining
+        else:
+            _live_counts.pop(app_id, None)
 
 
 @contextmanager
 def live_run(app_id: int) -> Iterator[None]:
     """Register app_id as live for the duration of the block, even if it raises."""
-    with _live_lock:
-        _live_ids.add(app_id)
+    _register(app_id)
     try:
         yield
     finally:
-        with _live_lock:
-            _live_ids.discard(app_id)
+        _release(app_id)
+
+
+def _run_then_release(func: Callable[..., Any], app_id: int, *args: Any) -> None:
+    try:
+        func(app_id, *args)
+    finally:
+        _release(app_id)
+
+
+def schedule_run(background_tasks: BackgroundTasks, func: Callable[..., Any],
+                 app_id: int, *args: Any) -> None:
+    """Schedule func(app_id, *args) as a background task, with app_id live
+    from now until the task finishes or raises.
+
+    The task starts only after the response is sent, so registering here, not
+    in the task, is what covers the gap in which a delete would otherwise see
+    nothing running. Call it last in a route, after anything that can raise:
+    a route that fails after scheduling never runs its tasks, and the id would
+    stay live until restart."""
+    _register(app_id)
+    try:
+        background_tasks.add_task(_run_then_release, func, app_id, *args)
+    except BaseException:
+        _release(app_id)
+        raise
 
 
 def _registers_live_run(func):

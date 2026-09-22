@@ -297,10 +297,13 @@ def create_batch(
         session.add(app_row)
         session.commit()
         session.refresh(app_row)
-        if body.generate:
-            # Schedule through the module attribute so tests can monkeypatch pipeline.
-            background_tasks.add_task(pipeline.process_application, app_row.id)
         results.append(application_detail(session, app_row, job))
+    if body.generate:
+        # Scheduled last (see pipeline.schedule_run), through the module
+        # attribute so tests can monkeypatch pipeline.
+        for created in results:
+            pipeline.schedule_run(
+                background_tasks, pipeline.process_application, created["id"])
     return results
 
 
@@ -433,8 +436,10 @@ def paste_text(
         )
     if not body.text.strip():
         raise HTTPException(status_code=422, detail="text must not be empty")
-    background_tasks.add_task(pipeline.resume_after_paste, app_row.id, body.text)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(
+        background_tasks, pipeline.resume_after_paste, app_row.id, body.text)
+    return detail
 
 
 @router.post("/applications/{application_id}/regenerate")
@@ -452,8 +457,10 @@ def regenerate(
         )
     if not body.feedback.strip():
         raise HTTPException(status_code=422, detail="feedback must not be empty")
-    background_tasks.add_task(pipeline.regenerate_application, app_row.id, body.feedback)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(
+        background_tasks, pipeline.regenerate_application, app_row.id, body.feedback)
+    return detail
 
 
 @router.patch("/applications/{application_id}/template")
@@ -539,8 +546,9 @@ def retry(
     session.add(app_row)
     session.commit()
     session.refresh(app_row)
-    background_tasks.add_task(pipeline.process_application, app_row.id)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(background_tasks, pipeline.process_application, app_row.id)
+    return detail
 
 
 @router.post("/applications/{application_id}/generate")
@@ -563,8 +571,9 @@ def generate(
     session.add(app_row)
     session.commit()
     session.refresh(app_row)
-    background_tasks.add_task(pipeline.process_application, app_row.id)
-    return application_detail(session, app_row, job)
+    detail = application_detail(session, app_row, job)
+    pipeline.schedule_run(background_tasks, pipeline.process_application, app_row.id)
+    return detail
 
 
 @router.put("/applications/{application_id}/content")
@@ -728,6 +737,15 @@ def delete_application(
         raise HTTPException(
             status_code=409,
             detail=f"application is currently {app_row.status}; wait for it to finish",
+        )
+    # A scheduled or running pipeline run holds the id whatever the row's
+    # status says (regenerate and paste leave it unchanged). SQLite reissues a
+    # deleted row's id, so that run's later writes would land on whichever
+    # application is created next.
+    if pipeline.is_live(application_id):
+        raise HTTPException(
+            status_code=409,
+            detail="application is currently being processed; wait for it to finish",
         )
 
     # Files first: if this raises, nothing below runs and nothing is
