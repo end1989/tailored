@@ -17,6 +17,7 @@ import {
   updateContent,
 } from "../api";
 import { harvestResume, removalTarget } from "../inlineEdit";
+import { usePerson } from "../person";
 import { STATUS_LABELS, TERMINAL_STATUSES } from "../statuses";
 import type {
   ApplicationDetail,
@@ -243,6 +244,27 @@ export default function ApplicationScreen() {
   const [templates, setTemplates] = useState<TemplateInfo[]>([]);
   const [switching, setSwitching] = useState(false);
 
+  const {
+    people,
+    person,
+    loading: peopleLoading,
+    error: peopleError,
+    labelFor,
+    setPersonId,
+    setNotice,
+    refreshPeople,
+    setSwitchGuard,
+  } = usePerson();
+  // The application id whose owner has been dealt with. Opening someone else's
+  // application switches to them once per id. After that, the screen does not
+  // switch again, on a later poll or when the person changes while it is open.
+  const ownerHandledFor = useRef<number | null>(null);
+  // An owner missing from the list may have been created since the list
+  // loaded, so the list is refreshed once before the person is called gone.
+  const ownerRefreshStarted = useRef<number | null>(null);
+  const [ownerRefreshedFor, setOwnerRefreshedFor] = useState<number | null>(null);
+  const [ownerMissingFor, setOwnerMissingFor] = useState<number | null>(null);
+
   // Editing is offered once there is a resume and the pipeline has settled.
   // Mid-regeneration the preview stays read-only: anything typed into it would
   // be overwritten by the run in flight.
@@ -285,6 +307,51 @@ export default function ApplicationScreen() {
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [appId, pollNonce]);
+
+  // The owner of the application on screen. A detail still showing the
+  // previous id (the route changed, the new fetch has not landed) does not
+  // count, or the switch would follow the application being left.
+  const ownerId = detail !== null && detail.id === appId ? detail.profile_id : null;
+
+  // Switch to the owner once the people list has loaded. A failed load does
+  // not count as loaded: with no list, every owner would look missing.
+  useEffect(() => {
+    if (peopleLoading || peopleError !== null || ownerId === null) return;
+    if (ownerHandledFor.current === appId) return;
+    const owner = people.find((p) => p.id === ownerId);
+    if (owner === undefined) {
+      if (ownerRefreshedFor === appId) {
+        ownerHandledFor.current = appId;
+        setOwnerMissingFor(appId);
+      } else if (ownerRefreshStarted.current !== appId) {
+        ownerRefreshStarted.current = appId;
+        // refreshPeople never rejects, and once it resolves the provider holds
+        // the newest list, so the next run of this effect sees the owner if
+        // the refresh found them.
+        void refreshPeople().then(() => setOwnerRefreshedFor(appId));
+      }
+      return;
+    }
+    ownerHandledFor.current = appId;
+    if (person === null || person.id !== owner.id) {
+      // remember: false, so following a link to someone else's application
+      // does not change who this browser opens on next time.
+      setPersonId(owner.id, { remember: false });
+      setNotice(`Switched to ${labelFor(owner)} to show this application.`);
+    }
+  }, [
+    appId,
+    ownerId,
+    people,
+    person,
+    peopleLoading,
+    peopleError,
+    ownerRefreshedFor,
+    labelFor,
+    setPersonId,
+    setNotice,
+    refreshPeople,
+  ]);
 
   // Fetch the editable preview. Skipped while there are unsaved edits in the
   // frame: a refetch replaces the document, and silently discarding someone's
@@ -366,6 +433,28 @@ export default function ApplicationScreen() {
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty, coverDraft]);
+
+  // A picker switch from here navigates away, which would drop the frame's
+  // edits and the cover-letter draft. So while there are unsaved edits, the
+  // guard makes the picker ask "Switch anyway" first. The cleanup clears the
+  // guard when the edits are saved or reverted and when the screen unmounts,
+  // so no guard outlives this screen.
+  const hasUnsavedEdits = dirty || coverDraft !== null;
+  const guardOwner =
+    detail === null ? undefined : people.find((p) => p.id === detail.profile_id);
+  const guardMessage =
+    guardOwner === undefined
+      ? "This application has unsaved edits."
+      : `${labelFor(guardOwner)}'s application has unsaved edits.`;
+  useEffect(() => {
+    if (!hasUnsavedEdits) return;
+    setSwitchGuard(guardMessage);
+    return () => setSwitchGuard(null);
+    // setSwitchGuard is deliberately not a dependency: this runs when the edits
+    // start or stop, not on every provider render. A provider that handed out a
+    // new function per render would otherwise clear and set the guard in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasUnsavedEdits, guardMessage]);
 
   // The cover letter is edited in a borderless textarea, so it has to grow to
   // fit its text the way the rendered letter would.
@@ -556,6 +645,12 @@ export default function ApplicationScreen() {
         </span>
         {working && <span className="spinner" style={{ marginLeft: "0.5rem" }} />}
       </p>
+
+      {ownerMissingFor === appId && (
+        <div className="alert" role="status">
+          This application's person no longer exists.
+        </div>
+      )}
 
       <div className="field" style={{ maxWidth: "14rem" }}>
         <label className="field-label" htmlFor="app-stage">Stage</label>

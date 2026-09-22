@@ -1,10 +1,14 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import ApplicationScreen from "./ApplicationScreen";
 import * as api from "../api";
+import { PERSON_STORAGE_KEY, PersonProvider, usePerson } from "../person";
+import { makePerson, renderWithPerson, type PersonTestOptions } from "../test-utils";
 import type { ApplicationDetail } from "../types";
 
 vi.mock("../api", () => ({
+  // PersonProvider, mounted for real in one test below, loads people with this.
+  listProfiles: vi.fn(),
   getApplication: vi.fn(),
   pasteJobText: vi.fn(),
   updateContent: vi.fn(),
@@ -109,14 +113,15 @@ function typeInto(doc: Document, path: string, text: string) {
   fireEvent.input(el);
 }
 
-function renderAt() {
-  return render(
-    <MemoryRouter initialEntries={["/applications/1"]}>
-      <Routes>
-        <Route path="/applications/:id" element={<ApplicationScreen />} />
-      </Routes>
-    </MemoryRouter>
-  );
+// The screen reads the active person, so it renders inside the test person
+// context. The default person (id 1) owns `base`, so a test that passes no
+// options sees no owner switch.
+function renderAt(opts: PersonTestOptions = {}) {
+  return renderWithPerson(<ApplicationScreen />, {
+    route: "/applications/1",
+    path: "/applications/:id",
+    ...opts,
+  });
 }
 
 // renderScreen is used by tests that don't care about a specific status/detail
@@ -761,5 +766,247 @@ describe("ApplicationScreen inline editing", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Revert" }));
     await waitFor(() => expect(box.value).toBe("Dear team,\n\nI build data systems."));
     expect(api.updateContent).not.toHaveBeenCalled();
+  });
+});
+
+const JORDAN = makePerson();
+const SAM = makePerson({
+  id: 2,
+  name: "Sam Lee",
+  contact: { name: "Sam Lee", email: "sam@example.com", links: [] },
+  created_at: "2026-02-01T00:00:00+00:00",
+});
+
+const ORPHAN_TEXT = "This application's person no longer exists.";
+const GUARD_TEXT = "Jordan Rivera's application has unsaved edits.";
+
+/** Fresh spies for the context functions this screen calls. */
+function personSpies() {
+  return {
+    setPersonId: vi.fn(),
+    setNotice: vi.fn(),
+    refreshPeople: vi.fn(async () => undefined),
+    setSwitchGuard: vi.fn(),
+  };
+}
+
+/**
+ * Lets pending effects and promise callbacks run, so a test that asserts
+ * something did NOT happen is not just asserting too early.
+ */
+async function settle() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
+/** Shows what the real provider holds, for the test that mounts it. */
+function PersonProbe() {
+  const { person, notice } = usePerson();
+  return <p data-testid="person-probe">{`${person?.name ?? "nobody"} | ${notice ?? ""}`}</p>;
+}
+
+describe("ApplicationScreen and the active person", () => {
+  beforeEach(() => {
+    // resetAllMocks, not clearAllMocks: tests below queue
+    // mockResolvedValueOnce values, and a leftover from an earlier test in
+    // this file would be served first.
+    vi.resetAllMocks();
+    vi.mocked(api.listTemplates).mockResolvedValue([]);
+    vi.mocked(api.fetchEditPreview).mockResolvedValue(EDIT_HTML);
+    vi.mocked(api.getApplication).mockResolvedValue({
+      ...base,
+      status: "ready",
+      resume: READY_RESUME,
+      cover_letter_md: "Dear team,\n\nI build data systems.",
+    });
+    vi.mocked(api.updateContent).mockResolvedValue({
+      ...base,
+      status: "ready",
+      resume: READY_RESUME,
+      cover_letter_md: "Dear team,",
+      style_violations: [],
+    });
+  });
+
+  it("switches to the application's owner once, without remembering the choice", async () => {
+    vi.mocked(api.getApplication).mockResolvedValue({ ...base, profile_id: 2, status: "ready" });
+    const spies = personSpies();
+    renderAt({
+      people: [JORDAN, SAM],
+      personId: 1,
+      // A label that differs from the name proves the notice uses labelFor,
+      // the same labelling rule the picker uses.
+      overrides: { ...spies, labelFor: (p) => `${p.name} #${p.id}` },
+    });
+
+    await waitFor(() => expect(spies.setPersonId).toHaveBeenCalledWith(2, { remember: false }));
+    await settle();
+    expect(spies.setPersonId).toHaveBeenCalledTimes(1);
+    expect(spies.setNotice).toHaveBeenCalledTimes(1);
+    expect(spies.setNotice).toHaveBeenCalledWith(
+      "Switched to Sam Lee #2 to show this application."
+    );
+    expect(spies.refreshPeople).not.toHaveBeenCalled();
+    expect(screen.queryByText(ORPHAN_TEXT)).not.toBeInTheDocument();
+  });
+
+  it("stays put when the application belongs to the current person", async () => {
+    const spies = personSpies();
+    renderAt({ people: [JORDAN, SAM], personId: 1, overrides: spies });
+    expect(await screen.findByText(/0\.4321/)).toBeInTheDocument();
+    await settle();
+    expect(spies.setPersonId).not.toHaveBeenCalled();
+    expect(spies.setNotice).not.toHaveBeenCalled();
+    expect(spies.refreshPeople).not.toHaveBeenCalled();
+  });
+
+  it("decides nothing while the people list is still loading", async () => {
+    vi.mocked(api.getApplication).mockResolvedValue({ ...base, profile_id: 2, status: "ready" });
+    const spies = personSpies();
+    renderAt({ people: [], personId: null, loading: true, overrides: spies });
+    expect(await screen.findByText(/0\.4321/)).toBeInTheDocument();
+    await settle();
+    // An empty list while loading would otherwise look like a missing owner.
+    expect(spies.refreshPeople).not.toHaveBeenCalled();
+    expect(spies.setPersonId).not.toHaveBeenCalled();
+    expect(screen.queryByText(ORPHAN_TEXT)).not.toBeInTheDocument();
+  });
+
+  it("does not call the person gone when the people list failed to load", async () => {
+    vi.mocked(api.getApplication).mockResolvedValue({ ...base, profile_id: 2, status: "ready" });
+    const spies = personSpies();
+    renderAt({
+      people: [],
+      personId: null,
+      overrides: { ...spies, error: "API 500: Internal Server Error" },
+    });
+    expect(await screen.findByText(/0\.4321/)).toBeInTheDocument();
+    await settle();
+    expect(spies.refreshPeople).not.toHaveBeenCalled();
+    expect(spies.setPersonId).not.toHaveBeenCalled();
+    expect(screen.queryByText(ORPHAN_TEXT)).not.toBeInTheDocument();
+  });
+
+  it("does not switch back on a later poll after a manual switch", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.getApplication)
+        .mockResolvedValueOnce({ ...base, profile_id: 2, status: "queued" })
+        .mockResolvedValue({ ...base, profile_id: 2, status: "ready" });
+      const spies = personSpies();
+      const { switchTo } = renderAt({ people: [JORDAN, SAM], personId: 1, overrides: spies });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(spies.setPersonId).toHaveBeenCalledTimes(1);
+      expect(spies.setPersonId).toHaveBeenCalledWith(2, { remember: false });
+
+      switchTo(2); // the provider applies the owner switch
+      switchTo(1); // then the person is changed while this screen is still open
+
+      // The application is still queued, so the 2s poll fetches it again.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      expect(api.getApplication).toHaveBeenCalledTimes(2);
+      expect(spies.setPersonId).toHaveBeenCalledTimes(1);
+      expect(spies.setNotice).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("refreshes the people list once when the owner is missing, then says the person no longer exists", async () => {
+    vi.mocked(api.getApplication).mockResolvedValue({ ...base, profile_id: 7, status: "ready" });
+    const spies = personSpies();
+    renderAt({ people: [JORDAN], personId: 1, overrides: spies });
+
+    expect(await screen.findByText(ORPHAN_TEXT)).toBeInTheDocument();
+    await settle();
+    expect(spies.refreshPeople).toHaveBeenCalledTimes(1);
+    expect(spies.refreshPeople).toHaveBeenCalledWith();
+    expect(spies.setPersonId).not.toHaveBeenCalled();
+    expect(spies.setNotice).not.toHaveBeenCalled();
+  });
+
+  it("switches to an owner that only a refresh of the people list finds, without remembering it", async () => {
+    localStorage.clear();
+    try {
+      // The provider's first load predates the owner; the refresh finds them.
+      vi.mocked(api.listProfiles)
+        .mockResolvedValueOnce([JORDAN])
+        .mockResolvedValue([JORDAN, SAM]);
+      vi.mocked(api.getApplication).mockResolvedValue({ ...base, profile_id: 2, status: "ready" });
+
+      render(
+        <MemoryRouter initialEntries={["/applications/1"]}>
+          <PersonProvider>
+            <Routes>
+              <Route
+                path="/applications/:id"
+                element={
+                  <>
+                    <PersonProbe />
+                    <ApplicationScreen />
+                  </>
+                }
+              />
+            </Routes>
+          </PersonProvider>
+        </MemoryRouter>
+      );
+
+      await waitFor(() =>
+        expect(screen.getByTestId("person-probe")).toHaveTextContent(
+          "Sam Lee | Switched to Sam Lee to show this application."
+        )
+      );
+      expect(screen.queryByText(ORPHAN_TEXT)).not.toBeInTheDocument();
+      // remember: false. Whatever the provider stored for this browser, it is
+      // not the person a followed link switched to.
+      const stored = localStorage.getItem(PERSON_STORAGE_KEY);
+      expect(stored === null ? null : JSON.parse(stored).id).not.toBe(2);
+    } finally {
+      localStorage.clear();
+    }
+  });
+
+  it("guards a picker switch while the resume has unsaved edits, until they are reverted", async () => {
+    const spies = personSpies();
+    renderAt({ overrides: spies });
+    const doc = await editorFrame();
+    expect(spies.setSwitchGuard).not.toHaveBeenCalledWith(expect.any(String));
+
+    typeInto(doc, "summary", "Nine years of Python.");
+    await waitFor(() => expect(spies.setSwitchGuard).toHaveBeenLastCalledWith(GUARD_TEXT));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revert" }));
+    await waitFor(() => expect(spies.setSwitchGuard).toHaveBeenLastCalledWith(null));
+  });
+
+  it("guards while the cover letter has a draft, and clears the guard once it is saved", async () => {
+    const spies = personSpies();
+    renderAt({ overrides: spies });
+    fireEvent.click(await screen.findByRole("button", { name: "Cover Letter" }));
+    fireEvent.change(screen.getByLabelText("Cover letter"), {
+      target: { value: "Dear team,\n\nI build data pipelines." },
+    });
+    await waitFor(() => expect(spies.setSwitchGuard).toHaveBeenLastCalledWith(GUARD_TEXT));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(api.updateContent).toHaveBeenCalled());
+    await waitFor(() => expect(spies.setSwitchGuard).toHaveBeenLastCalledWith(null));
+  });
+
+  it("clears the guard when the screen unmounts with edits still unsaved", async () => {
+    const spies = personSpies();
+    const { unmount } = renderAt({ overrides: spies });
+    const doc = await editorFrame();
+    typeInto(doc, "summary", "Nine years of Python.");
+    await waitFor(() => expect(spies.setSwitchGuard).toHaveBeenLastCalledWith(GUARD_TEXT));
+
+    unmount();
+    expect(spies.setSwitchGuard).toHaveBeenLastCalledWith(null);
   });
 });
