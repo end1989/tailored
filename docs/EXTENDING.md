@@ -22,7 +22,7 @@ resume.
 |------|--------------|
 | `get_workflow_guide()` | Call first: returns the workflow order, the truthfulness contract, and the exact JSON schemas with a worked example. |
 | `list_profiles()` | List stored profiles (id, name, has_master_profile). |
-| `get_master_profile(profile_id?)` | Contact + master profile — the only facts an agent may use. Omitting `profile_id` resolves the sole profile; ambiguity returns an error listing the profiles. |
+| `get_master_profile(profile_id?)` | Contact + master profile: the only facts an agent may use. Omitting `profile_id` resolves the sole profile; ambiguity returns an error listing the profiles. Also returns `inbox_url`, the candidate's webmail link when the contact email is on Gmail, iCloud or Outlook, else null; the guide's CANDIDATE'S INBOX section says how an agent may use it. |
 | `add_profile_evidence(profile_id, projects?, skill_groups?, summary_note?)` | Import portfolio-scan findings into the master profile (`MPProject` + `SkillGroup` shapes). Additive and verified-evidence-only: never overwrites — new projects are appended (duplicate names skipped), same-label skill groups are merged, `summary_note` is appended; safe to call repeatedly. |
 | `list_templates()` | Every template in the registry (currently eight) with label/description/best_for metadata, read straight from the manifests. |
 | `create_application(profile_id, url, posting_text, template?)` | Register a job with agent-gathered posting text; creates the Job + Application (status `tailoring`, depth `external`) and returns `application_id`. |

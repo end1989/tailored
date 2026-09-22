@@ -83,7 +83,11 @@ async def get_master_profile(profile_id: int | None = None) -> dict:
     """Fetch a profile's contact info and master profile - the single source
     of truth containing every fact you may use when tailoring. Call this
     before tailoring anything. Omit profile_id when only one profile exists;
-    with multiple profiles you get an error listing them so you can pick."""
+    with multiple profiles you get an error listing them so you can pick.
+    Also returns inbox_url: the candidate's webmail link when their contact
+    email is on a provider Tailored recognises (Gmail, iCloud, Outlook), else
+    null. Use it only when the user asks you to work in their mail, and follow
+    the CANDIDATE'S INBOX rules in get_workflow_guide."""
     return await _run(mcp_ops.get_master_profile, _engine, profile_id)
 
 
