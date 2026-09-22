@@ -27,7 +27,8 @@ generate later at no cost. For each job URL you choose to generate, it runs a
 four-stage pipeline:
 
 1. **Fetch** — downloads the posting and extracts the text (paste fallback for
-   login-walled sites).
+   login-walled sites, and for JavaScript-only pages that carry no schema.org
+   job data).
 2. **Research** — parses the posting; optionally researches the company
    (per-job depth dial, see below).
 3. **Tailor** — Claude (`claude-opus-4-8`) selects and emphasizes the most relevant
@@ -354,7 +355,10 @@ tailored/
 
 - **LinkedIn or other login-walled postings** — sites that block bots land the
   application in **"needs paste"** (not an error). Open the application, paste the
-  posting text into the prompt, and the pipeline resumes identically.
+  posting text into the prompt, and the pipeline resumes identically. A page that
+  comes back with almost no text (under about 400 characters, usually a
+  "please enable JavaScript" shell) and no schema.org job data is treated the
+  same way.
 - **Playwright browser missing** (`Executable doesn't exist` or similar) —
   `Tailored.bat` / `start_tailored.sh` install this automatically on first run (and
   print a warning if it fails, without blocking the rest of the app). If you're on

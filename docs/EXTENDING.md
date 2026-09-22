@@ -81,6 +81,13 @@ whole of it: it solves no CAPTCHAs and uses no proxies, and any refusal simply
 falls through to the needs-paste flow, where the user pastes the posting text
 themselves.
 
+It also never runs a page's scripts. A page that draws its posting with
+JavaScript (an Ashby job board, for one) returns almost no readable text, so
+the fetcher reads the schema.org `JobPosting` data that the same response
+carries for search engines. A page with under about 400 characters of text and
+no such data counts as a refusal and goes to the needs-paste flow, rather than
+being parsed and tailored as if it were a posting.
+
 ## 2. The pipeline's provider seam (any model)
 
 Every AI call in the built-in pipeline goes through one method:

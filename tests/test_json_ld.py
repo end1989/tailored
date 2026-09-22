@@ -321,3 +321,18 @@ def test_json_ld_is_absent_from_the_ats_text():
     from backend.app.services.render import render_ats_text
 
     assert "schema.org" not in render_ats_text(_resume())
+
+
+def test_json_ld_never_emits_present_as_an_end_date():
+    data = _resume().model_dump()
+    changed = 0
+    for section in data["sections"]:
+        if section["type"] == "experience":
+            for item in section["items"]:
+                if item["end"] is None:
+                    item["end"] = "Present"
+                    changed += 1
+    assert changed, "the fixture needs an ongoing role for this test to mean anything"
+    ld = resume_json_ld(ResumeDoc.model_validate(data))
+    assert all("endDate" not in entry or entry["endDate"] != "Present"
+               for entry in ld["hasOccupation"] + ld["worksFor"])
