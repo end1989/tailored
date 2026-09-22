@@ -21,7 +21,7 @@ from ..models import (
     set_master_profile,
 )
 from ..schemas import Contact, MasterProfile
-from ..services import intake
+from ..services import intake, removal
 from ..services.claude import ClaudeError
 from ..services.inbox import inbox_url
 
@@ -174,6 +174,34 @@ def update_profile(
     session.commit()
     session.refresh(profile)
     return profile_detail(session, profile)
+
+
+@router.delete("/profiles/{profile_id}")
+def delete_profile(
+    profile_id: int,
+    request: Request,
+    confirm_name: Optional[str] = None,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    """Permanently remove a person: their applications (archived included,
+    with each one's job, research, versions and timeline), their documents,
+    the profile, and their exported files.
+
+    The typed-name check is here, not only in the UI, so a stray call cannot
+    remove anyone. Recent pipeline or parked-MCP work refuses with 409 (see
+    removal.remove_person), as does an export directory that cannot be moved.
+    """
+    profile = _get_profile_or_404(session, profile_id)
+    if confirm_name is None or not confirm_name.strip() or confirm_name != profile.name:
+        raise HTTPException(
+            status_code=422, detail="confirm_name must equal the person's name"
+        )
+    try:
+        return removal.remove_person(
+            session, request.app.state.settings.data_dir, profile
+        )
+    except removal.RemovalBlocked as exc:
+        raise HTTPException(status_code=409, detail=exc.detail)
 
 
 @router.post("/profiles/{profile_id}/documents")
