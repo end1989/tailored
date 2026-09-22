@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -36,6 +37,20 @@ EVENT_KINDS = (
     "note",
 )
 
+# The settings a person can hold for themselves: the same three keys as the
+# app-wide data/settings.json (config.DEFAULT_USER_SETTINGS). A key the person
+# has not set comes from the app-wide file (services/person_settings.py).
+PROFILE_SETTING_KEYS = ("default_template", "default_depth", "page_size")
+
+# The allowed values of the keys that have a fixed set. These must equal
+# api/settings.py's DEPTHS and PAGE_SIZES (tests/test_person_settings.py
+# checks). default_template is not listed: the template registry is loaded by
+# services/render.py, so services/person_settings.settings_for checks it.
+PROFILE_SETTING_VALUES = {
+    "default_depth": ("quick", "standard", "deep"),
+    "page_size": ("Letter", "A4"),
+}
+
 
 class Profile(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -47,6 +62,10 @@ class Profile(SQLModel, table=True):
     # inferred from the user's uploaded documents, because explicit
     # instruction beats inference.
     voice_notes: str = ""
+    # This person's own settings, a JSON object over PROFILE_SETTING_KEYS.
+    # "{}" means every value comes from the app-wide data/settings.json. Read
+    # it through services.person_settings.settings_for, which does the overlay.
+    settings_json: str = "{}"
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
 
@@ -144,6 +163,47 @@ def get_master_profile(p: Profile) -> MasterProfile:
 
 def set_master_profile(p: Profile, mp: MasterProfile) -> None:
     p.master_profile_json = mp.model_dump_json()
+
+
+def _known_settings(values: object) -> dict[str, str]:
+    """The PROFILE_SETTING_KEYS entries of `values` that hold a non-empty str
+    allowed by PROFILE_SETTING_VALUES, in PROFILE_SETTING_KEYS order."""
+    if not isinstance(values, dict):
+        return {}
+    known: dict[str, str] = {}
+    for key in PROFILE_SETTING_KEYS:
+        value = values.get(key)
+        if not isinstance(value, str) or not value:
+            continue
+        allowed = PROFILE_SETTING_VALUES.get(key)
+        if allowed is not None and value not in allowed:
+            continue
+        known[key] = value
+    return known
+
+
+def get_profile_settings(profile: Profile) -> dict[str, str]:
+    """The valid values this person set for themselves (possibly none).
+
+    Malformed or non-object JSON reads as no values, and a value outside
+    PROFILE_SETTING_VALUES is dropped, so a damaged row falls back to the
+    app-wide settings instead of failing every render.
+    """
+    try:
+        stored = json.loads(profile.settings_json or "{}")
+    except ValueError:
+        return {}
+    return _known_settings(stored)
+
+
+def set_profile_settings(profile: Profile, values: dict[str, str]) -> None:
+    """Replace this person's own values with the valid known keys of `values`.
+
+    Invalid values are dropped, not raised: api/settings.py rejects them with
+    a 422 before calling this. default_template is kept as any non-empty str;
+    settings_for ignores one that is not in the template registry.
+    """
+    profile.settings_json = json.dumps(_known_settings(values))
 
 
 def get_parsed(j: Job) -> ParsedPosting | None:
