@@ -189,3 +189,25 @@ def test_fetch_result_literal_rejects_bad_status():
     assert needs.reason == "HTTP 403"
     with pytest.raises(ValidationError):
         FetchResult(status="error")
+
+
+_ONGOING_FACTORIES = [
+    lambda end: ExperienceItem(company="Acme", role="Engineer", start="2021", end=end),
+    lambda end: MPExperience(company="Acme", title="Engineer", start="2021", end=end),
+]
+
+
+@pytest.mark.parametrize("make", _ONGOING_FACTORIES)
+@pytest.mark.parametrize("marker", ["Present", "present", " PRESENT ", "Current", "now", "", "  "])
+def test_an_ongoing_end_marker_is_stored_as_none(make, marker):
+    # None is the one representation of "still in this role": the templates
+    # print it as "Present" and the JSON-LD omits endDate for it. Any other
+    # spelling of the same fact is folded into it, so exact comparisons of
+    # dates (the truthfulness guard) compare facts, not spellings.
+    assert make(marker).end is None
+
+
+@pytest.mark.parametrize("make", _ONGOING_FACTORIES)
+@pytest.mark.parametrize("end", ["2024-01", "2017", "Presently unknown"])
+def test_a_real_end_value_is_kept_verbatim(make, end):
+    assert make(end).end == end

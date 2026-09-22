@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class LinkItem(BaseModel):
@@ -16,6 +16,22 @@ class Contact(BaseModel):
     phone: Optional[str] = None
     location: Optional[str] = None
     links: list[LinkItem] = Field(default_factory=list)
+
+
+# Spellings of "still in this role". None is the canonical one: every template
+# prints it as "Present" and the JSON-LD omits endDate for it. Folding the other
+# spellings into it on the way in means the truthfulness guard's exact match on
+# (company, role, start, end) compares the fact rather than how it was typed:
+# a model copying an ongoing role tends to write the word the rendered resume
+# shows, and a person editing a profile may type it too. A real end date is
+# untouched, so "Present" still cannot stand in for a role that ended.
+_ONGOING_END = {"", "present", "current", "now"}
+
+
+def _fold_ongoing_end(value):
+    if isinstance(value, str) and value.strip().lower() in _ONGOING_END:
+        return None
+    return value
 
 
 # --- Master profile (source of truth about a person) ---
@@ -32,6 +48,8 @@ class MPExperience(BaseModel):
     end: Optional[str] = None  # None means present
     location: Optional[str] = None
     bullets: list[TaggedBullet] = Field(default_factory=list)
+
+    _ongoing_end_is_none = field_validator("end", mode="before")(_fold_ongoing_end)
 
 
 class MPProject(BaseModel):
@@ -100,6 +118,8 @@ class ExperienceItem(BaseModel):
     end: Optional[str] = None
     location: Optional[str] = None
     bullets: list[str] = Field(default_factory=list)
+
+    _ongoing_end_is_none = field_validator("end", mode="before")(_fold_ongoing_end)
 
 
 class ProjectItem(BaseModel):

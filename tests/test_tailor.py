@@ -6,10 +6,13 @@ import pytest
 
 from backend.app.schemas import (
     Contact,
+    ExperienceItem,
+    ExperienceSection,
     MasterProfile,
     MPExperience,
     ParsedPosting,
     ResearchFindings,
+    ResumeDoc,
     TaggedBullet,
     TailorResult,
     UsageInfo,
@@ -241,3 +244,46 @@ def test_the_prompt_states_the_apostrophe_carve_out_the_gate_actually_makes():
     assert "apostrophe" in TAILOR_SYSTEM.lower()
     # The gate side of this pair is test_style.py's
     # test_a_curly_apostrophe_inside_a_word_is_allowed.
+
+
+def _resume_with(item: ExperienceItem) -> ResumeDoc:
+    return ResumeDoc(
+        contact=CONTACT, headline="Backend engineer", summary="Builds services.",
+        sections=[ExperienceSection(items=[item])],
+    )
+
+
+def _acme(end: str | None) -> ExperienceItem:
+    return ExperienceItem(
+        company="Acme Robotics", role="Senior Backend Engineer",
+        start="2021-03", end=end,
+    )
+
+
+@pytest.mark.parametrize("written", ["Present", "present", "Current", ""])
+def test_an_ongoing_role_written_as_present_passes_the_guard(written):
+    # Regression: the master profile stores an ongoing role with no end date,
+    # which every template prints as "Present". The model wrote "Present",
+    # the guard compared it with None, and the whole application failed.
+    assert verify_truthfulness(_resume_with(_acme(written)), PROFILE) == []
+
+
+def test_a_blank_master_profile_end_is_the_same_ongoing_role():
+    # "Blank = present", as the profile editor's end field puts it, whether the
+    # blank arrives as null or as an empty string through the API.
+    blank_end = PROFILE.model_copy(deep=True)
+    blank_end.experiences[0] = MPExperience.model_validate(
+        {**PROFILE.experiences[0].model_dump(), "end": ""}
+    )
+    assert verify_truthfulness(_resume_with(_acme(None)), blank_end) == []
+    assert verify_truthfulness(_resume_with(_acme("Present")), blank_end) == []
+
+
+def test_present_does_not_stand_in_for_a_role_that_ended():
+    ended = PROFILE.model_copy(deep=True)
+    ended.experiences[0] = MPExperience.model_validate(
+        {**PROFILE.experiences[0].model_dump(), "end": "2024-01"}
+    )
+    violations = verify_truthfulness(_resume_with(_acme("Present")), ended)
+    assert len(violations) == 1
+    assert "Acme Robotics" in violations[0]

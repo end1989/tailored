@@ -275,6 +275,23 @@ def test_truthfulness_rejection_then_corrected_save(engine, profile_id, tmp_path
     assert result["version"] == 1
 
 
+def test_an_ongoing_role_saved_as_present_is_accepted(
+    engine, profile_id, tmp_path, pdf_faked
+):
+    # An agent that writes the ongoing role's end as "Present" (how every
+    # template prints it) states the same fact as the master profile's null.
+    app_id = _create_app(engine, profile_id)
+    tailor = copy.deepcopy(_fixture("tailor"))
+    experience = next(
+        s for s in tailor["resume"]["sections"] if s["type"] == "experience"
+    )
+    ongoing = [item for item in experience["items"] if item.get("end") is None]
+    assert ongoing, "the fixture needs an ongoing role"
+    for item in ongoing:
+        item["end"] = "Present"
+    assert _save_tailor(engine, tmp_path, app_id, tailor)["status"] == "ready"
+
+
 def test_resume_validation_error(engine, profile_id, tmp_path, pdf_faked):
     app_id = _create_app(engine, profile_id)
     with pytest.raises(mcp_ops.McpOpsError) as exc:
