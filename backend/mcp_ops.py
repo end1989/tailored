@@ -25,6 +25,7 @@ from .app.models import (
     Job,
     Profile,
     ResearchBrief,
+    _utcnow,
     get_contact,
     get_master_profile as _master_profile_of,
     get_parsed,
@@ -692,6 +693,7 @@ def set_application_template(
         )
         app.template = template
         app.export_dir = str(export_dir)
+        app.updated_at = _utcnow()
         session.add(app)
         session.commit()
         session.refresh(app)
@@ -748,7 +750,9 @@ def save_parsed_posting(engine, application_id: int, parsed: dict) -> dict:
         app, job = _get_app_and_job(session, application_id)
         _reject_if_pipeline_active(app, application_id)
         set_parsed(job, posting)
+        app.updated_at = _utcnow()  # a live agent run, not an abandoned row
         session.add(job)
+        session.add(app)
         session.commit()
         return {
             "application_id": application_id,
@@ -777,7 +781,9 @@ def save_research(engine, application_id: int, findings: dict) -> dict:
             output_tokens=0,
             cost_usd=0.0,
         )
+        app.updated_at = _utcnow()  # a live agent run, not an abandoned row
         session.add(brief)
+        session.add(app)
         session.commit()
         session.refresh(brief)
         return {

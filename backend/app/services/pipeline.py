@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import functools
+import threading
+from contextlib import contextmanager
+from typing import Iterator
+
 from sqlmodel import Session, select
 
 from ..config import get_settings
@@ -31,6 +36,46 @@ from .person_settings import settings_for
 from .research import parse_posting, research_company
 from .style import check_style
 from .tailor import tailor_application, verify_truthfulness
+
+# Application ids with a pipeline run in this process right now. Person
+# removal treats these as live however long their row has sat in one status
+# (a deep-research step can outlast the staleness cutoff). A run killed by a
+# restart is never here, so its stale row still clears. Background tasks run
+# in a threadpool, hence the lock.
+_live_ids: set[int] = set()
+_live_lock = threading.Lock()
+
+
+def live_application_ids() -> frozenset[int]:
+    """Ids of applications with a pipeline run in progress in this process."""
+    with _live_lock:
+        return frozenset(_live_ids)
+
+
+def is_live(app_id: int) -> bool:
+    with _live_lock:
+        return app_id in _live_ids
+
+
+@contextmanager
+def live_run(app_id: int) -> Iterator[None]:
+    """Register app_id as live for the duration of the block, even if it raises."""
+    with _live_lock:
+        _live_ids.add(app_id)
+    try:
+        yield
+    finally:
+        with _live_lock:
+            _live_ids.discard(app_id)
+
+
+def _registers_live_run(func):
+    """Run a pipeline entry point (first argument: app_id) inside live_run."""
+    @functools.wraps(func)
+    def wrapper(app_id: int, *args, **kwargs):
+        with live_run(app_id):
+            return func(app_id, *args, **kwargs)
+    return wrapper
 
 
 def _set_status(session: Session, app: Application, status: str,
@@ -208,6 +253,7 @@ def _tailor_and_render(session: Session, app: Application, profile: Profile,
     _set_status(session, app, "ready")
 
 
+@_registers_live_run
 def process_application(app_id: int, engine=None,
                         claude: ClaudeService | None = None) -> None:
     """Run the full stage machine for one application (synchronous).
@@ -244,6 +290,7 @@ def process_application(app_id: int, engine=None,
             _mark_error(session, app, str(exc))
 
 
+@_registers_live_run
 def resume_after_paste(app_id: int, text: str, engine=None,
                        claude: ClaudeService | None = None) -> None:
     """User pasted the posting text: store it and continue from researching."""
@@ -266,6 +313,7 @@ def resume_after_paste(app_id: int, text: str, engine=None,
             _mark_error(session, app, str(exc))
 
 
+@_registers_live_run
 def regenerate_application(app_id: int, feedback: str, engine=None,
                            claude: ClaudeService | None = None) -> None:
     """Re-tailor with user feedback: version += 1, new snapshot, re-render."""

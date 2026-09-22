@@ -25,6 +25,7 @@ from ..models import (
     _utcnow,
     get_parsed,
 )
+from .pipeline import live_application_ids
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,9 @@ ACTIVE_STATUSES = ("queued", "fetching", "researching", "tailoring", "rendering"
 # The pipeline stamps updated_at on every transition, so a row in an active
 # status that has not moved for this long is abandoned (a server restart kills
 # background tasks; an agent can walk away from a parked row). Without a
-# cutoff, one stuck row would make a person impossible to remove.
+# cutoff, one stuck row would make a person impossible to remove. A run live
+# in this process's pipeline blocks however old its row is: one step (deep
+# research) can outlast the cutoff, and a restart-killed run is never live.
 STALE_AFTER = timedelta(minutes=15)
 
 
@@ -85,15 +88,21 @@ def _naive_utc(now: datetime | None) -> datetime:
 
 def blocking_applications(session: Session, profile_id: int,
                           now: datetime | None = None) -> list[Application]:
-    """Applications of the profile in ACTIVE_STATUSES whose updated_at is within STALE_AFTER of now."""
+    """Applications of the profile in ACTIVE_STATUSES whose updated_at is
+    within STALE_AFTER of now, plus any with a live pipeline run in this
+    process, whatever their status or updated_at."""
     cutoff = _naive_utc(now) - STALE_AFTER
     rows = session.exec(
         select(Application)
         .where(Application.profile_id == profile_id)
-        .where(Application.status.in_(ACTIVE_STATUSES))
         .order_by(Application.id)
     ).all()
-    return [row for row in rows if row.updated_at > cutoff]
+    live = live_application_ids()
+    return [
+        row for row in rows
+        if row.id in live
+        or (row.status in ACTIVE_STATUSES and row.updated_at > cutoff)
+    ]
 
 
 def _label(session: Session, app_row: Application) -> str:
