@@ -359,3 +359,33 @@ def test_the_floor_matches_the_figure_the_agent_guide_gives():
     from backend.mcp_ops import get_workflow_guide
 
     assert f"{MIN_POSTING_CHARS} characters" in get_workflow_guide()
+
+
+def _extractor_that_raises(*args, **kwargs):
+    raise RuntimeError("extractor crashed")
+
+
+@respx.mock
+def test_an_extractor_failure_falls_back_to_json_ld(monkeypatch):
+    # fetch_posting never raises, whatever the third-party extractor does. A
+    # page the extractor cannot handle can still carry its JobPosting data.
+    monkeypatch.setattr(
+        "backend.app.services.fetcher.trafilatura.extract", _extractor_that_raises
+    )
+    respx.get(JOB_URL).mock(
+        return_value=_html_response(SPA_SHELL.format(ld=JOB_POSTING_LD))
+    )
+    result = fetch_posting(JOB_URL)
+    assert result.status == "fetched"
+    assert "comfort with Salesforce" in result.text
+
+
+@respx.mock
+def test_an_extractor_failure_without_json_ld_returns_needs_paste(monkeypatch):
+    monkeypatch.setattr(
+        "backend.app.services.fetcher.trafilatura.extract", _extractor_that_raises
+    )
+    respx.get(JOB_URL).mock(return_value=_html_response(JOB_HTML))
+    result = fetch_posting(JOB_URL)
+    assert result.status == "needs_paste"
+    assert result.reason == "no extractable text"

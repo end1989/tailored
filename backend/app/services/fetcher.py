@@ -59,7 +59,10 @@ def fetch_posting(url: str, timeout: float = 20.0) -> FetchResult:
             reason=f"unsupported content-type: {content_type or 'unknown'}",
         )
 
-    extracted = (trafilatura.extract(resp.text, include_comments=False) or "").strip()
+    try:
+        extracted = (trafilatura.extract(resp.text, include_comments=False) or "").strip()
+    except Exception:  # noqa: BLE001 - extraction failure -> JSON-LD/paste fallback
+        extracted = ""
     if len(extracted) >= MIN_POSTING_CHARS:
         return FetchResult(status="fetched", text=extracted)
 
