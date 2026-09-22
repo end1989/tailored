@@ -7,6 +7,7 @@ import TemplatesScreen from "./screens/TemplatesScreen";
 import ProfileScreen from "./screens/ProfileScreen";
 import ApplicationScreen from "./screens/ApplicationScreen";
 import SettingsScreen from "./screens/SettingsScreen";
+import PersonPicker from "./components/PersonPicker";
 import { getThemePref, resolveTheme, setThemePref, subscribeTheme } from "./theme";
 import type { ResolvedTheme } from "./theme";
 
@@ -47,14 +48,17 @@ export default function App() {
           <NavLink to="/settings" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
             Settings
           </NavLink>
-          <button
-            type="button"
-            className="btn btn-ghost nav-theme-toggle"
-            onClick={toggleTheme}
-            aria-label={resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-          >
-            {resolved === "dark" ? "☀ Light" : "☾ Dark"}
-          </button>
+          <div className="nav-end">
+            <PersonPicker />
+            <button
+              type="button"
+              className="btn btn-ghost nav-theme-toggle"
+              onClick={toggleTheme}
+              aria-label={resolved === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+            >
+              {resolved === "dark" ? "☀ Light" : "☾ Dark"}
+            </button>
+          </div>
         </div>
       </nav>
       <main className="shell">

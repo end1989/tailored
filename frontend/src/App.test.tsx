@@ -1,6 +1,8 @@
 import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
+import * as api from "./api";
+import { PersonProvider } from "./person";
 
 vi.mock("./api", () => ({
   listProfiles: vi.fn().mockResolvedValue([]),
@@ -27,13 +29,24 @@ vi.mock("./api", () => ({
   exportUrl: (id: number, kind: string) => `/api/applications/${id}/exports/${kind}`,
 }));
 
-describe("App shell", () => {
-  it("renders the brand and all nav links", () => {
-    render(
-      <MemoryRouter initialEntries={["/"]}>
+function renderApp(route = "/") {
+  return render(
+    <MemoryRouter initialEntries={[route]}>
+      <PersonProvider>
         <App />
-      </MemoryRouter>
-    );
+      </PersonProvider>
+    </MemoryRouter>
+  );
+}
+
+describe("App shell", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    vi.mocked(api.listProfiles).mockResolvedValue([]);
+  });
+
+  it("renders the brand and all nav links", () => {
+    renderApp();
     expect(screen.getByText("Tailored")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Dashboard" })).toHaveAttribute("href", "/");
     const nav = screen.getByRole("navigation");
@@ -52,11 +65,37 @@ describe("App shell", () => {
   });
 
   it("renders the real Dashboard screen on /", async () => {
-    render(
-      <MemoryRouter initialEntries={["/"]}>
-        <App />
-      </MemoryRouter>
-    );
+    renderApp();
     expect(await screen.findByRole("heading", { name: "Dashboard" })).toBeInTheDocument();
+  });
+
+  it("puts the person picker in the nav, just before the theme toggle", async () => {
+    vi.mocked(api.listProfiles).mockResolvedValue([
+      {
+        id: 1,
+        name: "Jordan Rivera",
+        contact: { name: "Jordan Rivera", email: "jordan@example.com", links: [] },
+        has_master_profile: true,
+        created_at: "2026-01-01T00:00:00+00:00",
+        inbox_url: null,
+      },
+    ]);
+    renderApp();
+    const nav = screen.getByRole("navigation");
+    const picker = await within(nav).findByRole("combobox", { name: "Person" });
+    expect(picker).toHaveValue("1");
+    const toggle = within(nav).getByRole("button", { name: /switch to (light|dark) theme/i });
+    expect(picker.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(picker.closest(".nav-end")).toBe(toggle.closest(".nav-end"));
+  });
+
+  it("offers Add a person in the nav when there are no people", async () => {
+    renderApp();
+    const nav = screen.getByRole("navigation");
+    expect(await within(nav).findByRole("link", { name: "Add a person" })).toHaveAttribute(
+      "href",
+      "/profiles?new=1"
+    );
+    expect(within(nav).queryByRole("combobox", { name: "Person" })).not.toBeInTheDocument();
   });
 });
