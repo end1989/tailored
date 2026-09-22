@@ -2,7 +2,7 @@ import { act, fireEvent, screen, waitFor, within } from "@testing-library/react"
 import { Route, Routes } from "react-router-dom";
 import AddJobsScreen from "./AddJobsScreen";
 import * as api from "../api";
-import { makePerson, renderWithPerson, type PersonTestOptions } from "../test-utils";
+import { deferred, makePerson, renderWithPerson, type PersonTestOptions } from "../test-utils";
 import type { SettingsShape, TemplateInfo } from "../types";
 
 // listProfiles is deliberately absent. The screen reads the person from
@@ -37,14 +37,6 @@ const SAM = makePerson({
   contact: { name: "Sam Lee", email: "sam@example.com", links: [] },
   created_at: "2026-02-01T00:00:00+00:00",
 });
-
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
 
 function renderScreen(opts?: PersonTestOptions) {
   return renderWithPerson(<AddJobsScreen />, opts);
