@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from sqlalchemy import func
 from sqlmodel import Session, select
 
-from ..config import load_user_settings
 from ..db import get_session
 from ..models import (
     Application,
@@ -33,6 +32,7 @@ from ..models import (
 )
 from ..schemas import ResumeDoc
 from ..services import pipeline, render
+from ..services.person_settings import settings_for
 from ..services.removal import delete_application_rows
 from ..services.render import TEMPLATES
 from ..services.style import clean_mechanical, style_report
@@ -258,7 +258,8 @@ def create_batch(
     if not body.jobs:
         raise HTTPException(status_code=422, detail="jobs must not be empty")
 
-    user_settings = load_user_settings(request.app.state.settings.data_dir)
+    # The person's own defaults, over the app-wide ones (spec 5.2).
+    user_settings = settings_for(request.app.state.settings.data_dir, profile)
     fallback_depth = body.default_depth or user_settings.get("default_depth", "standard")
     fallback_template = body.default_template or user_settings.get(
         "default_template", "slate"
@@ -493,7 +494,8 @@ def set_template(
 
     profile = session.get(Profile, app_row.profile_id)
     settings = request.app.state.settings
-    user_settings = load_user_settings(settings.data_dir)
+    # The owner's page size, never another person's (spec 5.2).
+    user_settings = settings_for(settings.data_dir, profile)
     # Render before committing anything: a row claiming a template its exports
     # were never rendered in would serve the old PDF under the new label.
     export_dir = render.export_application(
@@ -606,7 +608,8 @@ def update_content(
         # module attribute so tests can monkeypatch export_application.
         profile = session.get(Profile, app_row.profile_id)
         settings = request.app.state.settings
-        user_settings = load_user_settings(settings.data_dir)
+        # The owner's page size, never another person's (spec 5.2).
+        user_settings = settings_for(settings.data_dir, profile)
         export_dir = render.export_application(
             app_row.id,
             resume_now,

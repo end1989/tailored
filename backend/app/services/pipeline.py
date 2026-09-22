@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlmodel import Session, select
 
-from ..config import get_settings, load_user_settings
+from ..config import get_settings
 from ..db import get_engine
 from ..models import (
     Application,
@@ -27,6 +27,7 @@ from ..schemas import (
 )
 from . import fetcher, render
 from .claude import ClaudeError, ClaudeService, make_claude
+from .person_settings import settings_for
 from .research import parse_posting, research_company
 from .style import check_style
 from .tailor import tailor_application, verify_truthfulness
@@ -187,8 +188,8 @@ def _tailor_and_render(session: Session, app: Application, profile: Profile,
 
     _set_status(session, app, "rendering")
     settings = get_settings()
-    user_settings = load_user_settings(settings.data_dir)
-    page_size = (user_settings or {}).get("page_size", "Letter")
+    # The owner's page size (spec 5.2): `profile` is this application's owner.
+    page_size = settings_for(settings.data_dir, profile).get("page_size", "Letter")
     export_dir = render.export_application(
         app.id, result.resume, result.cover_letter_md, contact,
         app.template, settings.data_dir, page_size=page_size,

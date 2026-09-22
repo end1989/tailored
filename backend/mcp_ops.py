@@ -18,7 +18,6 @@ from pydantic import ValidationError
 from sqlmodel import Session, select
 
 from .app.api.templates import TEMPLATE_META
-from .app.config import load_user_settings
 from .app.models import (
     Application,
     ApplicationEvent,
@@ -36,6 +35,7 @@ from .app.models import (
 from .app.schemas import MPProject, ParsedPosting, ResearchFindings, ResumeDoc, SkillGroup
 from .app.services import render
 from .app.services.claude import strict_schema
+from .app.services.person_settings import settings_for
 from .app.services.pipeline import _mark_error, _set_status
 from .app.services.style import check_style
 from .app.services.tailor import verify_truthfulness
@@ -658,7 +658,8 @@ def set_application_template(
         profile = session.get(Profile, app.profile_id)
         contact = get_contact(profile)
 
-        user_settings = load_user_settings(Path(data_dir))
+        # The owner's page size, whoever is picked in any browser (spec 5.2).
+        user_settings = settings_for(Path(data_dir), profile)
         # Render before committing anything: a row claiming a template its
         # exports were never rendered in would hand the agent the old PDF
         # under the new label.
@@ -840,7 +841,8 @@ def save_tailored_resume(
             session.commit()
 
             _set_status(session, app, "rendering")
-            user_settings = load_user_settings(Path(data_dir))
+            # The owner's page size, whoever is picked in any browser (spec 5.2).
+            user_settings = settings_for(Path(data_dir), profile)
             export_dir = render.export_application(
                 app.id, resume_doc, cover_letter_md, contact,
                 app.template, Path(data_dir),
