@@ -280,7 +280,6 @@ export default function DashboardScreen() {
           <thead>
             <tr>
               <th />
-              <th>Company</th>
               <th>Role</th>
               <th>Stage</th>
               <th>Documents</th>
@@ -300,8 +299,11 @@ export default function DashboardScreen() {
                     onChange={() => toggle(a.id)}
                   />
                 </td>
-                <td>{a.company ? a.company : a.url}</td>
-                <td>{a.title ?? ""}</td>
+                <td>
+                  <div className="title">{a.title ?? "Saved Job #"+a.id}</div>
+                  <div className="company">{a.company ?? ""}</div>
+                  <a className="btn btn-small" href={a.url} target="_blank" rel="noopener noreferrer">Job Posting</a>
+                </td>
                 <td>
                   <select
                     className="select select-inline"
@@ -334,7 +336,7 @@ export default function DashboardScreen() {
                       Generate
                     </button>
                   )}{" "}
-                  <Link to={`/applications/${a.id}`}>Open</Link>
+                  <Link to={`/applications/${a.id}`} className="btn btn-small">Open</Link>
                 </td>
               </tr>
             ))}
