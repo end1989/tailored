@@ -64,6 +64,11 @@ def fetch_posting(url: str, timeout: float = 20.0) -> FetchResult:
     except Exception:  # noqa: BLE001 - extraction failure -> JSON-LD/paste fallback
         extracted = ""
     if len(extracted) >= MIN_POSTING_CHARS:
+        # Page text supplies the description; preserve the remaining metadata
+        # without repeating the JSON-LD description.
+        metadata = _json_ld_posting_text(resp.text, include_description=False)
+        if metadata:
+            extracted += "\n\nJobPosting metadata:\n" + metadata
         return FetchResult(status="fetched", text=extracted)
 
     # A page that renders its posting with JavaScript usually still carries it
@@ -83,8 +88,13 @@ def fetch_posting(url: str, timeout: float = 20.0) -> FetchResult:
     )
 
 
-def _json_ld_posting_text(page: str) -> str:
-    """Posting text from the first usable schema.org JobPosting, or "".
+def _json_ld_posting_text(page: str, *, include_description: bool = True) -> str:
+    """Text and metadata from the first usable JobPosting, or "".
+
+    With include_description=False, return all non-description fields as JSON,
+    even if the posting has no usable description. Callers should use that mode
+    only when they already have enough extracted page text. Otherwise retain
+    the description-length check so metadata alone cannot count as a posting.
 
     Best effort, and it must not raise: a block that is malformed, nested past
     the recursion limit, or holds markup html.parser rejects is skipped, and a
@@ -93,9 +103,15 @@ def _json_ld_posting_text(page: str) -> str:
     for block in _JSON_LD.findall(page):
         try:
             for posting in _job_postings(json.loads(block, strict=False)):
+                metadata = {
+                    key: value for key, value in posting.items() if key != "description"
+                }
+                metadata_text = json.dumps(metadata, ensure_ascii=False, indent=2)
+                if not include_description:
+                    return metadata_text
                 text = _posting_text(posting)
                 if text:
-                    return text
+                    return text + "\n\nJobPosting metadata:\n" + metadata_text
         except Exception:  # noqa: BLE001 - see docstring
             continue
     return ""
@@ -123,14 +139,7 @@ def _posting_text(posting: dict) -> str:
     if len(body) < MIN_POSTING_CHARS:  # a teaser is no more a posting than a shell
         return ""
 
-    header = [_plain(posting.get("title"))]
-    organization = posting.get("hiringOrganization")
-    if isinstance(organization, dict):
-        header.append(_plain(organization.get("name")))
-    location = _location(posting.get("jobLocation"))
-    if location:
-        header.append(f"Location: {location}")
-    return "\n".join([line for line in header if line] + ["", body])
+    return body
 
 
 def _location(job_location) -> str:

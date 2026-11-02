@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+import json
 import pytest
 import respx
 
@@ -143,21 +144,61 @@ def test_javascript_shell_with_job_posting_json_ld_is_fetched_from_it():
     result = fetch_posting(JOB_URL)
     assert result.status == "fetched"
     assert result.reason == ""
-    lines = result.text.splitlines()
-    assert lines[:3] == [
-        "Client Partner, Emerging",
-        "Ibotta",
-        "Location: Denver, Colorado, United States",
-    ]
+    # The description remains readable.
+    assert "Ibotta is seeking a Client Partner" in result.text
+    assert "- Own a book of emerging brand partners" in result.text
+    assert "leaders.Requirements" not in result.text
+    assert "comfort with Salesforce" in result.text
+
+    # Structured posting metadata is preserved.
+    assert '"title": "Client Partner, Emerging"' in result.text
+    assert '"name": "Ibotta"' in result.text
+
     # The description arrives as HTML inside a JSON string. The markup goes,
     # but its structure stays: one line per block, list items marked, and no
     # words glued together across a tag boundary.
-    assert "- Own a book of emerging brand partners and grow their annual spend." in lines
+    lines = result.text.splitlines()
     assert any(line.startswith("Requirements:") for line in lines)
-    assert "leaders.Requirements" not in result.text
-    assert "comfort with Salesforce" in result.text
     assert "<" not in result.text
     assert "enable JavaScript" not in result.text
+
+
+@pytest.mark.parametrize("description", [None, "Short teaser", "Build useful software. " * 30])
+@respx.mock
+def test_json_metadata_preserved(description):
+    metadata = {
+        "@type": "JobPosting",
+        "title": "Engineer",
+        "employmentType": ["FULL_TIME", "PERMANENT"],
+        "baseSalary": {"currency": "AUD", "value": {"minValue": 100000}},
+        "customField": {"nested": [False, 0, None, "Brisbane"]},
+    }
+    posting = dict(metadata)
+    if description is not None:
+        posting["description"] = description
+    ld = '<script type="application/ld+json">' + json.dumps(posting) + '</script>'
+    page = JOB_HTML.replace("</head>", ld + "</head>")
+    respx.get(JOB_URL).mock(return_value=_html_response(page))
+    result = fetch_posting(JOB_URL)
+    assert result.status == "fetched"
+    assert "fleet telemetry platform" in result.text
+    payload = result.text.split("\n\nJobPosting metadata:\n", 1)[1]
+    assert json.loads(payload) == metadata
+
+
+@respx.mock
+def test_metadata_description_not_duplicated():
+    description = "Build useful software with our team. " * 20
+    posting = {"@type": "JobPosting", "title": "Engineer", "description": description}
+    ld = '<script type="application/ld+json">' + json.dumps(posting) + '</script>'
+    page = JOB_HTML.replace("</head>", ld + "</head>")
+    respx.get(JOB_URL).mock(return_value=_html_response(page))
+    result = fetch_posting(JOB_URL)
+    assert result.status == "fetched"
+    assert "fleet telemetry platform" in result.text
+    assert "Build useful software with our team." not in result.text
+    metadata = json.loads(result.text.split("\n\nJobPosting metadata:\n", 1)[1])
+    assert "description" not in metadata
 
 
 @respx.mock
@@ -195,14 +236,55 @@ def test_malformed_json_ld_is_ignored_not_raised():
 
 
 @respx.mock
-def test_server_rendered_posting_still_uses_page_text_over_json_ld():
-    # A page that already renders its posting keeps the extraction it had;
-    # JSON-LD is only the fallback for pages whose visible text is too thin.
+def test_server_rendered_posting_preserves_metadata_without_json_ld_description():
     html = JOB_HTML.replace("</head>", JOB_POSTING_LD + "</head>")
     respx.get(JOB_URL).mock(return_value=_html_response(html))
     result = fetch_posting(JOB_URL)
     assert result.status == "fetched"
     assert "fleet telemetry platform" in result.text
+    metadata = json.loads(result.text.split("\n\nJobPosting metadata:\n", 1)[1])
+    assert metadata["employmentType"] == "FULL_TIME"
+    assert metadata["hiringOrganization"]["sameAs"] == "https://ibotta.com/"
+    assert "description" not in metadata
+    assert "Own a book of emerging brand partners" not in result.text
+
+
+@pytest.mark.parametrize("ld", [
+    "",
+    '<script type="application/ld+json">{broken}</script>',
+    '<script type="application/ld+json">{"@type":"Organization"}</script>',
+])
+@respx.mock
+def test_valid_page_text_is_unchanged_without_usable_job_metadata(monkeypatch, ld):
+    extracted = "Useful posting text. " * 25
+    monkeypatch.setattr(
+        "backend.app.services.fetcher.trafilatura.extract",
+        lambda *args, **kwargs: extracted,
+    )
+    respx.get(JOB_URL).mock(return_value=_html_response(SPA_SHELL.format(ld=ld)))
+    result = fetch_posting(JOB_URL)
+    assert result.status == "fetched"
+    assert result.text == extracted.strip()
+
+
+@pytest.mark.parametrize("length", [MIN_POSTING_CHARS - 1, MIN_POSTING_CHARS])
+@respx.mock
+def test_page_text_threshold_controls_json_ld_description(monkeypatch, length):
+    extracted = "x" * length
+    monkeypatch.setattr(
+        "backend.app.services.fetcher.trafilatura.extract",
+        lambda *args, **kwargs: extracted,
+    )
+    respx.get(JOB_URL).mock(
+        return_value=_html_response(SPA_SHELL.format(ld=JOB_POSTING_LD))
+    )
+    result = fetch_posting(JOB_URL)
+    assert result.status == "fetched"
+    assert ("comfort with Salesforce" in result.text) == (length < MIN_POSTING_CHARS)
+    assert result.text.startswith(extracted) == (length >= MIN_POSTING_CHARS)
+    metadata = json.loads(result.text.split("\n\nJobPosting metadata:\n", 1)[1])
+    assert metadata["employmentType"] == "FULL_TIME"
+    assert "description" not in metadata
 
 
 @respx.mock
@@ -296,8 +378,15 @@ def test_a_pathologically_nested_json_ld_block_does_not_raise(depth):
 
 
 @respx.mock
-def test_a_description_the_html_parser_rejects_does_not_raise():
-    # html.parser raises AssertionError on an unknown marked section.
+def test_a_description_the_html_parser_rejects_does_not_raise(monkeypatch):
+    # Parser versions differ on malformed markup. Force a rejection to test
+    # the exception-handling contract independently of the installed version.
+    def reject_fragment(fragment):
+        raise AssertionError("invalid marked section")
+
+    monkeypatch.setattr(
+        "backend.app.services.fetcher._html_to_text", reject_fragment
+    )
     odd = _posting_ld(f"<p>Salary <![negotiable]> plus benefits. {LONG_ENOUGH}</p>")
     respx.get(JOB_URL).mock(return_value=_html_response(SPA_SHELL.format(ld=odd)))
     assert fetch_posting(JOB_URL).status == "needs_paste"
